@@ -33,7 +33,7 @@ def main():
 
     """5. Ввод поисковой машины """
     press_car(driver, selected_data, output_filepath)
-    process_car(driver)
+    # process_car(driver)
     """6.Просчет времени"""
     pass
     """7. Ввод данных в Excel"""
