@@ -23,7 +23,7 @@ import re
 
 # Конфигурация
 CREDS_FILE = "config/Credentials_wialon.json"
-SHEET_ID = "1ixKttiMV9S9gWRljYPrruXSWlQ9ncGpaShPHoo8yFxA"
+# SHEET_ID = "1ixKttiMV9S9gWRljYPrruXSWlQ9ncGpaShPHoo8yFxA"
 WORKSHEET_INDEX = 3  # Лист с обычными задачами
 COLUMN_INDEX = 14  # Колонка = "Готово", Номер колонки (начиная с 1)
 creds = Credentials.from_service_account_file(CREDS_FILE, scopes=["https://www.googleapis.com/auth/spreadsheets"])
