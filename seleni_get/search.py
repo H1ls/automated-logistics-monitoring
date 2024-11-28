@@ -144,8 +144,8 @@ def process_car(driver, car_data):
     # Обновляем данные
     car_data["гео"] = location_text
     car_data["координаты"] = f"{latitude} {longitude}"
-    car_gps["Связь"] = f"{latitude}"
-    car_speed["Состояние"] = f"{latitude} {longitude}"
+    # car_gps["Связь"] = f"{some}"
+    # car_speed["Состояние"] = f"{some}"
     # car_data["координаты"] = f"{latitude} {longitude}" if latitude and longitude else None
 
     print(f"Обработано: ТС = {car_number}, Гео = {location_text}, Координаты = {latitude} {longitude}")
