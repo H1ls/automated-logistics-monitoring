@@ -76,7 +76,7 @@ def main():
     rows = get_spreadsheet_data()
 
     # Обновление данных из таблицы
-    refresh_sheet_data(rows, "selected_data.json")
+    refresh_sheet_data(rows, "Dear PyGui/selected_data.json")
 
     # Очистка JSON-файла
     # cleanup_json_data("selected_data.json", "cleaned_data.json")

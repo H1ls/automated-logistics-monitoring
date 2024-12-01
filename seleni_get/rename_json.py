@@ -21,7 +21,7 @@ def check_up_id_car():
 
 def get_id_for_data():
     """Добавляет поле "id" к каждому элементу JSON файла, где есть поле "ТС" и "Наименование"""
-    with open("selected_data.json", "r", encoding="utf-8") as file1:
+    with open("Dear PyGui/selected_data.json", "r", encoding="utf-8") as file1:
         json1 = json.load(file1)
     # Загружаем второй JSON файл, где содержатся ИДОбъекта
     with open("Id_car.json", "r", encoding="utf-8") as file2:
@@ -34,7 +34,7 @@ def get_id_for_data():
     for item in json1:
         if item["ТС"] in lookup:
             item["id"] = lookup[item["ТС"]]
-    with open("selected_data.json", "w", encoding="utf-8") as file:
+    with open("Dear PyGui/selected_data.json", "w", encoding="utf-8") as file:
         json.dump(json1, file, ensure_ascii=False, indent=4)
 
 

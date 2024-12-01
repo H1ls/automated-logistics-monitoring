@@ -61,7 +61,7 @@ def parse_info(text, end_patterns, address="Точка"):
 
 def start_clean():
     """Cчитывает данные из «selected_data.json», обрабатывает «Погрузка» и «Выгрузка»"""
-    with open("selected_data.json", "r", encoding="utf-8") as file:
+    with open("Dear PyGui/selected_data.json", "r", encoding="utf-8") as file:
         data = json.load(file)
     for item in data:
         # Обрабатываем поле "Погрузка/Выгрузка" и сохраняем как массив
@@ -69,5 +69,5 @@ def start_clean():
             item["Погрузка"] = parse_info(item["Погрузка"], end_patterns)
         if "Выгрузка" in item and isinstance(item["Выгрузка"], str):
             item["Выгрузка"] = parse_info(item["Выгрузка"], end_patterns)
-    with open("selected_data.json", "w", encoding="utf-8") as file:
+    with open("Dear PyGui/selected_data.json", "w", encoding="utf-8") as file:
         json.dump(data, file, ensure_ascii=False, indent=4)

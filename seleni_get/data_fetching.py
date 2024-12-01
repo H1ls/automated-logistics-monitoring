@@ -23,7 +23,7 @@ import re
 
 # Конфигурация
 CREDS_FILE = "config/Credentials_wialon.json"
-# SHEET_ID = "1ixKttiMV9S9gWRljYPrruXSWlQ9ncGpaShPHoo8yFxA"
+SHEET_ID = "1Yv4RJ0O4icSr_J2DQOwPG7V8JW7Pj_LR5egerdiKSOY"
 WORKSHEET_INDEX = 3  # Лист с обычными задачами
 COLUMN_INDEX = 14  # Колонка = "Готово", Номер колонки (начиная с 1)
 creds = Credentials.from_service_account_file(CREDS_FILE, scopes=["https://www.googleapis.com/auth/spreadsheets"])
@@ -43,7 +43,7 @@ def get_spreadsheet():
 def check_up_id_car():
     """Очищает и обновляет JSON-файл, удаляя первое слово в строках с 3 словами."""
     # ПОВТОР, вынести в отдельную функцию
-    with open("selected_data.json", "r", encoding="utf-8") as file:
+    with open("Dear PyGui/selected_data.json", "r", encoding="utf-8") as file:
         data = json.load(file)
     for item in data["items"]:
         name = item["Наименование"]
@@ -54,7 +54,7 @@ def check_up_id_car():
             # Удаляем первое слово и пробел после него
             item["Наименование"] = ' '.join(words[1:])
     # ПОВТОР, вынести в отдельную функцию
-    with open("selected_data.json", "w", encoding="utf-8") as json_file:
+    with open("Dear PyGui/selected_data.json", "w", encoding="utf-8") as json_file:
         json.dump(data, json_file, ensure_ascii=False, indent=4)
 
 
@@ -78,5 +78,5 @@ def refresh_name(rows):
             })
     # ПОВТОР, вынести в отдельную функцию
     # Записываем полученные данные в JSON-файл
-    with open("selected_data.json", "w", encoding="utf-8") as json_file:
+    with open("Dear PyGui/selected_data.json", "w", encoding="utf-8") as json_file:
         json.dump(selected_data, json_file, ensure_ascii=False, indent=4)

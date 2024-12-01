@@ -142,11 +142,11 @@ def process_car(driver, car_data):
     location_text, latitude, longitude = get_location_and_coordinates(driver)
 
     # Обновляем данные
+    # car_data["координаты"] = f"{latitude} {longitude}" if latitude and longitude else None
     car_data["гео"] = location_text
     car_data["координаты"] = f"{latitude} {longitude}"
-    car_gps["Связь"] = f"{latitude}"
-    car_speed["Состояние"] = f"{latitude} {longitude}"
-    # car_data["координаты"] = f"{latitude} {longitude}" if latitude and longitude else None
+    # car_gps["Связь"] = f"{status}"
+    # car_speed["Состояние"] = f"{speed}"
 
     print(f"Обработано: ТС = {car_number}, Гео = {location_text}, Координаты = {latitude} {longitude}")
     return car_data

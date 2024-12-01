@@ -1,0 +1,13 @@
+{
+  "installed": {
+    "client_id": "845139679105-omj5od3pvsunkor92kad5ior36kj1n4o.apps.googleusercontent.com",
+    "project_id": "wialon-381113",
+    "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+    "token_uri": "https://oauth2.googleapis.com/token",
+    "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
+    "client_secret": "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",
+    "redirect_uris": [
+      "http://localhost"
+    ]
+  }
+}

@@ -9,8 +9,8 @@ from seleni_get.search import press_car
 
 selected_data = "selected_data.json"
 
-input_filepath = "selected_data.json"
-output_filepath = "updated_data.json"
+input_filepath = "Dear PyGui/selected_data.json"
+output_filepath = "Dear PyGui/updated_data.json"
 
 service = Service()
 driver = webdriver.Chrome(service=service)
@@ -29,16 +29,15 @@ def main():
     get_id_for_data()
 
     """4. Открытие Google Sky Telecom """
-    open_sky_telecom(driver)
+    # open_sky_telecom(driver)
 
     """5. Ввод поисковой машины """
-    press_car(driver, selected_data, output_filepath)
-    # process_car(driver)
+    # press_car(driver, selected_data, output_filepath)
     """6.Просчет времени"""
     pass
     """7. Ввод данных в Excel"""
     pass
-    input("Нажмите Enter, чтобы закрыть окно браузера...")
+    # input("Нажмите Enter, чтобы закрыть окно браузера...")
     # open_in_cookie(driver)
 
 
