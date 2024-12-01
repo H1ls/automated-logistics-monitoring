@@ -7,25 +7,7 @@ from rename_json import normalization_json
 
 
 def test_no_modification_if_recently_changed(self):
-    """
-    Тест, что функция normalization_json не изменяет JSON-файл, если он был недавно изменен.
-
-    Этот тест создает макет JSON-файла, устанавливает время его последнего изменения на 11 часов назад,
-    а затем вызывает функцию normalization_json. Он проверяет, что содержимое
-    файла остается неизменным после вызова функции.
-
-    Parameters:
-        self (unittest.TestCase): The TestCase instance.
-
-    Returns:
-        None
-
-    Side effects:
-        - Создает временный JSON-файл с именем 'test_Id_car.json'.
-        - Изменяет время последнего изменения созданного файла.
-        - Вызывает функцию normalization_json с подражанием времени даты и пути к файлу.
-        - Удаляет временный файл после завершения теста.
-    """
+    """Тест, что функция normalization_json не изменяет JSON-файл, если он был недавно изменен."""
     # Create a mock JSON file
     mock_file_path = 'test_Id_car.json'
     mock_data = {"Лист1": [{"Наименование": "Test Name"}]}
