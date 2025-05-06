@@ -1,45 +1,45 @@
-from selenium.webdriver.chrome.service import Service
-from selenium import webdriver
+from Navigation_Bot.dataCleaner import DataCleaner
+from Navigation_Bot.googleSheetsManager import GoogleSheetsManager
+from Navigation_Bot.mapsBot import MapsBot
+from Navigation_Bot.navigationBot import NavigationBot
+from Navigation_Bot.webDriverManager import WebDriverManager
 
-from seleni_get.data_fetching import get_spreadsheet, refresh_name
-from seleni_get.clean_address import start_clean
-from seleni_get.rename_json import get_id_for_data, check_up_id_car
-from seleni_get.login import open_sky_telecom
-from seleni_get.search import press_car
+input_filepath = "config/selected_data.json"
+id_filepath = "config/Id_car.json"
+sheets_manager = GoogleSheetsManager(
+    creds_file="config/Credentials_wialon.json",
+    sheet_id="1uz2ZXlCBltsD8s96GNuQELDEJ5_qCBuDFP2dvxeNqsU",
+    worksheet_index=3,
+    column_index=14)
 
-selected_data = "selected_data.json"
-
-input_filepath = "Dear PyGui/selected_data.json"
-output_filepath = "Dear PyGui/updated_data.json"
-
-service = Service()
-driver = webdriver.Chrome(service=service)
-driver.maximize_window()
+browser_manager = WebDriverManager()
 
 
-def main():
-    """1. Загрузка из Excel"""
-    result = get_spreadsheet()
-    refresh_name(result)
-    """2. Чистка адресов загруженных из Excel"""
-    start_clean()
-
-    """3.Проверка идентификаторов машин в JSON, Добавляет поле "id" к каждому элементу для новой data"""
-    check_up_id_car()
-    get_id_for_data()
-
-    """4. Открытие Google Sky Telecom """
-    # open_sky_telecom(driver)
-
-    """5. Ввод поисковой машины """
-    # press_car(driver, selected_data, output_filepath)
-    """6.Просчет времени"""
-    pass
-    """7. Ввод данных в Excel"""
-    pass
-    # input("Нажмите Enter, чтобы закрыть окно браузера...")
-    # open_in_cookie(driver)
+def start_navi():
+    browser_manager.start_browser()
+    browser_manager.login_wialon()
+    browser_manager.setup_wialon()
+    navi = NavigationBot(browser_manager.driver, sheets_manager)
+    navi.press_car(input_filepath)
 
 
-if __name__ == "__main__":
-    main()
+def start_yandex(browser_manager, sheets_manager):
+    browser_manager.start_browser()
+    browser_manager.open_yandex_maps()
+    maps_bot = MapsBot(browser_manager, sheets_manager)
+    maps_bot.process_navigation_from_json(input_filepath)
+
+
+# start_yandex()
+def dataC(sheets_manager, input_filepath, id_filepath):
+    cleaner = DataCleaner(sheets_manager, input_filepath, id_filepath)
+    # Очистка номеров машин
+    cleaner.clean_vehicle_names()
+    # Добавление ID
+    cleaner.add_id_to_data()
+    # Очистка адресов (Погрузка/Выгрузка)
+    cleaner.start_clean()
+
+start_navi()
+# dataC(sheets_manager, input_filepath, id_filepath)
+# start_yandex(browser_manager,sheets_manager)
