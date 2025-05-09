@@ -1,0 +1,8 @@
+# .gitignore
+config/
+__pycache__/
+*.pyc
+.idea/
+Model_AI/
+seleni_get/
+venv/

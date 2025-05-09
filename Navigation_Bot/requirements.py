@@ -4,6 +4,7 @@ import time
 import json
 import pickle
 import gspread
+import logging
 from typing import Any
 from selenium import webdriver
 from datetime import datetime, timedelta
@@ -16,3 +17,5 @@ from selenium.webdriver.common.action_chains import ActionChains
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import NoSuchElementException, TimeoutException
 import math
+
+from selenium.webdriver.chrome.service import Service
