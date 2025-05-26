@@ -1,35 +1,42 @@
-from Navigation_Bot.requirements import *
-
+import os
+import json
+from typing import Any
+import logging
 
 class JSONManager:
-    def __init__(self, file_path: str):
+    def __init__(self, file_path: str = None,log_func=None):
         self.file_path = file_path
+        self.log = log_func or print
 
-    def load_json(self) -> Any:
-        if not os.path.exists(self.file_path):
-            return []  # Возвращаем пустой список, если файла нет
+    def load_json(self, file_path: str = None) -> Any:
+        path = file_path or self.file_path
+        if not path or not os.path.exists(path):
+            return []
         try:
-            with open(self.file_path, "r", encoding="utf-8") as file:
+            with open(path, "r", encoding="utf-8") as file:
                 return json.load(file)
         except json.JSONDecodeError:
-            print(f"Ошибка: Файл {self.file_path} содержит некорректный JSON.")
+            self.log(f"Ошибка чтения JSON: {path}")
             return []
 
-    def save_json(self, data: Any) -> None:
+    def save_json(self, data: Any, file_path: str = None) -> None:
+        path = file_path or self.file_path
+        if not path:
+            self.log("Путь к файлу не задан")
+            return
         try:
-            with open(self.file_path, "w", encoding="utf-8") as file:
+            with open(path, "w", encoding="utf-8") as file:
                 json.dump(data, file, ensure_ascii=False, indent=4)
         except Exception as e:
-            print(f"Ошибка сохранения JSON: {e}")
+            self.log(f"Ошибка сохранения JSON: {e}")
 
-    def update_json(self, new_data: Any) -> None:
-        """Добавляет новые данные в JSON без удаления старых записей."""
-        existing_data = self.load_json()
-        if isinstance(existing_data, list) and isinstance(new_data, list):
-            existing_data.extend(new_data)
-        elif isinstance(existing_data, dict) and isinstance(new_data, dict):
-            existing_data.update(new_data)
+    def update_json(self, new_data: Any, file_path: str = None) -> None:
+        existing = self.load_json(file_path)
+        if isinstance(existing, list) and isinstance(new_data, list):
+            existing.extend(new_data)
+        elif isinstance(existing, dict) and isinstance(new_data, dict):
+            existing.update(new_data)
         else:
-            print("Ошибка: Тип данных JSON не совпадает.")
+            self.log("Форматы данных не совпадают")
             return
-        self.save_json(existing_data)
+        self.save_json(existing, file_path)
