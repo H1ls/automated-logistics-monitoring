@@ -1,14 +1,20 @@
-from Navigation_Bot.googleSheetsManager import GoogleSheetsManager
-from Navigation_Bot.requirements import *
+import json
+import logging
+import os
+import re
+
+from Navigation_Bot.jSONManager import JSONManager
 
 """2. Очистка данных"""
 
 
 class DataCleaner:
-    def __init__(self, sheets_manager, input_filepath, id_filepath):
-        self.sheets_manager = sheets_manager
+    def __init__(self,jsons,input_filepath, id_filepath,log_func=None):
+        self.json_manager = jsons
         self.selected_data_path = input_filepath
         self.id_car_path = id_filepath
+        self.log = log_func or print
+
         self.end_patterns = [
             r"тел\s*\d[\d\s\-]{8,}",
             r"Контакт:?\s*\d[\d\s\-]{8,}",
@@ -24,9 +30,10 @@ class DataCleaner:
             r'по ттн'
         ]
 
+
     def _file_exists(self, filepath):
         if not os.path.exists(filepath):
-            logging.error(f"Файл {filepath} не найден.")
+            self.log(f"Файл {filepath} не найден.")
             return False
         return True
 
@@ -64,6 +71,7 @@ class DataCleaner:
                 f"Дата {i}": date,
                 f"Время {i}": time
             })
+        self.log("Очистка загруженных адресов")
         return results
 
     def start_clean(self):
@@ -81,11 +89,11 @@ class DataCleaner:
 
             # Проверка на пустые значения в Погрузка/Выгрузка
             if not item.get("Погрузка") or not item.get("Выгрузка"):
-                logging.warning(f"Пропущена запись {item.get('ТС')} из-за пустых данных.")
+                self.log(f"Пропущена запись {item.get('ТС')} из-за пустых данных.")
                 continue
 
-        self.sheets_manager.save_json(data, self.selected_data_path)
-        logging.info(f" Данные очищены и сохранены в {self.selected_data_path}.")
+        self.json_manager.save_json(data, self.selected_data_path)
+        self.log(f" Данные очищены и сохранены в {self.selected_data_path}.")
 
     def clean_vehicle_names(self):
         if not os.path.exists(self.id_car_path):
@@ -99,8 +107,9 @@ class DataCleaner:
                 words = item["Наименование"].split()
                 if len(words) == 3:
                     item["Наименование"] = ' '.join(words[1:])
-        self.sheets_manager.save_json(data, self.id_car_path)
-        logging.info(f" Данные по наименованиям машин очищены и сохранены в {self.id_car_path}.")
+        self.json_manager.save_json(data, self.id_car_path)
+        self.log(f" Данные по наименованиям машин очищены и сохранены в {self.id_car_path}.")
+
 
     def add_id_to_data(self):
         if not (self._file_exists(self.selected_data_path) and self._file_exists(self.id_car_path)):
@@ -111,19 +120,26 @@ class DataCleaner:
         with open(self.id_car_path, "r", encoding="utf-8") as file2:
             json2 = json.load(file2)
 
-        lookup = {entry["Наименование"]: entry["ИДОбъекта в центре мониторинга"] for entry in json2}
+        # Создаём словарь для поиска: Наименование -> ID
+        lookup = {
+            entry["Наименование"]: entry["ИДОбъекта в центре мониторинга"]
+            for entry in json2
+            if "Наименование" in entry and "ИДОбъекта в центре мониторинга" in entry
+        }
 
         for item in json1:
-            if item["ТС"] in lookup:
-                item["id"] = lookup[item["ТС"]]
-        self.sheets_manager.save_json(json1, self.selected_data_path)
-        logging.info(f" Присвоение id в json завершено.")
+            original_ts = item.get("ТС", "").strip()
 
-# sheets_manager = GoogleSheetsManager(3,14)
-# cleaner = DataCleaner(sheets_manager, "config/selected_data.json", "config/Id_car.json")
-# # Очистка номеров машин
-# cleaner.clean_vehicle_names()
-# # Добавление ID
-# cleaner.add_id_to_data()
-# # Очистка адресов (Погрузка/Выгрузка)
-# cleaner.start_clean()
+            # Убираем пробелы и добавляем один перед регионом
+            raw = re.sub(r"\s+", "", original_ts)
+            if len(raw) >= 9:
+                normalized = raw[:6] + ' ' + raw[6:9]
+            else:
+                normalized = raw  # если что-то пошло не так
+
+            if normalized in lookup:
+                item["ТС"] = normalized  # заменим ТС на нормализованный
+                item["id"] = lookup[normalized]
+
+        self.json_manager.save_json(json1, self.selected_data_path)
+        self.log(f" Присвоение id в json завершено.")
