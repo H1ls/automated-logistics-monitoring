@@ -1,0 +1,18 @@
+{
+    "selectors": {
+        "route_container_class": "auto-route-snippet-view",
+        "duration_class": "auto-route-snippet-view__duration",
+        "distance_class": "auto-route-snippet-view__distance"
+    },
+    "xpaths": {
+        "duration_xpath": ".//div[contains(@class, '__duration')]",
+        "distance_xpath": ".//div[contains(@class, '__distance')]"
+    },
+    "delays": {
+        "initial_render_wait_sec": 2,
+        "route_attempts": 10,
+        "per_attempt_wait_sec": 1
+    },
+    "fallback_enabled": true,
+    "version": "1.0"
+}
