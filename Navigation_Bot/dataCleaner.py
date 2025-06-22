@@ -71,7 +71,7 @@ class DataCleaner:
                 f"Дата {i}": date,
                 f"Время {i}": time
             })
-        self.log("Очистка загруженных адресов")
+
         return results
 
     def start_clean(self):
@@ -92,8 +92,8 @@ class DataCleaner:
                 self.log(f"Пропущена запись {item.get('ТС')} из-за пустых данных.")
                 continue
 
-        self.json_manager.save_json(data, self.selected_data_path)
-        self.log(f" Данные очищены и сохранены в {self.selected_data_path}.")
+        self.json_manager.save_in_json(data, self.selected_data_path)
+        print(f"Погрузка/Выгрузка очищены и сохранены в {self.selected_data_path}.")
 
     def clean_vehicle_names(self):
         if not os.path.exists(self.id_car_path):
@@ -107,8 +107,8 @@ class DataCleaner:
                 words = item["Наименование"].split()
                 if len(words) == 3:
                     item["Наименование"] = ' '.join(words[1:])
-        self.json_manager.save_json(data, self.id_car_path)
-        self.log(f" Данные по наименованиям машин очищены и сохранены в {self.id_car_path}.")
+        self.json_manager.save_in_json(data, self.id_car_path)
+        print(f" Данные по наименованиям машин очищены и сохранены в {self.id_car_path}.")
 
 
     def add_id_to_data(self):
@@ -141,5 +141,5 @@ class DataCleaner:
                 item["ТС"] = normalized  # заменим ТС на нормализованный
                 item["id"] = lookup[normalized]
 
-        self.json_manager.save_json(json1, self.selected_data_path)
-        self.log(f" Присвоение id в json завершено.")
+        self.json_manager.save_in_json(json1, self.selected_data_path)
+        print(f" Присвоение id в json завершено.")

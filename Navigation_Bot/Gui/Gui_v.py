@@ -11,13 +11,11 @@ from PyQt6.QtWidgets import (QApplication, QWidget, QVBoxLayout, QHBoxLayout, QT
 from Navigation_Bot.navigationBot import NavigationBot
 from Navigation_Bot.mapsBot import MapsBot
 from Navigation_Bot.googleSheetsManager import GoogleSheetsManager
-from Navigation_Bot.genericSettingsDialog import GenericSettingsDialog
 from Navigation_Bot.jSONManager import JSONManager
-from Gui.settingsDialogManager import SettingsDialogManager
-
-
-INPUT_FILEPATH = "config/selected_data.json"
-ID_FILEPATH = "config/Id_car.json"
+from Navigation_Bot.Gui.jSONController import JSONController
+from Navigation_Bot.Gui.settingsController import SettingsController
+INPUT_FILEPATH = "../config/selected_data.json"
+ID_FILEPATH = "../config/Id_car.json"
 
 
 class NavigationGUI(QWidget):
@@ -33,22 +31,111 @@ class NavigationGUI(QWidget):
         self.gsheet = GoogleSheetsManager(log_func=self.log)
         self.updated_rows = []
         self._single_row_processing = True
-        self.settings_ui = SettingsDialogManager(self)
+        self.settings = SettingsController(parent=self, log_func=self.log)
+        self.json_controller = JSONController(self, table_widget=self.table, log_func=self.log)
 
-        self.init_ui()
-        self.load_json()
+        self.setup_ui()
+        self.json_controller.load_json()
         self.display_data()
 
-    def load_json(self):
-        if os.path.exists(INPUT_FILEPATH):
-            with open(INPUT_FILEPATH, "r", encoding="utf-8") as f:
-                try:
-                    self.json_data = json.load(f)
-                except json.JSONDecodeError:
-                    self.log("Ошибка чтения JSON")
-                    self.json_data = []
+    def render_row(self, row_idx, row):
+        self.table.insertRow(row_idx)
 
-    def init_ui(self):
+        if row.get("id"):
+            btn = QPushButton("▶")
+            btn.clicked.connect(
+                lambda checked=False, idx=row_idx: self.executor.submit(self.process_row_wrapper, idx))
+        else:
+            btn = QPushButton("🛠")
+            btn.setStyleSheet("color: red;")
+            btn.clicked.connect(partial(self.open_id_editor, row_idx))
+        self.table.setCellWidget(row_idx, 0, btn)
+
+        id_value = str(row.get("id", ""))
+        container = QWidget()
+        layout = QHBoxLayout()
+        layout.setContentsMargins(0, 0, 0, 0)
+        label = QLabel(id_value)
+        btn_tool = QPushButton("🛠")
+        btn_tool.setFixedWidth(30)
+        btn_tool.clicked.connect(partial(self.open_id_editor, row_idx))
+        layout.addWidget(label)
+        layout.addWidget(btn_tool)
+        layout.addStretch()
+        container.setLayout(layout)
+        self.table.setCellWidget(row_idx, 1, container)
+
+        ts = row.get("ТС", "")
+        phone = row.get("Телефон", "")
+        self.set_cell(row_idx, 2, f"{ts}\n{phone}" if phone else ts, editable=True)
+
+        self.set_cell(row_idx, 3, row.get("КА", ""), editable=True)
+        self.set_cell(row_idx, 4, self.get_field_with_datetime(row, "Погрузка"))
+        self.set_cell(row_idx, 5, self.get_field_with_datetime(row, "Выгрузка"))
+
+        self.set_cell(row_idx, 6, row.get("гео", ""))
+
+        arrival = row.get("Маршрут", {}).get("время прибытия", "—")
+        arrival_item = QTableWidgetItem(arrival)
+        arrival_item.setFlags(Qt.ItemFlag.ItemIsEnabled)
+        arrival_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.table.setItem(row_idx, 7, arrival_item)
+
+        raw_buffer = row.get("Маршрут", {}).get("time_buffer", "—")
+        if ":" in raw_buffer:
+            try:
+                h, m = map(int, raw_buffer.split(":"))
+                buffer = f"{h}ч {m}м"
+            except Exception:
+                buffer = raw_buffer
+        else:
+            buffer = raw_buffer
+
+        buffer_item = QTableWidgetItem(buffer)
+        buffer_item.setFlags(Qt.ItemFlag.ItemIsEnabled)
+        buffer_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.table.setItem(row_idx, 8, buffer_item)
+
+    def display_data(self):
+        self._log_enabled = False
+        selected_row = self.table.currentRow()
+
+        try:
+            if not self.json_data:
+                self.log("JSON пуст после загрузки — отображение отменено.")
+                return
+
+            self.table.setRowCount(0)
+            data = self.json_controller.get_data()
+            for row_idx, row_data in enumerate(data):
+                self.render_row(row_idx, row_data)
+
+            self.table.setWordWrap(True)
+            self.table.resizeRowsToContents()
+
+            if selected_row >= 0 and selected_row < self.table.rowCount():
+                self.table.selectRow(selected_row)
+
+        except Exception as e:
+            self.log(f"Ошибка в display_data(): {e}")
+
+        self._log_enabled = True
+
+    def setup_ui(self):
+        self.setup_buttons()
+        self.setup_table()
+        self.log_box = QTextEdit()
+        self.log_box.setReadOnly(True)
+        self.log_box.setFixedHeight(150)
+
+        layout = QVBoxLayout()
+        layout.addLayout(self.top_buttons_layout)
+        layout.addWidget(self.table)
+        layout.addWidget(QLabel("Лог:"))
+        layout.addWidget(self.log_box)
+        self.setLayout(layout)
+
+    def setup_buttons(self):
         self.btn_wialon_combo = QPushButton("Wialon ⚙️")
         self.btn_yandex_combo = QPushButton("Я.Карты ⚙️")
         self.btn_load_google = QPushButton("Загрузить Задачи")
@@ -67,37 +154,33 @@ class NavigationGUI(QWidget):
             btn.setFixedHeight(28)
             btn.setFixedWidth(130)
 
-        # self.btn_wialon_combo.clicked.connect(self.open_wialon_settings)
-        # self.btn_yandex_combo.clicked.connect(self.open_yandex_settings)
-        # self.btn_google_settings.clicked.connect(self.open_google_settings)
-        self.btn_wialon_combo.clicked.connect(self.settings_ui.open_wialon_settings)
-        self.btn_yandex_combo.clicked.connect(self.settings_ui.open_yandex_settings)
-        self.btn_google_settings.clicked.connect(self.settings_ui.open_google_settings)
-
+        self.btn_wialon_combo.clicked.connect(self.settings.open_wialon_settings)
+        self.btn_yandex_combo.clicked.connect(self.settings.open_yandex_settings)
         self.btn_load_google.clicked.connect(self.load_from_google)
+        self.btn_google_settings.clicked.connect(self.settings.open_google_settings)
         self.btn_process_all.clicked.connect(self.process_all)
         self.btn_refresh_table.clicked.connect(self.display_data)
         self.btn_clear_json.clicked.connect(self.confirm_clear_json)
 
-        top = QHBoxLayout()
-        top.addWidget(self.btn_wialon_combo)
-        top.addWidget(self.btn_yandex_combo)
-        top.addWidget(self.btn_load_google)
-        top.addWidget(self.btn_google_settings)
-        top.addWidget(self.btn_process_all)
-        top.addWidget(self.btn_refresh_table)
-        top.addWidget(self.btn_clear_json)
+        self.top_buttons_layout = QHBoxLayout()
+        self.top_buttons_layout.addWidget(self.btn_wialon_combo)
+        self.top_buttons_layout.addWidget(self.btn_yandex_combo)
+        self.top_buttons_layout.addWidget(self.btn_load_google)
+        self.top_buttons_layout.addWidget(self.btn_google_settings)
+        self.top_buttons_layout.addWidget(self.btn_process_all)
+        self.top_buttons_layout.addWidget(self.btn_refresh_table)
+        self.top_buttons_layout.addWidget(self.btn_clear_json)
 
+    def setup_table(self):
         self.table = QTableWidget()
         self.table.setColumnCount(9)
-        # self.table.setHorizontalHeaderLabels(["", "id", "ТС", "Погрузка", "Выгрузка", "гео", "Время прибытия"])
         self.table.setHorizontalHeaderLabels([
-            "", "id", "ТС", "КА", "Погрузка", "Выгрузка", "гео", "Время прибытия", "Запас", ])
+            "", "id", "ТС", "КА", "Погрузка", "Выгрузка", "гео", "Время прибытия", "Запас"])
 
         self.table.setWordWrap(True)
         self.table.setColumnWidth(0, 40)
-        self.table.setColumnWidth(2, 85)  # ТС
-        self.table.setColumnWidth(3, 70)  # КА
+        self.table.setColumnWidth(2, 85)
+        self.table.setColumnWidth(3, 70)
         self.table.setColumnWidth(4, 500)
         self.table.setColumnWidth(5, 500)
         self.table.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeMode.Interactive)
@@ -107,110 +190,8 @@ class NavigationGUI(QWidget):
         self.table.setEditTriggers(QAbstractItemView.EditTrigger.DoubleClicked)
         self.table.setColumnHidden(1, True)
         self.table.cellDoubleClicked.connect(self.edit_cell_content)
-        self.table.itemChanged.connect(self.save_to_json_on_edit)
+        self.table.itemChanged.connect(self.json_controller.save_on_edit)
 
-        self.log_box = QTextEdit()
-        self.log_box.setReadOnly(True)
-        self.log_box.setFixedHeight(150)
-
-        layout = QVBoxLayout()
-        layout.addLayout(top)
-        layout.addWidget(self.table)
-        layout.addWidget(QLabel("Лог:"))
-        layout.addWidget(self.log_box)
-        self.setLayout(layout)
-        self.table.setWordWrap(True)
-
-    def display_data(self):
-
-        self._log_enabled = False
-        selected_row = self.table.currentRow()
-
-        try:
-            if not self.json_data:
-                self.log("JSON пуст после загрузки — отображение отменено.")
-                return
-
-            self.table.setRowCount(0)
-
-            for row_idx, row in enumerate(self.json_data):
-                self.table.insertRow(row_idx)
-
-                # ▶ кнопка запуска
-                if row.get("id"):
-                    btn = QPushButton("▶")
-                    btn.clicked.connect(
-                        lambda checked=False, idx=row_idx: self.executor.submit(self.process_row_wrapper, idx))
-                else:
-                    btn = QPushButton("🛠")
-                    btn.setStyleSheet("color: red;")
-                    btn.clicked.connect(partial(self.open_id_editor, row_idx))
-
-                self.table.setCellWidget(row_idx, 0, btn)
-
-                # 🛠 ID + кнопка
-                id_value = str(row.get("id", ""))
-                container = QWidget()
-                layout = QHBoxLayout()
-                layout.setContentsMargins(0, 0, 0, 0)
-                label = QLabel(id_value)
-                btn_tool = QPushButton("🛠")
-                btn_tool.setFixedWidth(30)
-                btn_tool.clicked.connect(partial(self.open_id_editor, row_idx))
-                layout.addWidget(label)
-                layout.addWidget(btn_tool)
-                layout.addStretch()
-                container.setLayout(layout)
-                self.table.setCellWidget(row_idx, 1, container)
-
-                #  ТС + телефон
-                ts = row.get("ТС", "")
-                phone = row.get("Телефон", "")
-                self.set_cell(row_idx, 2, f"{ts}\n{phone}" if phone else ts, editable=True)
-
-                #  КА
-                self.set_cell(row_idx, 3, row.get("КА", ""), editable=True)
-
-                # Погрузка / Выгрузка
-                self.set_cell(row_idx, 4, self.get_field_with_datetime(row, "Погрузка"))
-                self.set_cell(row_idx, 5, self.get_field_with_datetime(row, "Выгрузка"))
-
-                # Гео
-                self.set_cell(row_idx, 6, row.get("гео", ""))
-                # Время прибытия (col 7)
-                arrival = row.get("Маршрут", {}).get("время прибытия", "—")
-                arrival_item = QTableWidgetItem(arrival)
-                arrival_item.setFlags(Qt.ItemFlag.ItemIsEnabled)
-                self.table.setItem(row_idx, 7, arrival_item)
-
-                # Запас времени (col 8)
-                raw_buffer = row.get("Маршрут", {}).get("time_buffer", "—")
-
-                if ":" in raw_buffer:
-                    try:
-                        h, m = map(int, raw_buffer.split(":"))
-                        buffer = f"{h}ч {m}м"
-                    except Exception:
-                        buffer = raw_buffer
-                else:
-                    buffer = raw_buffer
-
-                buffer_item = QTableWidgetItem(buffer)
-                buffer_item.setFlags(Qt.ItemFlag.ItemIsEnabled)
-                self.table.setItem(row_idx, 8, buffer_item)
-                arrival_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-                buffer_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-
-            self.table.setWordWrap(True)
-            self.table.resizeRowsToContents()
-
-            if selected_row >= 0 and selected_row < self.table.rowCount():
-                self.table.selectRow(selected_row)
-
-        except Exception as e:
-            self.log(f"Ошибка в display_data(): {e}")
-
-        self._log_enabled = True
 
     def confirm_clear_json(self):
         reply = QMessageBox.question(
@@ -221,9 +202,10 @@ class NavigationGUI(QWidget):
         )
 
         if reply == QMessageBox.StandardButton.Yes:
+            from Navigation_Bot.jSONManager import JSONManager
             JSONManager().save_in_json([], INPUT_FILEPATH)
             self.log("🗑 JSON очищен.")
-            self.load_json()
+            self.json_controller.load_json()
             self.display_data()
 
     def get_field_with_datetime(self, obj, key):
@@ -244,11 +226,12 @@ class NavigationGUI(QWidget):
         return ""
 
     def open_id_editor(self, row):
-        from Navigation_Bot.TrackingIdEditor import TrackingIdEditor
+        from Navigation_Bot.Gui.TrackingIdEditor import TrackingIdEditor
         car = self.json_data[row]
 
         dialog = TrackingIdEditor(car, log_func=self.log, parent=self)
         if dialog.exec():
+            from Navigation_Bot.jSONManager import JSONManager
             JSONManager().save_in_json(self.json_data, INPUT_FILEPATH)
             self.display_data()
 
@@ -368,7 +351,7 @@ class NavigationGUI(QWidget):
 
     def reload_and_show(self):
         with self.json_lock:
-            self.load_json()
+            self.json_controller.load_json()
             self.json_data.sort(key=lambda x: x.get("index", 99999))
 
         self.display_data()
@@ -442,101 +425,6 @@ class NavigationGUI(QWidget):
                 continue
             self.executor.submit(self.process_row_wrapper, row)
         QTimer.singleShot(5000, self.write_all_to_google)
-
-    # def open_wialon_settings(self):
-    #     fields = {
-    #         "search_input_xpath": ("XPath поиска", str),
-    #         "unit_block_xpath": ("XPath блока ТС", str),
-    #         "address_selector": ("CSS адреса", str),
-    #         "copy_button_selector": ("CSS копирования координат", str),
-    #         "speed_selector": ("CSS скорости", str)
-    #     }
-    #     dlg = GenericSettingsDialog(
-    #         parent=self,
-    #         title="Настройки Wialon",
-    #         section_index=1,
-    #         section_key="wialon_selectors",
-    #         custom_key="NEW_SELECTORS",
-    #         default_key="DEFAULT_SELECTORS",
-    #         fields=fields,
-    #         file_path="config/config.json"
-    #     )
-    #     if dlg.exec():
-    #         self.log("📝 Настройки Wialon сохранены.")
-    #         if hasattr(self, "driver_manager") and hasattr(self.driver_manager, "driver"):
-    #             try:
-    #                 self.navibot = NavigationBot(self.driver_manager.driver, self.log)
-    #                 self.log("🔁 NavigationBot пересоздан")
-    #             except Exception as e:
-    #
-    #                 msg = str(e).splitlines()[0]  # только первая строка исключения
-    #                 self.log(f"❌ Ошибка при создании NavigationBot: {msg}")
-    #         else:
-    #             self.log("ℹ️ NavigationBot будет создан при старте драйвера")
-
-    # def open_yandex_settings(self):
-    #     fields = {
-    #         # "search_input": ("CSS поиска", str),
-    #         # "coords_badge": ("CSS координат", str),
-    #         "route_button": ("CSS кнопка маршрута", str),
-    #         "close_route": ("CSS закрытия маршрута", str),
-    #         "from_input": ("XPath Откуда", str),
-    #         "to_input": ("XPath Куда", str),
-    #         "route_item": ("CSS Результат маршрута", str),
-    #         "route_duration": ("CSS длительности", str),
-    #         "route_distance": ("CSS расстояния", str)
-    #     }
-    #     dlg = GenericSettingsDialog(
-    #         parent=self,
-    #         title="Настройки Я.Карт",
-    #         section_index=2,
-    #         section_key="yandex_selectors",
-    #         custom_key="YANDEX_NEW_SELECTORS",
-    #         default_key="YANDEX_DEFAULT_SELECTORS",
-    #         fields=fields,
-    #         file_path="config/config.json"
-    #     )
-    #     if dlg.exec():
-    #         self.log("📝 Настройки Я.Карт сохранены.")
-    #         if hasattr(self, "driver_manager") and hasattr(self.driver_manager, "driver"):
-    #             try:
-    #                 self.mapsbot = MapsBot(self.driver_manager.driver, self.log)
-    #                 self.log("🔁 MapsBot пересоздан")
-    #             except Exception as e:
-    #
-    #                 msg = str(e).splitlines()[0]
-    #                 self.log(f"❌ Ошибка при создании MapsBot: {msg}")
-    #         else:
-    #             self.log("ℹ️ MapsBot будет создан при старте драйвера")
-
-    # def open_google_settings(self):
-    #     fields = {
-    #         "creds_file": ("Путь к creds.json", str),
-    #         "sheet_id": ("ID таблицы", str),
-    #         "worksheet_index": ("Индекс листа", int),
-    #         "column_index": ("Индекс колонки", int),
-    #         "file_path": ("Путь к JSON-файлу", str)
-    #     }
-    #
-    #     dlg = GenericSettingsDialog(
-    #         parent=self,
-    #         title="Настройки Google",
-    #         section_index=3,  # можно оставить, не используется
-    #         section_key="google_config",
-    #         custom_key="custom",
-    #         default_key="default",
-    #         fields=fields,
-    #         file_path="config/config.json"
-    #     )
-    #
-    #     if dlg.exec():
-    #         self.log("📝 Настройки Google сохранены.")
-    #         try:
-    #             # Проверить работу
-    #             self.gsheet = GoogleSheetsManager(log_func=self.log)
-    #             self.log("🔁 GoogleSheetsManager пересоздан")
-    #         except Exception as e:
-    #             self.log(f"❌ Ошибка при создании GoogleSheetsManager: {e}")
 
     def write_all_to_google(self):
         if hasattr(self, "updated_rows") and self.updated_rows:

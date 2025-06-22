@@ -3,6 +3,11 @@ from PyQt6.QtWidgets import (
     QLineEdit, QPushButton, QScrollArea, QWidget, QTextEdit, QDateEdit
 )
 from PyQt6.QtCore import QDate
+import json
+import os
+
+CONFIG_PATH = "config/config.json"
+SELECTORS_PATH = "config/mapsbot_default_settings.json"
 
 
 class AddressEditDialog(QDialog):
@@ -83,7 +88,7 @@ class AddressEditDialog(QDialog):
         self.entries.append((container, address_input, date_input, time_input))
 
     def remove_entry(self, widget):
-        for i, (container, *_ ) in enumerate(self.entries):
+        for i, (container, *_) in enumerate(self.entries):
             if container == widget:
                 self.scroll_layout.removeWidget(container)
                 container.deleteLater()
@@ -103,3 +108,61 @@ class AddressEditDialog(QDialog):
                     f"Время {idx}": time or "Не указано"
                 })
         return result
+
+
+
+
+class YandexSettingsDialog(QDialog):
+    def __init__(self,log_func=None, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Настройки Яндекс.Карт")
+        self.resize(400, 200)
+        layout = QFormLayout()
+
+        self.class_name = QLineEdit()
+        self.duration_xpath = QLineEdit()
+        self.distance_xpath = QLineEdit()
+
+        layout.addRow("Class Name:", self.class_name)
+        layout.addRow("Duration XPath:", self.duration_xpath)
+        layout.addRow("Distance XPath:", self.distance_xpath)
+
+        save_btn = QPushButton("Сохранить")
+        save_btn.clicked.connect(self.save)
+        layout.addWidget(save_btn)
+
+        self.setLayout(layout)
+        self.load()
+
+    def load(self):
+        if os.path.exists(SELECTORS_PATH):
+            with open(SELECTORS_PATH, "r", encoding="utf-8") as f:
+                data = json.load(f)
+                sel = data.get("selectors", {})
+                xp = data.get("xpaths", {})
+                self.class_name.setText(sel.get("route_container_class", ""))
+                self.duration_xpath.setText(xp.get("duration_xpath", ""))
+                self.distance_xpath.setText(xp.get("distance_xpath", ""))
+
+    def save(self):
+        data = {
+            "selectors": {
+                "route_container_class": self.class_name.text(),
+                "duration_class": "auto-route-snippet-view__duration",
+                "distance_class": "auto-route-snippet-view__distance"
+            },
+            "xpaths": {
+                "duration_xpath": self.duration_xpath.text(),
+                "distance_xpath": self.distance_xpath.text()
+            },
+            "delays": {
+                "initial_render_wait_sec": 2,
+                "route_attempts": 10,
+                "per_attempt_wait_sec": 1
+            },
+            "fallback_enabled": True,
+            "version": "1.0"
+        }
+        with open(SELECTORS_PATH, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=4)
+        self.accept()

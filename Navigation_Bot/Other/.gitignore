@@ -1,5 +1,5 @@
 # .gitignore
-config/
+../config/
 __pycache__/
 *.pyc
 .idea/

@@ -58,8 +58,8 @@ class WebDriverManager:
         """Авторизуется в Wialon, если нет сохранённых cookies"""
         with open(self.config_path, "r", encoding="utf-8") as f:
             data = json.load(f)
-        username = data["username"]
-        password = data["password"]
+        username = data["credentials"]["username"]
+        password = data["credentials"]["password"]
 
         self.driver.get("https://wialon.rtmglonass.ru/?lang=ru")
 
@@ -71,41 +71,35 @@ class WebDriverManager:
         )
         login_button.click()
 
-        self.log("Авторизация в Wialon")
+        # self.log("Авторизация в Wialon")
         self.save_cookies()
-        self.log("🔐 Авторизация в Wialon...")
+        # self.log("🔐 Авторизация в Wialon...")
 
     def open_yandex_maps(self):
-        self.log("🗺️ Открытие Яндекс.Карт...")
+        # self.log("🗺️ Проверка вкладок с Яндекс.Картами...")
 
         try:
-            # Переключение или открытие второй вкладки
-            if len(self.driver.window_handles) > 1:
-                self.driver.switch_to.window(self.driver.window_handles[1])
-                self.log("🔁 Переключение на вкладку с Яндекс.Картами.")
-            else:
-                self.log("➕ Открытие новой вкладки...")
-                self.driver.execute_script("window.open('https://yandex.ru/maps', '_blank');")
-                time.sleep(1)
-                self.driver.switch_to.window(self.driver.window_handles[-1])
+            for handle in self.driver.window_handles:
+                self.driver.switch_to.window(handle)
+                current_url = self.driver.current_url.lower()
+                title = self.driver.title.lower()
 
-            # Ожидание загрузки страницы
+                if ("yandex" in current_url and "maps" in current_url) or \
+                        ("yandex" in title or "яндекс" in title):
+                    self.log("🔁 Найдена вкладка Яндекс.Карт — переключаемся.")
+                    return  # уже открыта и активирована
+
+            # Не нашли — открываем новую
+            # self.log("➕ Открытие новой вкладки с Я.Картами...")
+            self.driver.execute_script("window.open('https://yandex.ru/maps', '_blank');")
+            time.sleep(1)
+            self.driver.switch_to.window(self.driver.window_handles[-1])
+
             WebDriverWait(self.driver, 10).until(
                 EC.presence_of_element_located((By.TAG_NAME, "body"))
             )
-            self.driver.get("https://yandex.ru/maps")
-            time.sleep(3)
+            time.sleep(2)
+            # self.log("🗺️ Новая вкладка Я.Карт открыта.")
 
         except Exception as e:
-            self.log(f"❌ Ошибка открытия Яндекс.Карт: {e}")
-
-    def switch_to_yandex_tab(self, log_func=None):
-        """Переключается на вкладку Яндекс.Карт, если найдена по URL"""
-        for handle in self.driver.window_handles:
-            self.driver.switch_to.window(handle)
-            current_url = self.driver.current_url
-            if "yandex.ru/maps" in current_url:
-                if log_func:
-                    log_func("🔁 Найдена вкладка Яндекс.Карт — переключаемся.")
-                return True
-        return False
+            self.log(f"❌ Ошибка при открытии Я.Карт: {e}")
