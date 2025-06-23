@@ -1,0 +1,54 @@
+# === PyCharm ===
+.idea/
+*.iml
+
+# === Byte-compiled / optimized / DLL files ===
+__pycache__/
+*.py[cod]
+*$py.class
+
+# === Virtual environments ===
+.venv/
+venv/
+ENV/
+env/
+*.env
+
+# === Logs ===
+*.log
+
+# === OS generated ===
+.DS_Store
+Thumbs.db
+
+# === Jupyter and IPython ===
+.ipynb_checkpoints/
+
+# === Token/Credentials files ===
+config/Credentials*.json
+config/*.pkl
+config/*.token
+
+# === JSON Data (optional) ===
+config/selected_data.json
+config/mapsbot_default_settings.json
+
+# === Test artifacts ===
+*.sqlite3
+*.db
+*.bak
+*.tmp
+
+# === PyTest / coverage ===
+.cache/
+.coverage
+.pytest_cache/
+htmlcov/
+
+# === Output folders ===
+dist/
+build/
+*.egg-info/
+
+# === __local settings or trash ===
+trash/
