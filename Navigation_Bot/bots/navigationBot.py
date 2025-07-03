@@ -6,9 +6,7 @@ from selenium.webdriver.common.action_chains import ActionChains
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from Navigation_Bot.core.jSONManager import JSONManager
-
-CONFIG_PATH = "config/config.json"
-
+from Navigation_Bot.core.paths import CONFIG_JSON
 """TODO Устранить
         1.
         2.Жёсткие sleep'ы
@@ -26,14 +24,15 @@ class NavigationBot:
     def __init__(self, driver, log_func=None):
         self.driver = driver
         self.log = log_func or print
-        self.json_manager = JSONManager(CONFIG_PATH)
+        self.json_manager = JSONManager(CONFIG_JSON)
         self.selectors = self.load_selectors()
         self.validate_selectors()
 
     def load_selectors(self):
         try:
-            selectors = JSONManager.get_selectors("wialon_selectors")
+            selectors = JSONManager.get_selectors("wialon_selectors",CONFIG_JSON)
             # self.log("✅ Селекторы Wialon загружены.")
+            print(CONFIG_JSON)
             return selectors
         except Exception as e:
             self.log(f"❌ Ошибка загрузки селекторов: {e}")

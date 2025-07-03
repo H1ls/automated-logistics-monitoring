@@ -2,6 +2,8 @@ import os
 import json
 from typing import Any
 import logging
+from pathlib import Path
+from Navigation_Bot.core.paths import CONFIG_JSON
 
 
 class JSONManager:
@@ -18,24 +20,36 @@ class JSONManager:
             with open(path, "r", encoding="utf-8") as file:
                 content = file.read().strip()
                 if not content:
+                    print('none')
                     return []  # ✅ если файл пуст — вернуть пустой список
                 return json.loads(content)
         except json.JSONDecodeError:
             self.log(f"Ошибка чтения JSON: {path}")
             return []
 
-    def save_in_json(self, data: Any, file_path: str = None) -> None:
-        path = file_path or self.file_path
-        if not path:
-            self.log("Путь к файлу не задан")
-            return
+
+
+    # def save_in_json(self, data, filepath):
+    #     filepath = Path(filepath)  # ← преобразуем всё к Path
+    #     filepath.parent.mkdir(parents=True, exist_ok=True)
+    #     try:
+    #         with filepath.open("w", encoding="utf-8") as f:
+    #             json.dump(data, f, ensure_ascii=False, indent=2)
+    #             f.flush()
+    #             os.fsync(f.fileno())
+    #     except Exception as e:
+    #         self.log(f"❌ Ошибка сохранения JSON: {e}")
+
+    def save_in_json(self, data, filepath=None):
+        filepath = Path(filepath or self.file_path)  # ← если не передан, берём сохранённый
+        filepath.parent.mkdir(parents=True, exist_ok=True)
         try:
-            with open(path, "w", encoding="utf-8") as f:
-                json.dump(data, f, indent=2, ensure_ascii=False)
+            with filepath.open("w", encoding="utf-8") as f:
+                json.dump(data, f, ensure_ascii=False, indent=2)
                 f.flush()
                 os.fsync(f.fileno())
         except Exception as e:
-            self.log(f"Ошибка сохранения JSON: {e}")
+            self.log(f"❌ Ошибка сохранения JSON: {e}")
 
     def update_json(self, new_data: Any, file_path: str = None) -> None:
         existing = self.load_json(file_path)
@@ -49,9 +63,9 @@ class JSONManager:
         self.save_in_json(existing, file_path)
 
     @staticmethod
-    def get_selectors(section: str, config_path="config/config.json") -> dict:
+    def get_selectors(section: str, CONFIG_JSON) -> dict:
         try:
-            with open(config_path, "r", encoding="utf-8") as f:
+            with open(CONFIG_JSON, "r", encoding="utf-8") as f:
                 config = json.load(f)
 
             section_data = config.get(section, {})

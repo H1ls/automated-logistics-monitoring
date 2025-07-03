@@ -1,7 +1,12 @@
-from Navigation_Bot.genericSettingsDialog import GenericSettingsDialog
-from Navigation_Bot.navigationBot import NavigationBot
-from Navigation_Bot.mapsBot import MapsBot
-from Navigation_Bot.googleSheetsManager import GoogleSheetsManager
+from Navigation_Bot.gui.genericSettingsDialog import GenericSettingsDialog
+from Navigation_Bot.bots.navigationBot import NavigationBot
+from Navigation_Bot.bots.mapsBot import MapsBot
+from Navigation_Bot.bots.googleSheetsManager import GoogleSheetsManager
+
+"""TODO 1.overloading? Вынести структуру fields и ключей в constants FIELDS_WIALON, FIELDS_YANDEX
+        2.Делегировать on_save_callback() наружу,Зависимость от gui.driver_manager, if hasattr(self.gui, "driver_manager") and ...
+        3.Логика MapsBot/NavigationBot пересоздания -> наружу
+"""
 
 
 class SettingsDialogManager:
@@ -25,19 +30,9 @@ class SettingsDialogManager:
             custom_key="NEW_SELECTORS",
             default_key="DEFAULT_SELECTORS",
             fields=fields,
-            file_path="config/config.json"
+            # file_path="config/config.json"
         )
-        if dlg.exec():
-            self.log("📝 Настройки Wialon сохранены.")
-            if hasattr(self.gui, "driver_manager") and hasattr(self.gui.driver_manager, "driver"):
-                try:
-                    self.gui.navibot = NavigationBot(self.gui.driver_manager.driver, self.log)
-                    self.log("🔁 NavigationBot пересоздан")
-                except Exception as e:
-                    msg = str(e).splitlines()[0]
-                    self.log(f"❌ Ошибка при создании NavigationBot: {msg}")
-            else:
-                self.log("ℹ️ NavigationBot будет создан при старте драйвера")
+        self._handle_settings_result(dlg, "navibot", NavigationBot, "NavigationBot пересоздан")
 
     def open_yandex_settings(self):
         fields = {
@@ -57,19 +52,9 @@ class SettingsDialogManager:
             custom_key="YANDEX_NEW_SELECTORS",
             default_key="YANDEX_DEFAULT_SELECTORS",
             fields=fields,
-            file_path="config/config.json"
+            # file_path="config/config.json"
         )
-        if dlg.exec():
-            self.log("📝 Настройки Я.Карт сохранены.")
-            if hasattr(self.gui, "driver_manager") and hasattr(self.gui.driver_manager, "driver"):
-                try:
-                    self.gui.mapsbot = MapsBot(self.gui.driver_manager.driver, self.log)
-                    self.log("🔁 MapsBot пересоздан")
-                except Exception as e:
-                    msg = str(e).splitlines()[0]
-                    self.log(f"❌ Ошибка при создании MapsBot: {msg}")
-            else:
-                self.log("ℹ️ MapsBot будет создан при старте драйвера")
+        self._handle_settings_result(dlg, "mapsbot", MapsBot, "MapsBot пересоздан")
 
     def open_google_settings(self):
         fields = {
@@ -88,7 +73,7 @@ class SettingsDialogManager:
             custom_key="custom",
             default_key="default",
             fields=fields,
-            file_path="config/config.json"
+            # file_path="config/config.json"
         )
 
         if dlg.exec():
@@ -98,3 +83,17 @@ class SettingsDialogManager:
                 self.log("🔁 GoogleSheetsManager пересоздан")
             except Exception as e:
                 self.log(f"❌ Ошибка при создании GoogleSheetsManager: {e}")
+
+    def _handle_settings_result(self, dlg, bot_attr: str, bot_cls, success_msg: str):
+        if not dlg.exec():
+            return
+
+        self.log("📝 Настройки сохранены.")
+        if hasattr(self.gui, "driver_manager") and hasattr(self.gui.driver_manager, "driver"):
+            try:
+                setattr(self.gui, bot_attr, bot_cls(self.gui.driver_manager.driver, self.log))
+                self.log(f"🔁 {success_msg}")
+            except Exception as e:
+                self.log(f"❌ Ошибка при создании {bot_cls.__name__}: {e}")
+        else:
+            self.log(f"ℹ️ {bot_cls.__name__} будет создан при старте драйвера")

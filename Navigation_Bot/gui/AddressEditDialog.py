@@ -6,8 +6,6 @@ from PyQt6.QtCore import QDate
 import json
 import os
 
-CONFIG_PATH = "config/config.json"
-SELECTORS_PATH = "config/mapsbot_default_settings.json"
 
 
 class AddressEditDialog(QDialog):

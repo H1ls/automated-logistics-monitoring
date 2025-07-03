@@ -4,16 +4,17 @@ import json
 from threading import Lock
 from PyQt6.QtCore import QTimer
 from concurrent.futures import ThreadPoolExecutor
-# from PyQt6.QtWidgets import QMessageBox
-from PyQt6.QtWidgets import (QApplication, QWidget, QVBoxLayout, QHBoxLayout, QTableWidget, QPushButton, QTextEdit, QLabel, QHeaderView, QAbstractItemView, QMessageBox)
-from Navigation_Bot.googleSheetsManager import GoogleSheetsManager
+from PyQt6.QtWidgets import (QApplication, QWidget, QVBoxLayout, QHBoxLayout, QTableWidget, QPushButton, QTextEdit,
+                             QLabel, QHeaderView, QAbstractItemView, QMessageBox)
+from Navigation_Bot.bots.googleSheetsManager import GoogleSheetsManager
 from Navigation_Bot.core.jSONManager import JSONManager
-from gui.settingsDialogManager import SettingsDialogManager
+from Navigation_Bot.gui.settingsDialogManager import SettingsDialogManager
 from Navigation_Bot.gui.tableManager import TableManager
 from Navigation_Bot.navigationProcessor import NavigationProcessor
+from Navigation_Bot.core.paths import INPUT_FILEPATH, ID_FILEPATH
 
-INPUT_FILEPATH = "config/selected_data.json"
-ID_FILEPATH = os.path.join(os.path.dirname(__file__), "..", "config", "Id_car.json")
+# INPUT_FILEPATH = "../config/selected_data.json"
+# ID_FILEPATH = "../config/Id_car.json"
 
 """TODO:1.Дублируется self.json_data -> передаётся в:TableManager NavigationProcessor
          Но в load_from_google() -> self.json_data = self.processor.gsheet.load_from_google()
@@ -22,6 +23,7 @@ ID_FILEPATH = os.path.join(os.path.dirname(__file__), "..", "config", "Id_car.js
              и передавать его как объект.
             
         2.Перекинуть _submit_processor_row в NavigationProcessor"""
+
 
 class NavigationGUI(QWidget):
     def __init__(self):
@@ -48,12 +50,13 @@ class NavigationGUI(QWidget):
             on_row_click=self._submit_processor_row,
             on_edit_id_click=self.open_id_editor
         )
-
+        self.gsheet = GoogleSheetsManager(log_func=self.log)
         self.processor = NavigationProcessor(
             json_data=self.json_data,
             logger=self.log,
-            gsheet=GoogleSheetsManager(log_func=self.log),
-            filepath=INPUT_FILEPATH,
+            # gsheet=GoogleSheetsManager(log_func=self.log),
+            gsheet=self.gsheet,
+            filepath=str(INPUT_FILEPATH),
             display_callback=self.table_manager.display,
             single_row=self._single_row_processing,
             updated_rows=self.updated_rows
@@ -147,10 +150,11 @@ class NavigationGUI(QWidget):
             self.log_box.append(message)
 
     def load_json(self):
-        if os.path.exists(INPUT_FILEPATH):
-            with open(INPUT_FILEPATH, "r", encoding="utf-8") as f:
+        if os.path.exists(str(INPUT_FILEPATH)):
+            with open(str(INPUT_FILEPATH), "r", encoding="utf-8") as f:
                 try:
                     self.json_data = json.load(f)
+                    print("✅ JSON загружен:", self.json_data)
                 except json.JSONDecodeError:
                     self.log("Ошибка чтения JSON")
                     self.json_data = []
@@ -164,7 +168,7 @@ class NavigationGUI(QWidget):
         )
 
         if reply == QMessageBox.StandardButton.Yes:
-            JSONManager().save_in_json([], INPUT_FILEPATH)
+            JSONManager().save_in_json([], str(INPUT_FILEPATH))
             self.log("🗑 JSON очищен.")
             self.load_json()
             self.table_manager.display()
@@ -175,7 +179,7 @@ class NavigationGUI(QWidget):
 
         dialog = TrackingIdEditor(car, log_func=self.log, parent=self)
         if dialog.exec():
-            JSONManager().save_in_json(self.json_data, INPUT_FILEPATH)
+            JSONManager().save_in_json(self.json_data, str(INPUT_FILEPATH))
             self.table_manager.display()
 
     def load_from_google(self):
@@ -184,16 +188,17 @@ class NavigationGUI(QWidget):
         def background_task():
             try:
                 # 🔁 Импорт внутри потока
-                from Navigation_Bot.googleSheetsManager import GoogleSheetsManager
-                from Navigation_Bot.dataCleaner import DataCleaner
+                from Navigation_Bot.bots.googleSheetsManager import GoogleSheetsManager
+                from Navigation_Bot.bots.dataCleaner import DataCleaner
                 from Navigation_Bot.core.jSONManager import JSONManager
 
+                # gsheet = GoogleSheetsManager(log_func=self.log)
                 data = self.gsheet.load_data()
 
                 with self.json_lock:
-                    self.gsheet.refresh_name(data, INPUT_FILEPATH)
+                    self.gsheet.refresh_name(data, str(INPUT_FILEPATH))
 
-                    cleaner = DataCleaner(JSONManager(), INPUT_FILEPATH, ID_FILEPATH, log_func=self.log)
+                    cleaner = DataCleaner(JSONManager(), str(INPUT_FILEPATH), str(ID_FILEPATH), log_func=self.log)
                     cleaner.clean_vehicle_names()
                     cleaner.add_id_to_data()
                     cleaner.start_clean()

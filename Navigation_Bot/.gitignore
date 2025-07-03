@@ -1,54 +1,38 @@
-# === PyCharm ===
-.idea/
-*.iml
-
-# === Byte-compiled / optimized / DLL files ===
+# Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
 *$py.class
 
-# === Virtual environments ===
-.venv/
-venv/
-ENV/
-env/
-*.env
+# Build
+.build/
+dist/
+*.egg-info/
 
-# === Logs ===
+# Test / coverage
+.pytest_cache/
+.coverage
+*.cover
+.hypothesis/
+
+# Logs
 *.log
+logs/
 
-# === OS generated ===
+# IDE / OS
+.vscode/
+.idea/
 .DS_Store
 Thumbs.db
 
-# === Jupyter and IPython ===
-.ipynb_checkpoints/
+# Python tooling
+.mypy_cache/
+.pytype/
+.pyre/
 
-# === Token/Credentials files ===
-config/Credentials*.json
-config/*.pkl
-config/*.token
-
-# === JSON Data (optional) ===
-config/selected_data.json
-config/mapsbot_default_settings.json
-
-# === Test artifacts ===
-*.sqlite3
-*.db
-*.bak
-*.tmp
-
-# === PyTest / coverage ===
-.cache/
-.coverage
-.pytest_cache/
-htmlcov/
-
-# === Output folders ===
-dist/
-build/
-*.egg-info/
-
-# === __local settings or trash ===
-trash/
+# Project-specific (Navigation_Bot)
+Navigation_Bot/config/cookies.pkl
+Navigation_Bot/config/Credentials_wialon.json
+Navigation_Bot/config/*.json
+!Navigation_Bot/config/config.json
+!Navigation_Bot/config/Id_car.json
+!Navigation_Bot/config/selected_data.json

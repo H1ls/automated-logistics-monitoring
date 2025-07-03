@@ -5,19 +5,16 @@ import os
 from datetime import datetime
 from oauth2client.service_account import ServiceAccountCredentials
 
-CONFIG_PATH = "config/config.json"
-DATA_PATH = "config/selected_data.json"
+from Navigation_Bot.core.paths import INPUT_FILEPATH,CONFIG_JSON
 
 
 class GoogleSheetsManager:
-    def __init__(self, log_func=None, config_path=CONFIG_PATH, data_path=DATA_PATH):
+    def __init__(self, log_func=None):
         self.log = log_func
-        self.config_manager = JSONManager(file_path=config_path)
-        self.data_manager = JSONManager(file_path=data_path)
+        self.config_manager = JSONManager(CONFIG_JSON)
+        self.data_manager = JSONManager(INPUT_FILEPATH)
 
         self.sheet = None
-        # self.file_path = data_path  #
-        self.file_path = "config/selected_data.json"
         self.load_settings()
 
     def load_settings(self):

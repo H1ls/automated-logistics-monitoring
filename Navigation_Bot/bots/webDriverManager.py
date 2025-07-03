@@ -18,8 +18,8 @@ from selenium.common.exceptions import TimeoutException
 class WebDriverManager:
     def __init__(self, log_func=None):
         self.log = log_func or print
-        self.config_path = "config/config.json"
-        self.cookies_path = "config/cookies.pkl"
+        self.config_path = "../config/config.json"
+        self.cookies_path = "../config/cookies.pkl"
         self.driver = None
 
     def web_driver_wait(self, xpath, timeout=10):
