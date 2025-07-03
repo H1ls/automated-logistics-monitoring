@@ -46,8 +46,8 @@ def display_data(self):
             self.set_cell(row_idx, 3, row.get("КА", ""), editable=True)
 
             # Погрузка / Выгрузка
-            self.set_cell(row_idx, 4, self.get_field_with_datetime(row, "Погрузка"))
-            self.set_cell(row_idx, 5, self.get_field_with_datetime(row, "Выгрузка"))
+            self.set_cell(row_idx, 4, self._get_field_with_datetime(row, "Погрузка"))
+            self.set_cell(row_idx, 5, self._get_field_with_datetime(row, "Выгрузка"))
 
             # Гео
             self.set_cell(row_idx, 6, row.get("гео", ""))

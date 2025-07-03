@@ -8,7 +8,12 @@ from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import TimeoutException
 
 """6. Настройка WebDriver"""
+"""TO DO 1. чтение json -> JSONManager
+        2. Проверка авторизация - True/Fasle
+        3. Сначала куки потом авторизация self.driver.get(...)self.load_cookies()self.driver.refresh()
+        
 
+"""
 
 class WebDriverManager:
     def __init__(self, log_func=None):

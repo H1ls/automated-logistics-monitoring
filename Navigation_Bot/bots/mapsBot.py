@@ -1,14 +1,15 @@
 import time
-import pyperclip
-import json
 from datetime import datetime, timedelta
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.common.by import By
-from Navigation_Bot.jSONManager import JSONManager
+from Navigation_Bot.core.jSONManager import JSONManager
 
-
+"""TODO 1.Метод process_navigation_from_json() - Длинный разбить
+        2.Обновить выбор адреса (под будущую ML-фильтрацию)
+        3.
+        """
 class MapsBot:
     def __init__(self, driver, sheets_manager=None, log_func=None):
         self.driver = driver

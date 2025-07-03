@@ -1,10 +1,8 @@
-from Navigation_Bot.jSONManager import JSONManager
+from Navigation_Bot.core.jSONManager import JSONManager
 import re
 import gspread
-import logging
 import os
 from datetime import datetime
-from google.oauth2.service_account import Credentials
 from oauth2client.service_account import ServiceAccountCredentials
 
 CONFIG_PATH = "config/config.json"
@@ -24,15 +22,6 @@ class GoogleSheetsManager:
 
     def load_settings(self):
         data = self.config_manager.load_json()
-
-        # if isinstance(data, list):
-        #     print("data - список")
-        #     for item in data:
-        #         if isinstance(item, dict) and "google_config" in item:
-        #             data = item
-        #             break
-        #     else:
-        #         data = {}
 
         config_block = data.get("google_config", {})
         defaults = config_block.get("default", {})

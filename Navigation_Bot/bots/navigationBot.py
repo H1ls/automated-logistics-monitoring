@@ -5,9 +5,15 @@ from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.common.action_chains import ActionChains
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
-from Navigation_Bot.jSONManager import JSONManager
+from Navigation_Bot.core.jSONManager import JSONManager
+
 CONFIG_PATH = "config/config.json"
 
+"""TODO Устранить
+        1.
+        2.Жёсткие sleep'ы
+        3.Зависимость от self.driver
+"""
 class NavigationBot:
     REQUIRED_KEYS = [
         "search_input_xpath",
@@ -33,12 +39,10 @@ class NavigationBot:
             self.log(f"❌ Ошибка загрузки селекторов: {e}")
             raise
 
-
     def validate_selectors(self):
         for key in self.REQUIRED_KEYS:
             if key not in self.selectors or not self.selectors[key]:
                 raise ValueError(f"⛔ Отсутствует селектор '{key}' в конфиге")
-
 
     def web_driver_wait(self, xpath, timeout=15):
         return WebDriverWait(self.driver, timeout).until(

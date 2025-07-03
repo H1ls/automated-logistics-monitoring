@@ -1,13 +1,13 @@
 import json
-import logging
 import os
 import re
 
-from Navigation_Bot.jSONManager import JSONManager
-
 """2. Очистка данных"""
 
-
+"""TO DO1._parse_info() - разбить 
+        2.изменить запись на JSONManager  
+        3.Объединение с ML
+"""
 class DataCleaner:
     def __init__(self,jsons,input_filepath, id_filepath,log_func=None):
         self.json_manager = jsons
