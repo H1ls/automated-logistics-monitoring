@@ -4,8 +4,7 @@ import gspread
 import os
 from datetime import datetime
 from oauth2client.service_account import ServiceAccountCredentials
-
-from Navigation_Bot.core.paths import INPUT_FILEPATH,CONFIG_JSON
+from Navigation_Bot.core.paths import INPUT_FILEPATH, CONFIG_JSON
 
 
 class GoogleSheetsManager:
@@ -98,7 +97,7 @@ class GoogleSheetsManager:
         self.data_manager.save_in_json(result_data, file_path)
         self.log(
             f"🔄 Обновление: добавлено {len(new_entries)}, удалено {len(existing_data) - len(filtered_data)} строк.")
-        return new_entries
+        # return new_entries
 
     def append_to_cell(self, data, column=12):
         if isinstance(data, list):

@@ -36,3 +36,5 @@ Navigation_Bot/config/*.json
 !Navigation_Bot/config/config.json
 !Navigation_Bot/config/Id_car.json
 !Navigation_Bot/config/selected_data.json
+Other/
+Mll/

@@ -22,14 +22,15 @@ from Navigation_Bot.core.paths import INPUT_FILEPATH, ID_FILEPATH
              Сделать self.json_data централизованным классом-хранилищем (DataContext или JsonDataStore) 
              и передавать его как объект.
             
-        2.Перекинуть _submit_processor_row в NavigationProcessor"""
+        2.Перекинуть _submit_processor_row в NavigationProcessor
+        3. убрать def load_json"""
 
 
 class NavigationGUI(QWidget):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Navigation Manager")
-        self.resize(1400, 800)
+        self.resize(1030, 1033)
 
         self.executor = ThreadPoolExecutor(max_workers=1)
         self._log_enabled = True
@@ -42,6 +43,7 @@ class NavigationGUI(QWidget):
         self.init_ui()
 
         self.settings_ui = SettingsDialogManager(self)
+        # print(f"[DEBUG] Gui self.json_data id: {id(self.json_data)}")
 
         self.table_manager = TableManager(
             table_widget=self.table,
@@ -51,13 +53,14 @@ class NavigationGUI(QWidget):
             on_edit_id_click=self.open_id_editor
         )
         self.gsheet = GoogleSheetsManager(log_func=self.log)
+
         self.processor = NavigationProcessor(
             json_data=self.json_data,
             logger=self.log,
             # gsheet=GoogleSheetsManager(log_func=self.log),
             gsheet=self.gsheet,
             filepath=str(INPUT_FILEPATH),
-            display_callback=self.table_manager.display,
+            display_callback=self.reload_and_show,
             single_row=self._single_row_processing,
             updated_rows=self.updated_rows
         )
@@ -103,10 +106,13 @@ class NavigationGUI(QWidget):
         self.table.setWordWrap(True)
         # self.table.setWordWrap(True)
         self.table.setColumnWidth(0, 40)
-        self.table.setColumnWidth(2, 85)  # ТС
-        self.table.setColumnWidth(3, 70)  # КА
-        self.table.setColumnWidth(4, 500)
-        self.table.setColumnWidth(5, 500)
+        self.table.setColumnWidth(2, 80)  # ТС
+        self.table.setColumnWidth(3, 30)  # КА
+        self.table.setColumnWidth(4, 270)
+        self.table.setColumnWidth(5, 275)
+        self.table.setColumnWidth(6, 130)
+        self.table.setColumnWidth(7, 65)
+        self.table.setColumnWidth(8, 60)
         self.table.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeMode.Interactive)
         self.table.horizontalHeader().setSectionResizeMode(4, QHeaderView.ResizeMode.Interactive)
         self.table.horizontalHeader().setSectionResizeMode(5, QHeaderView.ResizeMode.Interactive)
@@ -149,15 +155,6 @@ class NavigationGUI(QWidget):
         if self._log_enabled:
             self.log_box.append(message)
 
-    def load_json(self):
-        if os.path.exists(str(INPUT_FILEPATH)):
-            with open(str(INPUT_FILEPATH), "r", encoding="utf-8") as f:
-                try:
-                    self.json_data = json.load(f)
-                    print("✅ JSON загружен:", self.json_data)
-                except json.JSONDecodeError:
-                    self.log("Ошибка чтения JSON")
-                    self.json_data = []
 
     def confirm_clear_json(self):
         reply = QMessageBox.question(
@@ -168,9 +165,9 @@ class NavigationGUI(QWidget):
         )
 
         if reply == QMessageBox.StandardButton.Yes:
-            JSONManager().save_in_json([], str(INPUT_FILEPATH))
-            self.log("🗑 JSON очищен.")
-            self.load_json()
+            self.json_data = []
+            JSONManager().save_in_json(self.json_data, str(INPUT_FILEPATH))
+            self.table_manager.json_data = self.json_data
             self.table_manager.display()
 
     def open_id_editor(self, row):
@@ -183,7 +180,7 @@ class NavigationGUI(QWidget):
             self.table_manager.display()
 
     def load_from_google(self):
-        self.log("📥 Загрузка данных из Google Sheets (в фоне)...")
+        self.log("📥 Загрузка данных из Google Sheets...")
 
         def background_task():
             try:
@@ -192,19 +189,21 @@ class NavigationGUI(QWidget):
                 from Navigation_Bot.bots.dataCleaner import DataCleaner
                 from Navigation_Bot.core.jSONManager import JSONManager
 
-                # gsheet = GoogleSheetsManager(log_func=self.log)
                 data = self.gsheet.load_data()
 
                 with self.json_lock:
                     self.gsheet.refresh_name(data, str(INPUT_FILEPATH))
 
-                    cleaner = DataCleaner(JSONManager(), str(INPUT_FILEPATH), str(ID_FILEPATH), log_func=self.log)
-                    cleaner.clean_vehicle_names()
-                    cleaner.add_id_to_data()
-                    cleaner.start_clean()
+                    try:
+                        cleaner = DataCleaner(log_func=self.log)
+                        cleaner.start_clean()
+                    except Exception as e:
+                        import traceback
+                        traceback.print_exc()
+                        print(f"[ERROR] Ошибка в cleaner: {e}")
 
                 QTimer.singleShot(0, self.reload_and_show)
-                print("Завершена загрузка")
+                # print("Завершена загрузка")
             except Exception as e:
                 QTimer.singleShot(0, lambda: self.log(f"❌ Ошибка при загрузке: {e}"))
 
@@ -212,9 +211,12 @@ class NavigationGUI(QWidget):
 
     def reload_and_show(self):
         with self.json_lock:
-            self.load_json()
+            # self.load_json()
+            # self.json_data.sort(key=lambda x: x.get("index", 99999))
+            # self.table_manager.json_data = self.json_data
+            self.json_data = JSONManager().load_json(str(INPUT_FILEPATH)) or []
             self.json_data.sort(key=lambda x: x.get("index", 99999))
-
+            self.table_manager.json_data = self.json_data
         self.table_manager.display()
         self.log("✅ Обновление завершено.")
 

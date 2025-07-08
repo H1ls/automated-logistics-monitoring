@@ -1,12 +1,14 @@
 from functools import partial
 from PyQt6.QtWidgets import QTableWidgetItem, QPushButton, QWidget, QHBoxLayout, QLabel
 from PyQt6.QtCore import Qt, QTimer
+from PyQt6.QtGui import QColor
+
 from Navigation_Bot.core.jSONManager import JSONManager
 from Navigation_Bot.gui.AddressEditDialog import AddressEditDialog
+from collections import ChainMap
+from datetime import datetime, timedelta
 
-from Navigation_Bot.core.paths import INPUT_FILEPATH,ID_FILEPATH
-# INPUT_FILEPATH = "config/selected_data.json"
-
+from Navigation_Bot.core.paths import INPUT_FILEPATH, ID_FILEPATH
 
 """TODO:1.json_data — передаётся и сохраняется напрямую self.json_data[row][...]
          Предложение: DataModel 
@@ -18,8 +20,11 @@ from Navigation_Bot.core.paths import INPUT_FILEPATH,ID_FILEPATH
                    "id": self._save_id,
                  }
 """
+
+
 class TableManager:
     def __init__(self, table_widget, json_data, log_func, on_row_click, on_edit_id_click):
+
         self.table = table_widget
         self.json_data = json_data
         self.log = log_func
@@ -27,73 +32,100 @@ class TableManager:
         self.on_edit_id_click = on_edit_id_click
 
     def display(self):
-        scroll_value = self.table.verticalScrollBar().value()
-        selected_row = self.table.currentRow()
+        # 🔹 Безопасное сохранение scroll и selected_row
+        try:
+            scroll_value = self.table.verticalScrollBar().value()
+        except Exception:
+            scroll_value = 0
 
-        self.table.setRowCount(0)
+        try:
+            selected_row = self.table.currentRow()
+        except Exception:
+            selected_row = 0
 
-        for row_idx, row in enumerate(self.json_data):
-            self.table.insertRow(row_idx)
+        try:
+            self.table.setRowCount(0)
 
-            # Кнопка ▶ или 🛠
-            btn = QPushButton("▶" if row.get("id") else "🛠")
-            if not row.get("id"):
-                btn.setStyleSheet("color: red;")
-                btn.clicked.connect(lambda _, idx=row_idx: self.on_edit_id_click(idx))
-            else:
-                btn.clicked.connect(lambda _, idx=row_idx: self.on_row_click(idx))
-            self.table.setCellWidget(row_idx, 0, btn)
+            for row_idx, row in enumerate(self.json_data):
+                self.table.insertRow(row_idx)
 
-            # ID с кнопкой 🛠
-            id_value = str(row.get("id", ""))
-            container = QWidget()
-            layout = QHBoxLayout()
-            layout.setContentsMargins(0, 0, 0, 0)
-            label = QLabel(id_value)
-            btn_tool = QPushButton("🛠")
-            btn_tool.setFixedWidth(30)
-            # btn_tool.clicked.connect(lambda _, idx=row_idx: self.on_edit_id_click(idx))
+                # Кнопка ▶ или 🛠
+                btn = QPushButton("▶" if row.get("id") else "🛠")
+                if not row.get("id"):
+                    btn.setStyleSheet("color: red;")
+                    btn.clicked.connect(lambda _, idx=row_idx: self.on_edit_id_click(idx))
+                else:
+                    btn.clicked.connect(lambda _, idx=row_idx: self.on_row_click(idx))
+                self.table.setCellWidget(row_idx, 0, btn)
 
-            btn_tool.clicked.connect(partial(self.on_edit_id_click, row_idx))
-            layout.addWidget(label)
-            layout.addWidget(btn_tool)
-            layout.addStretch()
-            container.setLayout(layout)
-            self.table.setCellWidget(row_idx, 1, container)
+                # ID с кнопкой 🛠
+                id_value = str(row.get("id", ""))
+                container = QWidget()
+                layout = QHBoxLayout()
+                layout.setContentsMargins(0, 0, 0, 0)
+                label = QLabel(id_value)
+                btn_tool = QPushButton("🛠")
+                btn_tool.setFixedWidth(30)
+                btn_tool.clicked.connect(partial(self.on_edit_id_click, row_idx))
+                layout.addWidget(label)
+                layout.addWidget(btn_tool)
+                layout.addStretch()
+                container.setLayout(layout)
+                self.table.setCellWidget(row_idx, 1, container)
 
-            # ТС + телефон
-            ts = row.get("ТС", "")
-            phone = row.get("Телефон", "")
-            self._set_cell(row_idx, 2, f"{ts}\n{phone}" if phone else ts, editable=True)
+                ts = row.get("ТС", "")
+                phone = row.get("Телефон", "")
+                self._set_cell(row_idx, 2, f"{ts}\n{phone}" if phone else ts, editable=True)
 
-            # КА
-            self._set_cell(row_idx, 3, row.get("КА", ""), editable=True)
+                self._set_cell(row_idx, 3, row.get("КА", ""), editable=True)
+                self._set_cell(row_idx, 4, self._get_field_with_datetime(row, "Погрузка"))
+                self._set_cell(row_idx, 5, self._get_field_with_datetime(row, "Выгрузка"))
+                self._set_cell(row_idx, 6, row.get("гео", ""))
 
-            # Погрузка / Выгрузка
-            self._set_cell(row_idx, 4, self._get_field_with_datetime(row, "Погрузка"))
-            self._set_cell(row_idx, 5, self._get_field_with_datetime(row, "Выгрузка"))
+                arrival = row.get("Маршрут", {}).get("время прибытия", "—")
+                buffer = row.get("Маршрут", {}).get("time_buffer", "—")
+                if ":" in buffer:
+                    try:
+                        h, m = map(int, buffer.split(":"))
+                        buffer = f"{h}ч {m}м"
+                    except Exception:
+                        pass
+                self._set_readonly_cell(row_idx, 7, arrival)
+                self._set_readonly_cell(row_idx, 8, buffer)
 
-            # Гео
-            self._set_cell(row_idx, 6, row.get("гео", ""))
+                # Подсветка при поздней погрузке
+                pg = row.get("Погрузка", [])
+                if pg and isinstance(pg, list) and isinstance(pg[0], dict):
+                    date_str = pg[0].get("Дата 1", "")
+                    time_str = pg[0].get("Время 1", "")
+                    try:
+                        if time_str.count(":") == 1:
+                            time_str += ":00"
+                        dt = datetime.strptime(f"{date_str} {time_str}", "%d.%m.%Y %H:%M:%S")
+                        if dt > datetime.now() + timedelta(hours=3):
+                            for col in range(self.table.columnCount()):
+                                item = self.table.item(row_idx, col)
+                                if item:
+                                    item.setBackground(QColor(210, 235, 255))
+                    except Exception as e:
+                        print(f"[DEBUG] ❌ Ошибка при анализе времени Погрузки: {e}")
 
-            # Время прибытия
-            arrival = row.get("Маршрут", {}).get("время прибытия", "—")
-            self._set_readonly_cell(row_idx, 7, arrival)
+            self.table.resizeRowsToContents()
 
-            # Запас времени
-            buffer = row.get("Маршрут", {}).get("time_buffer", "—")
-            if ":" in buffer:
-                try:
-                    h, m = map(int, buffer.split(":"))
-                    buffer = f"{h}ч {m}м"
-                except Exception:
-                    pass
-            self._set_readonly_cell(row_idx, 8, buffer)
+        except Exception as e:
+            print(f"[DEBUG] ❌ Ошибка в display(): {e}")
+            return
 
-        self.table.resizeRowsToContents()
-        self.table.verticalScrollBar().setValue(scroll_value)
-        if 0 <= selected_row < self.table.rowCount():
-            self.table.selectRow(selected_row)
+        # 🔙 Восстановление scroll и выделения
+        try:
+            def restore_scroll():
+                self.table.verticalScrollBar().setValue(scroll_value)
+                if 0 <= selected_row < self.table.rowCount():
+                    self.table.selectRow(selected_row)
+
+            QTimer.singleShot(0, restore_scroll)
+        except Exception as e:
+            print(f"[DEBUG] ❌ Ошибка при восстановлении позиции: {e}")
 
     def _set_cell(self, row, col, value, editable=False):
         item = QTableWidgetItem(value)
@@ -101,7 +133,6 @@ class TableManager:
         if not editable:
             item.setFlags(item.flags() ^ Qt.ItemFlag.ItemIsEditable)
         self.table.setItem(row, col, item)
-
 
     def _set_readonly_cell(self, row, col, value):
         item = QTableWidgetItem(str(value))
@@ -141,13 +172,19 @@ class TableManager:
         data_list = self.json_data[row].get(prefix, [])
         dialog = AddressEditDialog(self.table, data_list, prefix)
         if dialog.exec():
-            merged = dialog.get_result()
-            if not merged:
+            data_block, meta = dialog.get_result()
+            if not data_block:
                 self.log(f"{prefix}: Пустое редактирование в строке {row + 1} — изменения отменены.")
                 return
-            self.json_data[row][prefix] = merged
+
+            self.json_data[row][prefix] = data_block  # "Погрузка" или "Выгрузка"
+            if meta.get("Время отправки"):
+                self.json_data[row]["Время отправки"] = meta["Время отправки"]
+            if meta.get("Транзит"):
+                self.json_data[row]["Транзит"] = meta["Транзит"]
+
             JSONManager().save_in_json(self.json_data, str(INPUT_FILEPATH))
-            self.log(f"{prefix} обновлены для строки {row + 1}")
+            # self.log(f"{prefix} обновлены для строки {row + 1}")
             self.display()
 
     def save_to_json_on_edit(self, item):
@@ -162,6 +199,9 @@ class TableManager:
         if header.lower() == "гео":
             header = "гео"
         if header in ["Погрузка", "Выгрузка", "Время погрузки", "Время выгрузки"]:
+            return
+        if header in ["Время прибытия", "Запас", "Запас времени"]:
+            # Эти поля только для отображения — не сохраняем их
             return
 
         # 🔧 Обработка колонки "ТС" (с телефоном)
@@ -197,3 +237,19 @@ class TableManager:
         self.json_data[row][header] = value
         JSONManager().save_in_json(self.json_data, str(INPUT_FILEPATH))
         # self.log(f"✏️ Изменено: строка {row + 1}, колонка '{header}' → {value}")
+
+
+def normalize_delivery_block(prefix, block_list):
+    result = []
+    for idx, block in enumerate(block_list, 1):
+        new_block = {}
+        for key, value in block.items():
+            suffix = key.split(" ", 1)[-1] if " " in key else str(idx)
+            if not key.startswith(prefix):
+                new_block[f"{prefix} {idx}"] = value
+            elif not key.endswith(str(idx)):
+                new_block[f"{prefix} {idx}"] = value
+            else:
+                new_block[key] = value
+        result.append(new_block)
+    return result

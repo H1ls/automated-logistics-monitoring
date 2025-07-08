@@ -7,11 +7,14 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from Navigation_Bot.core.jSONManager import JSONManager
 from Navigation_Bot.core.paths import CONFIG_JSON
+
 """TODO Устранить
         1.
         2.Жёсткие sleep'ы
         3.Зависимость от self.driver
 """
+
+
 class NavigationBot:
     REQUIRED_KEYS = [
         "search_input_xpath",
@@ -30,9 +33,9 @@ class NavigationBot:
 
     def load_selectors(self):
         try:
-            selectors = JSONManager.get_selectors("wialon_selectors",CONFIG_JSON)
+            selectors = JSONManager.get_selectors("wialon_selectors", CONFIG_JSON)
             # self.log("✅ Селекторы Wialon загружены.")
-            print(CONFIG_JSON)
+            # print(CONFIG_JSON)
             return selectors
         except Exception as e:
             self.log(f"❌ Ошибка загрузки селекторов: {e}")
@@ -162,7 +165,8 @@ class NavigationBot:
             self.clean_car()
 
             if not updated_car.get("коор"):
-                self.log(f"⚠️ Координаты не получены у ТС: {updated_car.get('ТС')}")
+                pass
+                # self.log(f"⚠️ Координаты не получены у ТС: {updated_car.get('ТС')}")
 
             return updated_car
 

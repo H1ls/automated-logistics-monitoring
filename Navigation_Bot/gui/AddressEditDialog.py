@@ -1,11 +1,11 @@
 from PyQt6.QtWidgets import (
-    QDialog, QVBoxLayout, QHBoxLayout, QLabel,
+    QDialog, QVBoxLayout, QHBoxLayout, QLabel, QSpinBox,
     QLineEdit, QPushButton, QScrollArea, QWidget, QTextEdit, QDateEdit
 )
 from PyQt6.QtCore import QDate
 import json
 import os
-
+from datetime import datetime, timedelta
 
 
 class AddressEditDialog(QDialog):
@@ -43,47 +43,91 @@ class AddressEditDialog(QDialog):
 
     def add_entry(self, address="", date="", time=""):
         container = QWidget()
-        layout = QHBoxLayout()
+        wrapper = QVBoxLayout(container)
 
-        label = QLabel(f"{self.prefix}")
+        # --- Верхняя строка: Дата выезда + Время + Транзит + Кнопка ---
+        top_row = QHBoxLayout()
+
+        dep_date = QLineEdit()
+        dep_date.setInputMask("00.00.0000")
+        dep_date.setPlaceholderText("дд.мм.гггг")
+        dep_date.setFixedWidth(100)
+
+        dep_time = QLineEdit()
+        dep_time.setInputMask("00:00")
+        dep_time.setPlaceholderText("чч:мм")
+        dep_time.setFixedWidth(60)
+
+        transit = QSpinBox()
+        transit.setRange(0, 72)
+        transit.setSuffix(" ч")
+
+        btn_calc = QPushButton("🧮")
+        btn_calc.setFixedWidth(30)
+
+        top_row.addWidget(QLabel("Дата выезда:"))
+        top_row.addWidget(dep_date)
+        top_row.addWidget(dep_time)
+        top_row.addWidget(QLabel("Транзит:"))
+        top_row.addWidget(transit)
+        top_row.addWidget(btn_calc)
+        top_row.addStretch()
+
+        # --- Нижняя строка: Адрес + Дата прибытия + Время + Удалить ---
+        bottom_row = QHBoxLayout()
+        label = QLabel(self.prefix)
         address_input = QTextEdit(address)
         address_input.setPlaceholderText("Адрес")
         address_input.setFixedHeight(60)
         address_input.setMinimumWidth(600)
 
-        date_input = QDateEdit()
-        date_input.setDisplayFormat("dd.MM.yyyy")
-        date_input.setCalendarPopup(True)
-        if date and date != "Не указано":
-            try:
-                day, month, year = map(int, date.split("."))
-                date_input.setDate(QDate(year, month, day))
-            except:
-                date_input.setDate(QDate.currentDate())
-        else:
-            date_input.setDate(QDate.currentDate())
+        arr_date = QLineEdit()
+        arr_date.setInputMask("00.00.0000")
+        arr_date.setPlaceholderText("дд.мм.гггг")
+        arr_date.setFixedWidth(100)
+        if date:
+            arr_date.setText(date)
 
-        time_input = QLineEdit(time)
-        time_input.setPlaceholderText("чч:мм")
-        time_input.setFixedWidth(100)
+        arr_time = QLineEdit()
+        arr_time.setInputMask("00:00")
+        arr_time.setPlaceholderText("чч:мм")
+        arr_time.setFixedWidth(60)
+        arr_time.setText(time[:5] if time else "")
 
         btn_delete = QPushButton("🗑️")
         btn_delete.setFixedWidth(30)
+        btn_delete.clicked.connect(lambda: self.remove_entry(container))
 
-        def handle_delete():
-            self.remove_entry(container)
+        bottom_row.addWidget(label)
+        bottom_row.addWidget(address_input)
+        bottom_row.addWidget(arr_date)
+        bottom_row.addWidget(arr_time)
+        bottom_row.addWidget(btn_delete)
 
-        btn_delete.clicked.connect(handle_delete)
+        # --- Кнопка расчёта даты прибытия ---
+        def calculate_arrival():
+            try:
+                dep_dt = datetime.strptime(dep_date.text().strip(), "%d.%m.%Y")
+                dep_tm = datetime.strptime(dep_time.text().strip(), "%H:%M").time()
+                full_dt = datetime.combine(dep_dt.date(), dep_tm)
+                if transit.value() <= 0:
+                    return
+                arrival_dt = full_dt + timedelta(hours=transit.value())
+                arr_date.setText(arrival_dt.strftime("%d.%m.%Y"))
+                arr_time.setText(arrival_dt.strftime("%H:%M"))
+                container._meta = {
+                    "Время отправки": full_dt.strftime("%d.%m.%Y %H:%M"),
+                    "Транзит": f"{transit.value()} ч"
+                }
+            except Exception as e:
+                print(f"[DEBUG] ❌ Ошибка расчёта: {e}")
 
-        layout.addWidget(label)
-        layout.addWidget(address_input)
-        layout.addWidget(date_input)
-        layout.addWidget(time_input)
-        layout.addWidget(btn_delete)
+        btn_calc.clicked.connect(calculate_arrival)
 
-        container.setLayout(layout)
+        wrapper.addLayout(top_row)
+        wrapper.addLayout(bottom_row)
         self.scroll_layout.addWidget(container)
-        self.entries.append((container, address_input, date_input, time_input))
+        self.entries.append((container, address_input, arr_date, arr_time))
 
     def remove_entry(self, widget):
         for i, (container, *_) in enumerate(self.entries):
@@ -95,72 +139,51 @@ class AddressEditDialog(QDialog):
 
     def get_result(self):
         result = []
+        meta_result = {}
+
         for idx, (container, address_input, date_input, time_input) in enumerate(self.entries, 1):
             address = address_input.toPlainText().strip()
-            date = date_input.date().toString("dd.MM.yyyy")
+            date = date_input.text().strip()  # 💥 было: .date().toString(...)
             time = time_input.text().strip()
-            if address:
-                result.append({
-                    f"{self.prefix} {idx}": address,
-                    f"Дата {idx}": date or "Не указано",
-                    f"Время {idx}": time or "Не указано"
-                })
-        return result
+            if not address:
+                continue
+            row = {
+                f"{self.prefix} {idx}": address,
+                f"Дата {idx}": date or "Не указано",
+                f"Время {idx}": time or "Не указано"
+            }
+            result.append(row)
 
+            if hasattr(container, "_meta"):
+                meta = container._meta
+                if meta.get("Время отправки"):
+                    meta_result["Время отправки"] = meta["Время отправки"]
+                if meta.get("Транзит"):
+                    meta_result["Транзит"] = meta["Транзит"]
 
-
-
-class YandexSettingsDialog(QDialog):
-    def __init__(self,log_func=None, parent=None):
-        super().__init__(parent)
-        self.setWindowTitle("Настройки Яндекс.Карт")
-        self.resize(400, 200)
-        layout = QFormLayout()
-
-        self.class_name = QLineEdit()
-        self.duration_xpath = QLineEdit()
-        self.distance_xpath = QLineEdit()
-
-        layout.addRow("Class Name:", self.class_name)
-        layout.addRow("Duration XPath:", self.duration_xpath)
-        layout.addRow("Distance XPath:", self.distance_xpath)
-
-        save_btn = QPushButton("Сохранить")
-        save_btn.clicked.connect(self.save)
-        layout.addWidget(save_btn)
-
-        self.setLayout(layout)
-        self.load()
-
-    def load(self):
-        if os.path.exists(SELECTORS_PATH):
-            with open(SELECTORS_PATH, "r", encoding="utf-8") as f:
-                data = json.load(f)
-                sel = data.get("selectors", {})
-                xp = data.get("xpaths", {})
-                self.class_name.setText(sel.get("route_container_class", ""))
-                self.duration_xpath.setText(xp.get("duration_xpath", ""))
-                self.distance_xpath.setText(xp.get("distance_xpath", ""))
-
-    def save(self):
-        data = {
-            "selectors": {
-                "route_container_class": self.class_name.text(),
-                "duration_class": "auto-route-snippet-view__duration",
-                "distance_class": "auto-route-snippet-view__distance"
-            },
-            "xpaths": {
-                "duration_xpath": self.duration_xpath.text(),
-                "distance_xpath": self.distance_xpath.text()
-            },
-            "delays": {
-                "initial_render_wait_sec": 2,
-                "route_attempts": 10,
-                "per_attempt_wait_sec": 1
-            },
-            "fallback_enabled": True,
-            "version": "1.0"
-        }
-        with open(SELECTORS_PATH, "w", encoding="utf-8") as f:
-            json.dump(data, f, ensure_ascii=False, indent=4)
-        self.accept()
+        return result, meta_result
+    # def get_result(self):
+    #     result = []
+    #     meta_result = {}
+    #
+    #     for idx, (container, address_input, date_input, time_input) in enumerate(self.entries, 1):
+    #         address = address_input.toPlainText().strip()
+    #         date = date_input.date().toString("dd.MM.yyyy")
+    #         time = time_input.text().strip()
+    #         if not address:
+    #             continue
+    #         row = {
+    #             f"{self.prefix} {idx}": address,
+    #             f"Дата {idx}": date or "Не указано",
+    #             f"Время {idx}": time or "Не указано"
+    #         }
+    #         result.append(row)
+    #
+    #         if hasattr(container, "_meta"):
+    #             meta = container._meta
+    #             if meta.get("Время отправки"):
+    #                 meta_result["Время отправки"] = meta["Время отправки"]
+    #             if meta.get("Транзит"):
+    #                 meta_result["Транзит"] = meta["Транзит"]
+    #
+    #     return result, meta_result

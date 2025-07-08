@@ -6,11 +6,12 @@ from PyQt6.QtCore import QTimer
 from concurrent.futures import ThreadPoolExecutor
 from Navigation_Bot.core.paths import CONFIG_JSON
 
-
 """TODO 1.process_row_wrapper() — слишком длинный
         2.json_data → DataModel /отделить структуру хранения
         3.process_all() прогрессбар ?
 """
+
+
 class NavigationProcessor:
     def __init__(self, json_data: list, logger, gsheet, filepath, display_callback, single_row=True, updated_rows=None):
         self.json_data = json_data
@@ -18,12 +19,14 @@ class NavigationProcessor:
         self.gsheet = gsheet
         self.filepath = filepath
         self.display_callback = display_callback
+
         self._single_row_processing = single_row
         self.updated_rows = updated_rows if updated_rows is not None else []
         self.driver_manager = None
         self.browser_opened = False
         self.navibot = None
         self.mapsbot = None
+
     def process_row_wrapper(self, row):
         try:
             if row >= len(self.json_data):
@@ -64,7 +67,9 @@ class NavigationProcessor:
 
     def update_json_and_switch_to_yandex(self, row, updated):
         updated.pop("_новые_координаты", None)
-        self.json_data[row] = updated
+        # self.json_data[row] = updated
+        self.json_data[row].update(updated)
+
         JSONManager().save_in_json(self.json_data, self.filepath)
         self.driver_manager.open_yandex_maps()
 

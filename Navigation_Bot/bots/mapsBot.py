@@ -132,9 +132,10 @@ class MapsBot:
                 close_btn = self.web_driver_wait(self._by("close_route"), timeout=5)
                 close_btn.click()
                 time.sleep(0.3)
-                print("Закрытие маршрута")
+                # print("Закрытие маршрута")
             except Exception:
-                print("Не получилось - Закрытие маршрута")
+                pass
+                # print("Не получилось - Закрытие маршрута")
 
             # --- Сохранение результата ---
             car["Маршрут"] = {
@@ -240,7 +241,7 @@ class MapsBot:
                 # пробуем без секунд
                 return datetime.strptime(f"{date_str} {time_str}", "%d.%m.%Y %H:%M")
             except Exception as e:
-                print(f"❗ Не удалось распарсить дату/время: '{date_str}' '{time_str}' → {e}")
+                # print(f"❗ Не удалось распарсить дату/время: '{date_str}' '{time_str}' → {e}")
                 return None
 
     @staticmethod

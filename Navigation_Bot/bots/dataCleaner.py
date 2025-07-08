@@ -1,6 +1,8 @@
-import json
 import os
 import re
+from Navigation_Bot.core.jSONManager import JSONManager
+from Navigation_Bot.core.paths import INPUT_FILEPATH, ID_FILEPATH
+from pathlib import Path
 
 """2. Очистка данных"""
 
@@ -8,12 +10,16 @@ import re
         2.изменить запись на JSONManager  
         3.Объединение с ML
 """
+
+
 class DataCleaner:
-    def __init__(self,jsons,input_filepath, id_filepath,log_func=None):
-        self.json_manager = jsons
-        self.selected_data_path = input_filepath
-        self.id_car_path = id_filepath
-        self.log = log_func or print
+    def __init__(self, json_manager=None, selected_data_path=None, id_path=None, log_func=print):
+        self.json_manager = json_manager or JSONManager()
+        self.log = log_func
+        self.selected_data_path = Path(selected_data_path or INPUT_FILEPATH)
+        self.id_path = Path(id_path or ID_FILEPATH)
+        self.json_data = self.json_manager.load_json(str(self.selected_data_path))
+        self.id_data = self.json_manager.load_json(str(self.id_path))
 
         self.end_patterns = [
             r"тел\s*\d[\d\s\-]{8,}",
@@ -29,7 +35,6 @@ class DataCleaner:
             r"\по ТТН\s",
             r'по ттн'
         ]
-
 
     def _file_exists(self, filepath):
         if not os.path.exists(filepath):
@@ -75,71 +80,52 @@ class DataCleaner:
         return results
 
     def start_clean(self):
-        if not self._file_exists(self.selected_data_path):
+        if not self.selected_data_path.exists():
+            self.log(f"❌ Файл не найден: {self.selected_data_path}")
             return
 
-        with open(self.selected_data_path, "r", encoding="utf-8") as file:
-            data = json.load(file)
+        self.json_data = self.json_manager.load_json(str(self.selected_data_path))
 
-        for item in data:
+        for item in self.json_data:
             if isinstance(item.get("Погрузка"), str):
                 item["Погрузка"] = self._parse_info(item["Погрузка"], "Погрузка")
+
             if isinstance(item.get("Выгрузка"), str):
                 item["Выгрузка"] = self._parse_info(item["Выгрузка"], "Выгрузка")
 
-            # Проверка на пустые значения в Погрузка/Выгрузка
             if not item.get("Погрузка") or not item.get("Выгрузка"):
-                self.log(f"Пропущена запись {item.get('ТС')} из-за пустых данных.")
-                continue
+                self.log(f"⚠️ Пропущена запись {item.get('ТС')} — пустая Погрузка или Выгрузка.")
 
-        self.json_manager.save_in_json(data, self.selected_data_path)
-        print(f"Погрузка/Выгрузка очищены и сохранены в {self.selected_data_path}.")
+        self._clean_vehicle_names()
+        self._add_id_to_data()
 
-    def clean_vehicle_names(self):
-        if not os.path.exists(self.id_car_path):
-            return
+        self.json_manager.save_in_json(self.json_data, self.selected_data_path)
+        # self.log(f"✅ Данные очищены и сохранены: {self.selected_data_path}")
 
-        with open(self.id_car_path, "r", encoding="utf-8") as file:
-            data = json.load(file)
+    def _clean_vehicle_names(self):
+        for row in self.json_data:
+            ts = row.get("ТС", "")
+            if ts and "\n" in ts:
+                row["ТС"] = ts.split("\n")[0].strip()
 
-        for item in data:
-            if "Наименование" in item and isinstance(item["Наименование"], str):
-                words = item["Наименование"].split()
-                if len(words) == 3:
-                    item["Наименование"] = ' '.join(words[1:])
-        self.json_manager.save_in_json(data, self.id_car_path)
-        print(f" Данные по наименованиям машин очищены и сохранены в {self.id_car_path}.")
-
-
-    def add_id_to_data(self):
-        if not (self._file_exists(self.selected_data_path) and self._file_exists(self.id_car_path)):
-            return
-
-        with open(self.selected_data_path, "r", encoding="utf-8") as file1:
-            json1 = json.load(file1)
-        with open(self.id_car_path, "r", encoding="utf-8") as file2:
-            json2 = json.load(file2)
-
-        # Создаём словарь для поиска: Наименование -> ID
+    def _add_id_to_data(self):
         lookup = {
             entry["Наименование"]: entry["ИДОбъекта в центре мониторинга"]
-            for entry in json2
-            if "Наименование" in entry and "ИДОбъекта в центре мониторинга" in entry
+            for entry in self.id_data if "Наименование" in entry
         }
 
-        for item in json1:
-            original_ts = item.get("ТС", "").strip()
+        for row in self.json_data:
+            ts = row.get("ТС", "")
+            if not ts:
+                continue
 
-            # Убираем пробелы и добавляем один перед регионом
-            raw = re.sub(r"\s+", "", original_ts)
-            if len(raw) >= 9:
-                normalized = raw[:6] + ' ' + raw[6:9]
+            normalized = re.sub(r"\s+", "", ts)
+            if len(normalized) >= 9:
+                normalized = normalized[:6] + " " + normalized[6:9]
+
+            found_id = lookup.get(normalized)
+            if found_id:
+                row["id"] = found_id
+                self.log(f"✔️ Привязан ID {found_id} к ТС: {ts}")
             else:
-                normalized = raw  # если что-то пошло не так
-
-            if normalized in lookup:
-                item["ТС"] = normalized  # заменим ТС на нормализованный
-                item["id"] = lookup[normalized]
-
-        self.json_manager.save_in_json(json1, self.selected_data_path)
-        print(f" Присвоение id в json завершено.")
+                self.log(f"❌ Не найден ID для ТС: {ts}")

@@ -20,8 +20,7 @@ class JSONManager:
             with open(path, "r", encoding="utf-8") as file:
                 content = file.read().strip()
                 if not content:
-                    print('none')
-                    return []  # ✅ если файл пуст — вернуть пустой список
+                    return []
                 return json.loads(content)
         except json.JSONDecodeError:
             self.log(f"Ошибка чтения JSON: {path}")
