@@ -143,7 +143,7 @@ class AddressEditDialog(QDialog):
 
         for idx, (container, address_input, date_input, time_input) in enumerate(self.entries, 1):
             address = address_input.toPlainText().strip()
-            date = date_input.text().strip()  # 💥 было: .date().toString(...)
+            date = date_input.text().strip()  
             time = time_input.text().strip()
             if not address:
                 continue
