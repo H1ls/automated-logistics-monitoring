@@ -162,28 +162,3 @@ class AddressEditDialog(QDialog):
                     meta_result["Транзит"] = meta["Транзит"]
 
         return result, meta_result
-    # def get_result(self):
-    #     result = []
-    #     meta_result = {}
-    #
-    #     for idx, (container, address_input, date_input, time_input) in enumerate(self.entries, 1):
-    #         address = address_input.toPlainText().strip()
-    #         date = date_input.date().toString("dd.MM.yyyy")
-    #         time = time_input.text().strip()
-    #         if not address:
-    #             continue
-    #         row = {
-    #             f"{self.prefix} {idx}": address,
-    #             f"Дата {idx}": date or "Не указано",
-    #             f"Время {idx}": time or "Не указано"
-    #         }
-    #         result.append(row)
-    #
-    #         if hasattr(container, "_meta"):
-    #             meta = container._meta
-    #             if meta.get("Время отправки"):
-    #                 meta_result["Время отправки"] = meta["Время отправки"]
-    #             if meta.get("Транзит"):
-    #                 meta_result["Транзит"] = meta["Транзит"]
-    #
-    #     return result, meta_result

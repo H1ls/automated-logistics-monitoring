@@ -15,10 +15,11 @@ from selenium.common.exceptions import TimeoutException
 
 """
 
+
 class WebDriverManager:
     def __init__(self, log_func=None):
         self.log = log_func or print
-        self.config_path = "../config/config.json"
+        self.config_path = "../config/Credentials_wialon.json"
         self.cookies_path = "../config/cookies.pkl"
         self.driver = None
 
@@ -63,8 +64,8 @@ class WebDriverManager:
         """Авторизуется в Wialon, если нет сохранённых cookies"""
         with open(self.config_path, "r", encoding="utf-8") as f:
             data = json.load(f)
-        username = data["credentials"]["username"]
-        password = data["credentials"]["password"]
+        username = data["login"]["username"]
+        password = data["login"]["password"]
 
         self.driver.get("https://wialon.rtmglonass.ru/?lang=ru")
 
@@ -79,6 +80,10 @@ class WebDriverManager:
         # self.log("Авторизация в Wialon")
         self.save_cookies()
         # self.log("🔐 Авторизация в Wialon...")
+        try:
+            self.web_driver_wait("//*[@id='hb_mi_monitoring']").click()
+        except:
+            self.log(f'в "class WebDriverManager -> login_wialon"\n Не смог найти class=hb_item_text')
 
     def open_yandex_maps(self):
         # self.log("🗺️ Проверка вкладок с Яндекс.Картами...")

@@ -6,8 +6,8 @@ from PyQt6.QtCore import QTimer
 from concurrent.futures import ThreadPoolExecutor
 from Navigation_Bot.core.paths import CONFIG_JSON
 
-"""TODO 1.process_row_wrapper() — слишком длинный
-        2.json_data → DataModel /отделить структуру хранения
+"""TODO 
+        1.json_data → DataModel /отделить структуру хранения
         3.process_all() прогрессбар ?
 """
 
@@ -29,13 +29,21 @@ class NavigationProcessor:
 
     def process_row_wrapper(self, row):
         try:
+            try:
+                fresh = JSONManager(self.filepath, log_func=self.log).load_json() or []
+                self.json_data = fresh
+            except Exception as e:
+                self.log(f"⚠️ Не удалось перезагрузить JSON перед обработкой: {e}")
+
             if row >= len(self.json_data):
                 self.log(f"⚠️ Строка {row} не существует.")
                 return
             car = self.json_data[row]
+
             if not car.get("ТС"):
                 self.log(f"⛔ Пропуск: нет ТС в строке {row + 1}")
                 return
+
             self.init_driver_if_needed()
             updated = self.process_wialon_row(car)
             if not updated.get("_новые_координаты"):

@@ -25,6 +25,7 @@ class GoogleSheetsManager:
 
         self.creds_file = str(current.get("creds_file") or defaults.get("creds_file") or "")
         self.sheet_id = str(current.get("sheet_id") or defaults.get("sheet_id") or "")
+        print(self.sheet_id)
         self.worksheet_index = int(current.get("worksheet_index") or defaults.get("worksheet_index") or 0)
         self.column_index = int(current.get("column_index") or defaults.get("column_index") or 0)
 
@@ -33,13 +34,27 @@ class GoogleSheetsManager:
             return
 
         try:
-            creds = ServiceAccountCredentials.from_json_keyfile_name(
-                self.creds_file,
-                ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
+            # Загружаем JSON и достаём credentials
+            full_block = JSONManager().load_json(self.creds_file)
+            creds_data = full_block.get("credentials")
+
+            if not creds_data:
+                self.log(f"❌ В файле {self.creds_file} отсутствует ключ 'credentials'")
+                return
+
+            creds = ServiceAccountCredentials.from_json_keyfile_dict(
+                creds_data,
+                scopes=[
+                    "https://spreadsheets.google.com/feeds",
+                    "https://www.googleapis.com/auth/spreadsheets",
+                    "https://www.googleapis.com/auth/drive"
+                ]
             )
+
             client = gspread.authorize(creds)
             sheet = client.open_by_key(self.sheet_id)
             self.sheet = sheet.get_worksheet(self.worksheet_index)
+
         except Exception as e:
             self.log(f"❌ Ошибка подключения к Google Sheets: {e}")
             self.sheet = None

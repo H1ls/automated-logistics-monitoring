@@ -6,9 +6,8 @@ from pathlib import Path
 
 """2. Очистка данных"""
 
-"""TO DO1._parse_info() - разбить 
-        2.изменить запись на JSONManager  
-        3.Объединение с ML
+"""TO DO 1._parse_info() - разбить 
+         2.Объединение с ML
 """
 
 
@@ -109,23 +108,20 @@ class DataCleaner:
                 row["ТС"] = ts.split("\n")[0].strip()
 
     def _add_id_to_data(self):
+        # Создаём словарь: "Р703ТХ790" → ID
         lookup = {
-            entry["Наименование"]: entry["ИДОбъекта в центре мониторинга"]
+            re.sub(r"\s+", "", entry["Наименование"]): entry["ИДОбъекта в центре мониторинга"]
             for entry in self.id_data if "Наименование" in entry
         }
 
         for row in self.json_data:
             ts = row.get("ТС", "")
-            if not ts:
-                continue
+            ts_clean = ts.split("\n")[0].strip()  # убираем телефон, если есть
+            ts_key = re.sub(r"\s+", "", ts_clean)  # убираем все пробелы для сравнения
 
-            normalized = re.sub(r"\s+", "", ts)
-            if len(normalized) >= 9:
-                normalized = normalized[:6] + " " + normalized[6:9]
-
-            found_id = lookup.get(normalized)
+            found_id = lookup.get(ts_key)
             if found_id:
                 row["id"] = found_id
-                self.log(f"✔️ Привязан ID {found_id} к ТС: {ts}")
+                # self.log(f"✔️ Привязан ID {found_id} к ТС: {ts_clean}")
             else:
-                self.log(f"❌ Не найден ID для ТС: {ts}")
+                self.log(f"❌ Не найден ID для ТС: {ts_clean}")
