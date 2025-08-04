@@ -1,5 +1,5 @@
 from functools import partial
-from PyQt6.QtWidgets import QTableWidgetItem, QPushButton, QWidget, QHBoxLayout, QLabel
+from PyQt6.QtWidgets import QTableWidgetItem, QPushButton, QWidget, QHBoxLayout, QLabel, QCheckBox, QVBoxLayout
 from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtGui import QColor
 
@@ -32,16 +32,18 @@ class TableManager:
         self.on_edit_id_click = on_edit_id_click
 
     def display(self):
+
+        try:
+            self.json_data = JSONManager(str(INPUT_FILEPATH), log_func=self.log).load_json() or []
+        except Exception as e:
+            self.log(f"❌ Ошибка при загрузке JSON: {e}")
+            self.json_data = []
         # 🔹 Безопасное сохранение scroll и selected_row
         try:
             scroll_value = self.table.verticalScrollBar().value()
-        except Exception:
-            scroll_value = 0
-
-        try:
             selected_row = self.table.currentRow()
-        except Exception:
-            selected_row = 0
+        except Exception as e:
+            print(f'{e}')
 
         try:
             self.table.setRowCount(0)
@@ -90,6 +92,7 @@ class TableManager:
                         buffer = f"{h}ч {m}м"
                     except Exception:
                         pass
+
                 self._set_readonly_cell(row_idx, 7, arrival)
                 self._set_readonly_cell(row_idx, 8, buffer)
 
@@ -108,7 +111,10 @@ class TableManager:
                                 if item:
                                     item.setBackground(QColor(210, 235, 255))
                     except Exception as e:
-                        print(f"[DEBUG] ❌ Ошибка при анализе времени Погрузки: {e}")
+                        ts = row.get("ТС", "—")
+                        self.log(
+                            f"[DEBUG] ❌ Ошибка при анализе времени Погрузки у ТС: {ts} (строка {row_idx + 1}):\n {e}")
+                        # print(f"[DEBUG] ❌ Ошибка при анализе времени Погрузки у ТС: {ts} (строка {row_idx + 1}): {e}")
 
             self.table.resizeRowsToContents()
 
@@ -117,15 +123,15 @@ class TableManager:
             return
 
         # 🔙 Восстановление scroll и выделения
-        try:
-            def restore_scroll():
-                self.table.verticalScrollBar().setValue(scroll_value)
-                if 0 <= selected_row < self.table.rowCount():
-                    self.table.selectRow(selected_row)
+        QTimer.singleShot(0, lambda: self._restore_scroll(scroll_value, selected_row))
 
-            QTimer.singleShot(0, restore_scroll)
+    def _restore_scroll(self, scroll_value, selected_row):
+        try:
+            self.table.verticalScrollBar().setValue(scroll_value)
+            if 0 <= selected_row < self.table.rowCount():
+                self.table.selectRow(selected_row)
         except Exception as e:
-            print(f"[DEBUG] ❌ Ошибка при восстановлении позиции: {e}")
+            self.log(f"❌ Ошибка при восстановлении позиции: {e}")
 
     def _set_cell(self, row, col, value, editable=False):
         item = QTableWidgetItem(value)
@@ -168,7 +174,6 @@ class TableManager:
             prefix = "Выгрузка"
         else:
             return
-
         data_list = self.json_data[row].get(prefix, [])
         dialog = AddressEditDialog(self.table, data_list, prefix)
         if dialog.exec():
@@ -184,8 +189,8 @@ class TableManager:
                 self.json_data[row]["Транзит"] = meta["Транзит"]
 
             JSONManager().save_in_json(self.json_data, str(INPUT_FILEPATH))
-            # self.log(f"{prefix} обновлены для строки {row + 1}")
             self.display()
+            # self.log(f"{prefix} обновлены для строки {row + 1}")
 
     def save_to_json_on_edit(self, item):
         QTimer.singleShot(0, lambda: self._save_item(item))
@@ -195,7 +200,6 @@ class TableManager:
         col = item.column()
         header = self.table.horizontalHeaderItem(col).text()
         value = item.text()
-
         if header.lower() == "гео":
             header = "гео"
         if header in ["Погрузка", "Выгрузка", "Время погрузки", "Время выгрузки"]:
@@ -239,17 +243,3 @@ class TableManager:
         # self.log(f"✏️ Изменено: строка {row + 1}, колонка '{header}' → {value}")
 
 
-def normalize_delivery_block(prefix, block_list):
-    result = []
-    for idx, block in enumerate(block_list, 1):
-        new_block = {}
-        for key, value in block.items():
-            suffix = key.split(" ", 1)[-1] if " " in key else str(idx)
-            if not key.startswith(prefix):
-                new_block[f"{prefix} {idx}"] = value
-            elif not key.endswith(str(idx)):
-                new_block[f"{prefix} {idx}"] = value
-            else:
-                new_block[key] = value
-        result.append(new_block)
-    return result

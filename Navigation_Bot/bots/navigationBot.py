@@ -75,7 +75,6 @@ class NavigationBot:
     def get_location_and_coordinates(self):
         try:
             # self.log("📍 Получение адреса, координат и скорости...")
-
             location_text = None
             for _ in range(5):
                 try:
@@ -85,8 +84,7 @@ class NavigationBot:
                         location_text = text
                         break
                 except:
-                    pass
-                time.sleep(1)
+                    time.sleep(1)
 
             if not location_text:
                 raise Exception("⏳ Адрес не получен.")

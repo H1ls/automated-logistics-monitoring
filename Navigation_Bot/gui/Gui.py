@@ -8,22 +8,20 @@ from PyQt6.QtWidgets import (QApplication, QWidget, QVBoxLayout, QHBoxLayout, QT
                              QLabel, QHeaderView, QAbstractItemView, QMessageBox)
 from Navigation_Bot.bots.googleSheetsManager import GoogleSheetsManager
 from Navigation_Bot.core.jSONManager import JSONManager
+from Navigation_Bot.gui.combinedSettingsDialog import CombinedSettingsDialog
 from Navigation_Bot.gui.settingsDialogManager import SettingsDialogManager
+from Navigation_Bot.gui.iDManagerDialog import IDManagerDialog
 from Navigation_Bot.gui.tableManager import TableManager
 from Navigation_Bot.navigationProcessor import NavigationProcessor
 from Navigation_Bot.core.paths import INPUT_FILEPATH, ID_FILEPATH
-
-# INPUT_FILEPATH = "../config/selected_data.json"
-# ID_FILEPATH = "../config/Id_car.json"
+from Navigation_Bot.core.processedFlags import init_processed_flags
 
 """TODO:1.Дублируется self.json_data -> передаётся в:TableManager NavigationProcessor
          Но в load_from_google() -> self.json_data = self.processor.gsheet.load_from_google()
          Предложение:
              Сделать self.json_data централизованным классом-хранилищем (DataContext или JsonDataStore) 
              и передавать его как объект.
-            
-        2.Перекинуть _submit_processor_row в NavigationProcessor
-        3. убрать def load_json"""
+        2.Перекинуть _submit_processor_row в NavigationProcessor"""
 
 
 class NavigationGUI(QWidget):
@@ -42,11 +40,12 @@ class NavigationGUI(QWidget):
 
         self.init_ui()
 
-        self.settings_ui = SettingsDialogManager(self)
+        self.settings_ui = CombinedSettingsDialog(self)
         # print(f"[DEBUG] Gui self.json_data id: {id(self.json_data)}")
 
         self.table_manager = TableManager(
             table_widget=self.table,
+
             json_data=self.json_data,
             log_func=self.log,
             on_row_click=self._submit_processor_row,
@@ -70,49 +69,52 @@ class NavigationGUI(QWidget):
 
     def init_ui(self):
         layout = QVBoxLayout()
+        top = QHBoxLayout()
 
         # Верхние кнопки
-        self.btn_wialon_combo = QPushButton("Wialon ⚙️")
-        self.btn_yandex_combo = QPushButton("Я.Карты ⚙️")
+        # self.btn_wialon_combo = QPushButton("Wialon ⚙️")
+        # self.btn_yandex_combo = QPushButton("Я.Карты ⚙️")
+        # self.btn_google_settings = QPushButton("Google ⚙️")
         self.btn_load_google = QPushButton("Загрузить Задачи")
-        self.btn_google_settings = QPushButton("Google ⚙️")
-        self.btn_clear_json = QPushButton("🗑 Очистить JSON")
         self.btn_process_all = QPushButton("▶ Пробежать все ТС")
+        self.btn_clear_json = QPushButton("🗑 Очистить JSON")
         self.btn_refresh_table = QPushButton("🔄 Обновить")
+        self.btn_settings = QPushButton("Настройки ⚙️")
 
         for btn in [
-            self.btn_wialon_combo, self.btn_yandex_combo, self.btn_load_google,
-            self.btn_google_settings, self.btn_process_all, self.btn_refresh_table,
-            self.btn_clear_json
+            self.btn_load_google,
+            self.btn_process_all,
+            self.btn_clear_json,
+            self.btn_refresh_table,
+            self.btn_settings
         ]:
             btn.setFixedHeight(28)
             btn.setFixedWidth(130)
+        # top.addWidget(btn)
 
-        top = QHBoxLayout()
-        top.addWidget(self.btn_wialon_combo)
-        top.addWidget(self.btn_yandex_combo)
+        # top = QHBoxLayout()
         top.addWidget(self.btn_load_google)
-        top.addWidget(self.btn_google_settings)
         top.addWidget(self.btn_process_all)
         top.addWidget(self.btn_refresh_table)
         top.addWidget(self.btn_clear_json)
-
+        top.addWidget(self.btn_settings)
         self.table = QTableWidget()
         self.table.setColumnCount(9)
         self.table.setHorizontalHeaderLabels([
-            "", "id", "ТС", "КА", "Погрузка", "Выгрузка", "гео", "Время прибытия", "Запас"
+            "", "id", "ТС", "КА", "Погрузка", "Выгрузка","гео", "Время прибытия", "Запас"
         ])
 
         self.table.setWordWrap(True)
         # self.table.setWordWrap(True)
-        self.table.setColumnWidth(0, 40)
+        self.table.setColumnWidth(0, 40)  #
+        self.table.setColumnWidth(1, 40)  # id
         self.table.setColumnWidth(2, 80)  # ТС
         self.table.setColumnWidth(3, 30)  # КА
-        self.table.setColumnWidth(4, 270)
-        self.table.setColumnWidth(5, 275)
-        self.table.setColumnWidth(6, 130)
-        self.table.setColumnWidth(7, 65)
-        self.table.setColumnWidth(8, 60)
+        self.table.setColumnWidth(4, 270) # Погрузка
+        self.table.setColumnWidth(5, 275) # Выгрузка
+        self.table.setColumnWidth(6, 65)  # гео
+        self.table.setColumnWidth(7, 65)  # Время прибытия
+        self.table.setColumnWidth(8, 60)  # Запас
         self.table.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeMode.Interactive)
         self.table.horizontalHeader().setSectionResizeMode(4, QHeaderView.ResizeMode.Interactive)
         self.table.horizontalHeader().setSectionResizeMode(5, QHeaderView.ResizeMode.Interactive)
@@ -134,14 +136,10 @@ class NavigationGUI(QWidget):
 
     def connect_signals(self):
         self.table.cellDoubleClicked.connect(self.table_manager.edit_cell_content)
-        self.table.itemChanged.connect(self.table_manager.save_to_json_on_edit)
-
+        self.btn_settings.clicked.connect(lambda: CombinedSettingsDialog.open_all_settings(self))
         self.btn_process_all.clicked.connect(self.processor.process_all)
         self.btn_refresh_table.clicked.connect(self.table_manager.display)
-
-        self.btn_wialon_combo.clicked.connect(self.settings_ui.open_wialon_settings)
-        self.btn_yandex_combo.clicked.connect(self.settings_ui.open_yandex_settings)
-        self.btn_google_settings.clicked.connect(self.settings_ui.open_google_settings)
+        self.table.itemChanged.connect(self.table_manager.save_to_json_on_edit)
         self.btn_clear_json.clicked.connect(self.confirm_clear_json)
         self.btn_load_google.clicked.connect(self.load_from_google)
 
@@ -154,7 +152,6 @@ class NavigationGUI(QWidget):
     def log(self, message: str):
         if self._log_enabled:
             self.log_box.append(message)
-
 
     def confirm_clear_json(self):
         reply = QMessageBox.question(
@@ -197,13 +194,17 @@ class NavigationGUI(QWidget):
                     try:
                         cleaner = DataCleaner(log_func=self.log)
                         cleaner.start_clean()
+
+                        clean_data  = JSONManager().load_json(str(INPUT_FILEPATH)) or []
+
+                        init_processed_flags(clean_data, clean_data, loads_key="Выгрузка")
+                        JSONManager().save_in_json(clean_data, str(INPUT_FILEPATH))
                     except Exception as e:
                         import traceback
                         traceback.print_exc()
                         print(f"[ERROR] Ошибка в cleaner: {e}")
 
                 QTimer.singleShot(0, self.reload_and_show)
-                # print("Завершена загрузка")
             except Exception as e:
                 QTimer.singleShot(0, lambda: self.log(f"❌ Ошибка при загрузке: {e}"))
 
@@ -211,15 +212,15 @@ class NavigationGUI(QWidget):
 
     def reload_and_show(self):
         with self.json_lock:
-            # self.load_json()
-            # self.json_data.sort(key=lambda x: x.get("index", 99999))
-            # self.table_manager.json_data = self.json_data
             self.json_data = JSONManager().load_json(str(INPUT_FILEPATH)) or []
             self.json_data.sort(key=lambda x: x.get("index", 99999))
+            init_processed_flags(self.json_data, self.json_data, loads_key="Выгрузка")
+            JSONManager().save_in_json(self.json_data, str(INPUT_FILEPATH))
             self.table_manager.json_data = self.json_data
+            self.processor.json_data = self.json_data
+
         self.table_manager.display()
         self.log("✅ Обновление завершено.")
-
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
