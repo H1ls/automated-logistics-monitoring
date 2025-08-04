@@ -147,7 +147,7 @@ class NavigationGUI(QWidget):
         if 0 <= row_idx < len(self.json_data):
             self.executor.submit(self.processor.process_row_wrapper, row_idx)
         else:
-            self.log(f"⚠️ Строка {row_idx} больше не существует. Пропуск.")
+            self.log(f" Строка {row_idx} больше не существует. Пропуск.")
 
     def log(self, message: str):
         if self._log_enabled:
@@ -181,7 +181,7 @@ class NavigationGUI(QWidget):
 
         def background_task():
             try:
-                # 🔁 Импорт внутри потока
+                # Импорт внутри потока
                 from Navigation_Bot.bots.googleSheetsManager import GoogleSheetsManager
                 from Navigation_Bot.bots.dataCleaner import DataCleaner
                 from Navigation_Bot.core.jSONManager import JSONManager
@@ -220,7 +220,7 @@ class NavigationGUI(QWidget):
             self.processor.json_data = self.json_data
 
         self.table_manager.display()
-        self.log("✅ Обновление завершено.")
+        self.log("Обновление завершено.")
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
