@@ -14,10 +14,8 @@ class CombinedSettingsDialog(QDialog):
         self.setWindowTitle("Настройки")
         self.resize(600, 400)
 
-        # JSON-менеджер
         self.json_manager = JSONManager(file_path=str(CONFIG_JSON))
 
-        # Мета-информация по трём секциям
         self.sections = {
             "wialon_selectors": (
                 "Wialon", {
@@ -85,11 +83,9 @@ class CombinedSettingsDialog(QDialog):
         btn_row.addWidget(btn_cancel)
         layout.addLayout(btn_row)
 
-        # подгружаем сразу
         self._load_all()
 
     def _load_all(self):
-        """Загрузить все секции из JSON."""
         data = self.json_manager.load_json() or {}
         for section_key, cfg in self.dialogs.items():
             section = data.get(section_key, {})
@@ -102,7 +98,6 @@ class CombinedSettingsDialog(QDialog):
                     edit.setText(str(default[key]))
 
     def _on_save(self):
-        """Сохранить все секции и принять диалог."""
         data = self.json_manager.load_json() or {}
         for section_key, cfg in self.dialogs.items():
             meta  = cfg["meta"]
