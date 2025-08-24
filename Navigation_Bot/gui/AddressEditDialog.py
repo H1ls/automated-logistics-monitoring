@@ -2,18 +2,26 @@ from PyQt6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel, QSpinBox,
     QLineEdit, QPushButton, QScrollArea, QWidget, QTextEdit, QDateEdit
 )
+from Navigation_Bot.core.processedFlags import StatusEditorWidget
 from PyQt6.QtCore import QDate
 import json
 import os
 from datetime import datetime, timedelta
+from Navigation_Bot.core.paths import INPUT_FILEPATH
+from Navigation_Bot.core.jSONManager import JSONManager
 
 
 class AddressEditDialog(QDialog):
-    def __init__(self, parent, data_list, prefix):
+    def __init__(self, row_data, full_data, prefix, parent=None):
+
         super().__init__(parent)
         self.setWindowTitle(f"Редактирование: {prefix}")
         self.prefix = prefix
         self.entries = []
+        self.row_data = row_data
+        self.full_data = full_data
+
+        data_list = self.row_data.get(self.prefix, [])
         self.resize(1000, 500)
 
         self.layout = QVBoxLayout()
@@ -24,6 +32,11 @@ class AddressEditDialog(QDialog):
         self.scroll_area.setWidgetResizable(True)
         self.scroll_area.setWidget(self.scroll_widget)
 
+        self.status_editor = StatusEditorWidget(
+            processed=row_data.get("processed", []),
+            loads=[d.get(f"{prefix} {i + 1}", "") for i, d in enumerate(row_data.get(prefix, []))],
+            distance=row_data.get("distance", float("inf"))
+        )
         for i, item in enumerate(data_list, 1):
             address = item.get(f"{self.prefix} {i}", "")
             date = item.get(f"Дата {i}", "")
@@ -34,12 +47,29 @@ class AddressEditDialog(QDialog):
         self.btn_add.clicked.connect(lambda: self.add_entry())
 
         self.btn_save = QPushButton("✅ Сохранить")
-        self.btn_save.clicked.connect(self.accept)
-
+        self.btn_save.clicked.connect(self._accept)
+        self.layout.addWidget(self.status_editor)
         self.layout.addWidget(self.scroll_area)
         self.layout.addWidget(self.btn_add)
         self.layout.addWidget(self.btn_save)
         self.setLayout(self.layout)
+
+    def _accept(self):
+        try:
+            if not hasattr(self, "status_editor"):
+                print("[DEBUG] ❌ status_editor не найден — пропуск сохранения")
+                return
+
+            processed = self.status_editor.get_processed()
+            self.row_data["processed"] = processed
+            if isinstance(self.full_data, list):
+                JSONManager().save_in_json(self.full_data, str(INPUT_FILEPATH))
+            else:
+                print("[DEBUG] ❌ full_data не список!")
+
+            super().accept()
+        except Exception as e:
+            print(f"[DEBUG] ❌ Ошибка в accept(): {e}")
 
     def add_entry(self, address="", date="", time=""):
         container = QWidget()

@@ -1,3 +1,4 @@
+import re
 import time
 from datetime import datetime, timedelta
 from selenium.webdriver.support.ui import WebDriverWait
@@ -7,7 +8,13 @@ from selenium.webdriver.common.by import By
 from Navigation_Bot.core.jSONManager import JSONManager
 from Navigation_Bot.core.paths import CONFIG_JSON
 
-"""TODO .Обновить выбор адреса (под будущую ML-фильтрацию)"""
+"""TODO 1.Обновить выбор адреса (под будущую ML-фильтрацию)
+        MapsBot - запускает вспомогательные классы 
+        2.Вынести ввод и клики в MapsUIHelper
+        3.Вынести парсинг маршрутов в отдельный класс
+        4.Вынести address+datetime обработку    
+    
+        """
 
 
 class MapsBot:
@@ -41,37 +48,28 @@ class MapsBot:
         cond = conditions.get(condition, EC.presence_of_element_located)
         return WebDriverWait(self.driver, timeout).until(cond(locator))
 
-    def prepare_route_interface(self):
-        def click_route_button():
-            try:
-                route_locator = self._by("route_button")
-                btn = self.web_driver_wait(route_locator, timeout=3, condition="clickable")
-                btn.click()
-                self.log("📍 Нажата кнопка 'Маршруты'.")
-                time.sleep(0.3)
-                return True
-            except Exception:
-                return False
-
-        if click_route_button():
-            return True
+    def _try_click(self, key: str, label: str = "", timeout=3) -> bool:
+        """Пробует кликнуть по элементу (по ключу из config)."""
         try:
-            close_locator = self._by("close_route")
-            btn = self.web_driver_wait(close_locator, timeout=3, condition="clickable")
+            locator = self._by(key)
+            btn = self.web_driver_wait(locator, timeout=timeout, condition="clickable")
             btn.click()
-            self.log("❌ Закрыт предыдущий маршрут.")
+            if label:
+                pass
+                # print(f"✅ Нажата кнопка '{label}'")
+                # self.log(f"✅ Нажата кнопка '{label}'")
             time.sleep(0.3)
-        except Exception:
-            pass
-
-        if click_route_button():
             return True
+        except Exception:
+            return False
 
-        self.log("⚠️ Кнопка 'Маршруты' не найдена.")
-        return False
+    def prepare_route_interface(self):
+        if self._try_click("route_button", "Маршруты"):
+            return True
+        self._try_click("close_route", "Закрыть маршрут")
+        return self._try_click("route_button", "Маршруты")
 
-
-    def process_navigation_from_json(self, car: dict):
+    def process_navigation_from_json(self, car: dict, unload_point: dict):
         if not self.prepare_route_interface():
             return
 
@@ -80,11 +78,11 @@ class MapsBot:
             self.log("⚠️ Пропуск: нет координат.")
             return
 
-        to_address, unload_dt = self._get_first_valid_unload(car)
-        if not to_address:
+        address, unload_dt = self._parse_unload_block(unload_point)
+        if not address or not unload_dt:
             return
 
-        avg_minutes, avg_distance = self._build_route_and_get_distance(from_coords, to_address)
+        avg_minutes, avg_distance = self._build_route_and_get_distance(from_coords, address)
 
         if avg_distance < 1:
             self._handle_short_route(car)
@@ -95,19 +93,24 @@ class MapsBot:
 
         self._finalize_result(car, result, avg_distance, avg_minutes)
 
-    def _get_first_valid_unload(self, car: dict) -> tuple[str, datetime]:
-        """поиск адреса и времени выгрузки"""
-        unloads = car.get("Выгрузка", [])
-        for i, unload in enumerate(unloads):
-            key = f"Выгрузка {i + 1}"
-            date_str = unload.get(f"Дата {i + 1}", "").strip()
-            time_str = unload.get(f"Время {i + 1}", "").strip()
-            address = unload.get(key, "").strip()
-            if address and date_str and time_str:
-                unload_dt = self._parse_datetime(date_str, time_str)
-                return address, unload_dt
-        self.log("⚠️ Пропуск: нет полной информации о выгрузке.")
-        return None, None
+    def _parse_unload_block(self, unload_point: dict) -> tuple[str, datetime | None]:
+        for key in unload_point:
+            if key.startswith("Выгрузка "):
+                idx = key.split(" ")[1]
+                break
+        else:
+            idx = "1"
+
+        address = unload_point.get(f"Выгрузка {idx}", "").strip()
+        date_str = unload_point.get(f"Дата {idx}", "").strip()
+        time_str = unload_point.get(f"Время {idx}", "").strip()
+
+        if not address or not date_str or not time_str:
+            self.log("⚠️ Пропуск: неполные данные о выгрузке.")
+            return "", None
+
+        unload_dt = self._parse_datetime(date_str, time_str)
+        return address, unload_dt
 
     def _handle_short_route(self, car: dict):
         """обработка выгрузки без маршрута"""
@@ -128,7 +131,7 @@ class MapsBot:
         """работа с Я.Картами"""
         self._enter_from_coordinates(from_coords)
         self._enter_to_address(to_address)
-        # self._enter_input("from_input", coord, "Откуда")
+        # self._enter_input("from_input", from_coords, "Откуда")
         # self._enter_input("to_input", address, "Куда")
 
         routes = self.get_route_info()
@@ -155,7 +158,6 @@ class MapsBot:
             "time_buffer": result["time_buffer"]
         }
 
-
     def _enter_to_address(self, address):
         self.log(f"📥 Ввод точки назначения: {address}")
         to_input = self.web_driver_wait(self._by("to_input"))
@@ -178,6 +180,19 @@ class MapsBot:
         except Exception as e:
             msg = str(e).splitlines()[0]
             self.log(f"❌ Ошибка ввода в 'Откуда': {msg}")
+
+    def _enter_input(self, key: str, value: str, label: str = ""):
+        try:
+            element = self.web_driver_wait(self._by(key))
+            self.driver.execute_script("arguments[0].focus();", element)
+            time.sleep(0.2)
+            element.send_keys(Keys.CONTROL + "a", Keys.BACKSPACE, value, Keys.ENTER)
+            time.sleep(1)
+            if label:
+                self.log(f"📥 Ввод в поле '{label}': {value}")
+        except Exception as e:
+            msg = str(e).splitlines()[0]
+            self.log(f"❌ Ошибка ввода в '{label or key}': {msg}")
 
     def get_route_info(self):
         self.log("⌛ Получение всех маршрутов...")
@@ -265,7 +280,6 @@ class MapsBot:
     def _duration_to_minutes(time_str):
         """Преобразует '2 дн. 3 ч 41 мин' в минуты (int)."""
         try:
-            import re
             time_str = time_str.strip().lower().replace("~", "")
             total_min = 0
 
@@ -290,7 +304,8 @@ class MapsBot:
         distances = [r["distance"] for r in routes]
         return round(sum(times) / len(times)), round(sum(distances) / len(distances))
 
-    def _get_arrival_result_from_datetime(self, arrival_time, unload_dt):
+    @staticmethod
+    def _get_arrival_result_from_datetime(arrival_time, unload_dt):
         if unload_dt:
             buffer = unload_dt - arrival_time
             total_minutes = int(buffer.total_seconds() // 60)

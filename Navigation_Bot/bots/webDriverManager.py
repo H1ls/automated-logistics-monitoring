@@ -6,14 +6,13 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import TimeoutException
+from Navigation_Bot.core.paths import CREDENTIALS_WIALON, COOKIES_FILE
 
 """6. Настройка WebDriver"""
+
 """TO DO 1. чтение json -> JSONManager
         2. Проверка авторизация - True/Fasle
-        3. Сначала куки потом авторизация self.driver.get(...)self.load_cookies()self.driver.refresh()
-        
-
-"""
+        3. Сначала куки потом авторизация self.driver.get(...)self.load_cookies()self.driver.refresh()"""
 
 
 class WebDriverManager:
@@ -21,6 +20,8 @@ class WebDriverManager:
         self.log = log_func or print
         self.config_path = "../config/Credentials_wialon.json"
         self.cookies_path = "../config/cookies.pkl"
+        # self.config_path = str(CREDENTIALS_WIALON)
+        # self.cookies_path = str(COOKIES_FILE)
         self.driver = None
 
     def web_driver_wait(self, xpath, timeout=10):
@@ -87,7 +88,6 @@ class WebDriverManager:
 
     def open_yandex_maps(self):
         # self.log("🗺️ Проверка вкладок с Яндекс.Картами...")
-
         try:
             for handle in self.driver.window_handles:
                 self.driver.switch_to.window(handle)
@@ -113,3 +113,22 @@ class WebDriverManager:
 
         except Exception as e:
             self.log(f"❌ Ошибка при открытии Я.Карт: {e}")
+
+    def switch_to_tab(self, name: str) -> bool:
+        """
+        Переключение по имени: 'wialon' или 'yandex'
+        """
+        try:
+            for handle in self.driver.window_handles:
+                self.driver.switch_to.window(handle)
+                url = self.driver.current_url.lower()
+                title = self.driver.title.lower()
+                if name == "wialon" and "wialon" in url:
+                    return True
+                if name == "yandex" and "yandex" in url and "maps" in url:
+                    return True
+            self.log(f"❌ Вкладка '{name}' не найдена.")
+            return False
+        except Exception as e:
+            self.log(f"❌ Ошибка при переключении на вкладку {name}: {e}")
+            return False

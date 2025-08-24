@@ -23,6 +23,7 @@ logs/
 .idea/
 .DS_Store
 Thumbs.db
+.venv/
 
 # Python tooling
 .mypy_cache/
@@ -30,11 +31,11 @@ Thumbs.db
 .pyre/
 
 # Project-specific (Navigation_Bot)
-Navigation_Bot/config/cookies.pkl
-Navigation_Bot/config/Credentials_wialon.json
 Navigation_Bot/config/*.json
-!Navigation_Bot/config/config.json
-!Navigation_Bot/config/Id_car.json
-!Navigation_Bot/config/selected_data.json
+Navigation_Bot/config/*.pkl
+
+
 Other/
 Mll/
+ollama_client/
+pdf/

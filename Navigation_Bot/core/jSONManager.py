@@ -10,6 +10,7 @@ class JSONManager:
     def __init__(self, file_path: str = None, log_func=None):
         self.file_path = file_path
         self.log = log_func or print
+        self.data = self.load_json(file_path)  # ← загружаем один раз и храним в self.data
 
     def load_json(self, file_path: str = None) -> Any:
         path = file_path or self.file_path
@@ -26,18 +27,11 @@ class JSONManager:
             self.log(f"Ошибка чтения JSON: {path}")
             return []
 
+    def reload(self):
+        self.data = self.load_json(self.file_path) or []
 
-
-    # def save_in_json(self, data, filepath):
-    #     filepath = Path(filepath)  # ← преобразуем всё к Path
-    #     filepath.parent.mkdir(parents=True, exist_ok=True)
-    #     try:
-    #         with filepath.open("w", encoding="utf-8") as f:
-    #             json.dump(data, f, ensure_ascii=False, indent=2)
-    #             f.flush()
-    #             os.fsync(f.fileno())
-    #     except Exception as e:
-    #         self.log(f"❌ Ошибка сохранения JSON: {e}")
+    def save(self):
+        self.save_in_json(self.data, self.file_path)
 
     def save_in_json(self, data, filepath=None):
         filepath = Path(filepath or self.file_path)  # ← если не передан, берём сохранённый

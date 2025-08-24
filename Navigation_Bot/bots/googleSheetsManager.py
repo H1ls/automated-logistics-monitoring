@@ -25,7 +25,6 @@ class GoogleSheetsManager:
 
         self.creds_file = str(current.get("creds_file") or defaults.get("creds_file") or "")
         self.sheet_id = str(current.get("sheet_id") or defaults.get("sheet_id") or "")
-        print(self.sheet_id)
         self.worksheet_index = int(current.get("worksheet_index") or defaults.get("worksheet_index") or 0)
         self.column_index = int(current.get("column_index") or defaults.get("column_index") or 0)
 
@@ -155,3 +154,14 @@ class GoogleSheetsManager:
 
         except Exception as e:
             self.log(f"❌ Ошибка при записи строки {item.get('ТС')}: {e}")
+
+    def write_all(self, items: list):
+        if not items:
+            self.log("⚠️ Нет данных для записи в Google Sheets.")
+            return
+
+        try:
+            self.append_to_cell(items)
+            self.log(f"📤 Обновлены все строки в Google Sheets ({len(items)} шт.)")
+        except Exception as e:
+            self.log(f"❌ Ошибка при записи в Google Sheets: {e}")

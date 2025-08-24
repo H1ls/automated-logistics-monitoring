@@ -8,6 +8,7 @@ from Navigation_Bot.bots.navigationBot import NavigationBot
 from Navigation_Bot.bots.mapsBot import MapsBot
 from Navigation_Bot.bots.googleSheetsManager import GoogleSheetsManager
 
+
 class CombinedSettingsDialog(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -19,32 +20,32 @@ class CombinedSettingsDialog(QDialog):
         self.sections = {
             "wialon_selectors": (
                 "Wialon", {
-                    "search_input_xpath": ("XPath поиска", str),
-                    "unit_block_xpath":    ("XPath блока ТС", str),
-                    "address_selector":    ("CSS адреса", str),
-                    "copy_button_selector":("CSS копирования координат", str),
-                    "speed_selector":      ("CSS скорости", str),
-                }
+                "search_input_xpath": ("XPath поиска", str),
+                "unit_block_xpath": ("XPath блока ТС", str),
+                "address_selector": ("CSS адреса", str),
+                "copy_button_selector": ("CSS копирования координат", str),
+                "speed_selector": ("CSS скорости", str),
+            }
             ),
             "yandex_selectors": (
                 "Я.Карты", {
-                    "route_button":   ("CSS кнопка маршрута", str),
-                    "close_route":    ("CSS закрытия маршрута", str),
-                    "from_input":     ("XPath Откуда", str),
-                    "to_input":       ("XPath Куда", str),
-                    "route_item":     ("CSS Результат маршрута", str),
-                    "route_duration": ("CSS длительности", str),
-                    "route_distance": ("CSS расстояния", str),
-                }
+                "route_button": ("CSS кнопка маршрута", str),
+                "close_route": ("CSS закрытия маршрута", str),
+                "from_input": ("XPath Откуда", str),
+                "to_input": ("XPath Куда", str),
+                "route_item": ("CSS Результат маршрута", str),
+                "route_duration": ("CSS длительности", str),
+                "route_distance": ("CSS расстояния", str),
+            }
             ),
             "google_config": (
                 "Google", {
-                    "creds_file":      ("Путь к creds.json", str),
-                    "sheet_id":        ("ID таблицы", str),
-                    "worksheet_index": ("Индекс листа", int),
-                    "column_index":    ("Индекс колонки", int),
-                    "file_path":       ("Путь к JSON-файлу", str),
-                }
+                "creds_file": ("Путь к creds.json", str),
+                "sheet_id": ("ID таблицы", str),
+                "worksheet_index": ("Индекс листа", int),
+                "column_index": ("Индекс колонки", int),
+                "file_path": ("Путь к JSON-файлу", str),
+            }
             )
         }
 
@@ -74,7 +75,7 @@ class CombinedSettingsDialog(QDialog):
 
         # Кнопки
         btn_row = QHBoxLayout()
-        btn_save   = QPushButton("Сохранить")
+        btn_save = QPushButton("Сохранить")
         btn_cancel = QPushButton("Отмена")
         btn_save.clicked.connect(self._on_save)
         btn_cancel.clicked.connect(self.reject)
@@ -100,9 +101,9 @@ class CombinedSettingsDialog(QDialog):
     def _on_save(self):
         data = self.json_manager.load_json() or {}
         for section_key, cfg in self.dialogs.items():
-            meta  = cfg["meta"]
+            meta = cfg["meta"]
             edits = cfg["edits"]
-            sec   = data.setdefault(section_key, {})
+            sec = data.setdefault(section_key, {})
             sec["custom"] = {}
             for key, edit in edits.items():
                 val = edit.text()

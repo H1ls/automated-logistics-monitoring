@@ -25,8 +25,8 @@ from Navigation_Bot.core.paths import INPUT_FILEPATH, ID_FILEPATH
 class TableManager:
     def __init__(self, table_widget, json_data, log_func, on_row_click, on_edit_id_click):
 
-        self.table = table_widget
         self.json_data = json_data
+        self.table = table_widget
         self.log = log_func
         self.on_row_click = on_row_click
         self.on_edit_id_click = on_edit_id_click
@@ -81,7 +81,9 @@ class TableManager:
 
                 self._set_cell(row_idx, 3, row.get("КА", ""), editable=True)
                 self._set_cell(row_idx, 4, self._get_field_with_datetime(row, "Погрузка"))
-                self._set_cell(row_idx, 5, self._get_field_with_datetime(row, "Выгрузка"))
+                # self._set_cell(row_idx, 5, self._get_field_with_datetime(row, "Выгрузка"))
+                self._set_unload_cell_with_status(row_idx, row)
+
                 self._set_cell(row_idx, 6, row.get("гео", ""))
 
                 arrival = row.get("Маршрут", {}).get("время прибытия", "—")
@@ -113,8 +115,8 @@ class TableManager:
                     except Exception as e:
                         ts = row.get("ТС", "—")
                         self.log(
-                            f"[DEBUG] ❌ Ошибка при анализе времени Погрузки у ТС: {ts} (строка {row_idx + 1}):\n {e}")
-                        # print(f"[DEBUG] ❌ Ошибка при анализе времени Погрузки у ТС: {ts} (строка {row_idx + 1}): {e}")
+                            f"[DEBUG] ❗️ Ошибка при анализе ДАТЫ/ВРЕМЕНИ Погрузки у ТС: {ts} (строка {row_idx + 1}):")
+                        # print(f"[DEBUG] ❗️ Ошибка при анализе времени Погрузки у ТС: {ts} (строка {row_idx + 1}): {e}")
 
             self.table.resizeRowsToContents()
 
@@ -132,6 +134,30 @@ class TableManager:
                 self.table.selectRow(selected_row)
         except Exception as e:
             self.log(f"❌ Ошибка при восстановлении позиции: {e}")
+
+    def _set_unload_cell_with_status(self, row_idx: int, row: dict):
+        unloads = row.get("Выгрузка", [])
+        processed = row.get("processed", [])
+
+        if len(unloads) <= 1:
+            self._set_cell(row_idx, 5, self._get_field_with_datetime(row, "Выгрузка"))
+            return
+
+        text_parts = []
+        for i, unload in enumerate(unloads):
+            prefix = f"Выгрузка {i + 1}"
+            address = unload.get(prefix, "")
+            date = unload.get(f"Дата {i + 1}", "")
+            time = unload.get(f"Время {i + 1}", "")
+
+            checked = processed[i] if i < len(processed) else False
+            checkbox = "☑️" if checked else "⬜️"
+
+            part = f"{date} {time}\n{address}  {checkbox}"
+            text_parts.append(part.strip())
+
+        combined = "\n\n".join(text_parts)
+        self._set_cell(row_idx, 5, combined, editable=False)
 
     def _set_cell(self, row, col, value, editable=False):
         item = QTableWidgetItem(value)
@@ -175,7 +201,8 @@ class TableManager:
         else:
             return
         data_list = self.json_data[row].get(prefix, [])
-        dialog = AddressEditDialog(self.table, data_list, prefix)
+        # dialog = AddressEditDialog(self.table, data_list, prefix)
+        dialog = AddressEditDialog(row_data=self.json_data[row],full_data=self.json_data,prefix=prefix,parent=self.table)
         if dialog.exec():
             data_block, meta = dialog.get_result()
             if not data_block:
