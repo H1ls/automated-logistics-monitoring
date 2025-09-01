@@ -284,8 +284,8 @@ class NavigationGUI(QWidget):
         self.log("🕒 Сортировка: по времени прибытия")
 
 
-if __name__ == "__main__":
-    app = QApplication(sys.argv)
-    gui = NavigationGUI()
-    gui.show()
-    sys.exit(app.exec())
+# if __name__ == "__main__":
+#     app = QApplication(sys.argv)
+#     gui = NavigationGUI()
+#     gui.show()
+#     sys.exit(app.exec())
