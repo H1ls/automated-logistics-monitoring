@@ -1,7 +1,7 @@
-from Navigation_Bot.gui.genericSettingsDialog import GenericSettingsDialog
 from Navigation_Bot.bots.navigationBot import NavigationBot
 from Navigation_Bot.bots.mapsBot import MapsBot
 from Navigation_Bot.bots.googleSheetsManager import GoogleSheetsManager
+from Navigation_Bot.gui.genericSettingsDialog import GenericSettingsDialog
 
 """TODO 1.overloading? Вынести структуру fields и ключей в constants FIELDS_WIALON, FIELDS_YANDEX
         2.Делегировать on_save_callback() наружу,Зависимость от gui.driver_manager, if hasattr(self.gui, "driver_manager") and ...
@@ -73,7 +73,6 @@ class SettingsDialogManager:
             custom_key="custom",
             default_key="default",
             fields=fields,
-            # file_path="config/config.json"
         )
 
         if dlg.exec():

@@ -44,7 +44,7 @@
       "file_path": "Navigation_Bot/configs/selected_data.json"
     },
     "custom": {
-      "creds_file": "C:/Users/Hils/PycharmProjects/pet.project/Navigation_Bot/config/Credentials_wialon.json",
+      "creds_file": "C:/Users/Hils/PycharmProjects/pet.project/config/Credentials_wialon.json",
       "sheet_id": "1al_8ECo4JMDuInwuJTh9QwNLI8X--GuAbMrYn-toEms",
       "worksheet_index": 3,
       "column_index": 13,

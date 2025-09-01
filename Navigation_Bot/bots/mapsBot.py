@@ -5,16 +5,15 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.common.by import By
-from Navigation_Bot.core.jSONManager import JSONManager
+
 from Navigation_Bot.core.paths import CONFIG_JSON
+from Navigation_Bot.core.jSONManager import JSONManager
 
 """TODO 1.Обновить выбор адреса (под будущую ML-фильтрацию)
         MapsBot - запускает вспомогательные классы 
         2.Вынести ввод и клики в MapsUIHelper
         3.Вынести парсинг маршрутов в отдельный класс
-        4.Вынести address+datetime обработку    
-    
-        """
+        4.Вынести address+datetime обработку"""
 
 
 class MapsBot:
@@ -155,7 +154,8 @@ class MapsBot:
             "длительность": f"{avg_minutes} мин",
             "время прибытия": result["время прибытия"],
             "успеет": result["on_time"],
-            "time_buffer": result["time_buffer"]
+            "time_buffer": result["time_buffer"],
+            "buffer_minutes": result["buffer_minutes"]
         }
 
     def _enter_to_address(self, address):

@@ -3,6 +3,7 @@ from PyQt6.QtWidgets import (
     QTableWidget, QTableWidgetItem, QPushButton
 )
 from PyQt6.QtCore import Qt
+
 from Navigation_Bot.core.jSONManager import JSONManager
 from Navigation_Bot.core.paths import ID_FILEPATH
 

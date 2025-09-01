@@ -1,14 +1,13 @@
 import os
 import re
+from pathlib import Path
 from Navigation_Bot.core.jSONManager import JSONManager
 from Navigation_Bot.core.paths import INPUT_FILEPATH, ID_FILEPATH
-from pathlib import Path
 
 """2. Очистка данных"""
 
 """TO DO 1._parse_info() - разбить 
-         2.Объединение с ML
-"""
+         2.Объединение с ML"""
 
 
 class DataCleaner:

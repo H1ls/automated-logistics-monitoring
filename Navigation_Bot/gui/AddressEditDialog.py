@@ -2,17 +2,18 @@ from PyQt6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel, QSpinBox,
     QLineEdit, QPushButton, QScrollArea, QWidget, QTextEdit, QDateEdit
 )
-from Navigation_Bot.core.processedFlags import StatusEditorWidget
 from PyQt6.QtCore import QDate
-import json
 import os
+import json
 from datetime import datetime, timedelta
-from Navigation_Bot.core.paths import INPUT_FILEPATH
+
+from Navigation_Bot.core.processedFlags import StatusEditorWidget
 from Navigation_Bot.core.jSONManager import JSONManager
+from Navigation_Bot.core.paths import INPUT_FILEPATH
 
 
 class AddressEditDialog(QDialog):
-    def __init__(self, row_data, full_data, prefix, parent=None):
+    def __init__(self, row_data, full_data, prefix, parent=None, disable_save=False):
 
         super().__init__(parent)
         self.setWindowTitle(f"Редактирование: {prefix}")
@@ -20,6 +21,7 @@ class AddressEditDialog(QDialog):
         self.entries = []
         self.row_data = row_data
         self.full_data = full_data
+        self.disable_save = disable_save
 
         data_list = self.row_data.get(self.prefix, [])
         self.resize(1000, 500)
@@ -62,10 +64,10 @@ class AddressEditDialog(QDialog):
 
             processed = self.status_editor.get_processed()
             self.row_data["processed"] = processed
-            if isinstance(self.full_data, list):
+
+            # сохраняем JSON только если явно не запретили
+            if not self.disable_save and isinstance(self.full_data, list):
                 JSONManager().save_in_json(self.full_data, str(INPUT_FILEPATH))
-            else:
-                print("[DEBUG] ❌ full_data не список!")
 
             super().accept()
         except Exception as e:
@@ -89,7 +91,7 @@ class AddressEditDialog(QDialog):
         dep_time.setFixedWidth(60)
 
         transit = QSpinBox()
-        transit.setRange(0, 72)
+        transit.setRange(0, 999)
         transit.setSuffix(" ч")
 
         btn_calc = QPushButton("🧮")
@@ -173,7 +175,7 @@ class AddressEditDialog(QDialog):
 
         for idx, (container, address_input, date_input, time_input) in enumerate(self.entries, 1):
             address = address_input.toPlainText().strip()
-            date = date_input.text().strip()  
+            date = date_input.text().strip()
             time = time_input.text().strip()
             if not address:
                 continue

@@ -1,9 +1,10 @@
+from PyQt6.QtCore import QTimer
+from concurrent.futures import ThreadPoolExecutor
+
+from Navigation_Bot.bots.webDriverManager import WebDriverManager
 from Navigation_Bot.bots.navigationBot import NavigationBot
 from Navigation_Bot.bots.mapsBot import MapsBot
 from Navigation_Bot.core.jSONManager import JSONManager
-from Navigation_Bot.bots.webDriverManager import WebDriverManager
-from PyQt6.QtCore import QTimer
-from concurrent.futures import ThreadPoolExecutor
 from Navigation_Bot.core.paths import CONFIG_JSON
 
 """TODO 

@@ -1,4 +1,5 @@
 from PyQt6.QtWidgets import QDialog, QLabel, QLineEdit, QPushButton, QVBoxLayout
+
 from Navigation_Bot.core.paths import ID_FILEPATH
 from Navigation_Bot.core.jSONManager import JSONManager
 

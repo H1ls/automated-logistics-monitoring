@@ -1,23 +1,36 @@
-from Navigation_Bot.core.jSONManager import JSONManager
 import re
-import gspread
 import os
+import gspread
 from datetime import datetime
 from oauth2client.service_account import ServiceAccountCredentials
+
+from Navigation_Bot.core.jSONManager import JSONManager
 from Navigation_Bot.core.paths import INPUT_FILEPATH, CONFIG_JSON
 
 
 class GoogleSheetsManager:
-    def __init__(self, log_func=None):
+    def __init__(self,config_key="default", log_func=None):
         self.log = log_func
+        self.config_key = config_key
         self.config_manager = JSONManager(CONFIG_JSON)
         self.data_manager = JSONManager(INPUT_FILEPATH)
+
+        # основные поля
+        self.creds_path = None
+        self.sheet_id = None
+        self.worksheet_index = None
+        self.column_index = None
+        self.file_path = None
 
         self.sheet = None
         self.load_settings()
 
+
     def load_settings(self):
         data = self.config_manager.load_json()
+        if not isinstance(data, dict):
+            self.log("❌ config_manager.load_json() вернул не dict — проверь CONFIG_JSON")
+            return
 
         config_block = data.get("google_config", {})
         defaults = config_block.get("default", {})
@@ -154,6 +167,42 @@ class GoogleSheetsManager:
 
         except Exception as e:
             self.log(f"❌ Ошибка при записи строки {item.get('ТС')}: {e}")
+
+    def is_row_empty(self, row_index: int) -> bool:
+        """Проверяет, пустая ли строка в колонках 1–7"""
+        try:
+            values = self.sheet.row_values(row_index)
+            return all((i >= len(values) or not values[i].strip()) for i in range(7))
+        except Exception:
+            return True  # если ошибки чтения — считаем пустой
+
+    def upload_new_row(self, entry: dict):
+        """Выгружает новую запись в Google Sheets"""
+        try:
+            row_index = entry["index"]
+            ts_with_phone = f"{entry.get('ТС', '')} {entry.get('Телефон', '')}".strip()
+
+            load_str = "; ".join(
+                f"{blk.get(f'Время {i + 1}', '')} {blk.get(f'Погрузка {i + 1}', '')}".strip()
+                for i, blk in enumerate(entry.get("Погрузка", []))
+            )
+            unload_str = "; ".join(
+                f"{blk.get(f'Время {i + 1}', '')} {blk.get(f'Выгрузка {i + 1}', '')}".strip()
+                for i, blk in enumerate(entry.get("Выгрузка", []))
+            )
+
+            row_data = [
+                ts_with_phone,  # col D (ТС + телефон)
+                entry.get("ФИО", ""),  # col E (ФИО)
+                entry.get("КА", ""),  # col F (КА)
+                load_str,  # col G (Погрузка)
+                unload_str  # col H (Выгрузка)
+            ]
+
+            self.sheet.update(f"D{row_index}:H{row_index}", [row_data])
+            self.log(f"📤 Новая запись отправлена в Google Sheets (row={row_index})")
+        except Exception as e:
+            self.log(f"❌ Ошибка выгрузки новой строки: {e}")
 
     def write_all(self, items: list):
         if not items:

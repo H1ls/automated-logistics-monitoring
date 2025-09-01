@@ -1,9 +1,10 @@
 from PyQt6.QtWidgets import (QApplication, QWidget, QVBoxLayout, QHBoxLayout, QTableWidget, QPushButton, QTextEdit,
                              QLabel, QHeaderView, QAbstractItemView, QMessageBox, QTableWidgetItem)
 from PyQt6.QtGui import QShortcut, QKeySequence
-import sys
-from threading import Lock
 from PyQt6.QtCore import QTimer
+import sys
+from datetime import datetime
+from threading import Lock
 from concurrent.futures import ThreadPoolExecutor
 from Navigation_Bot.bots.googleSheetsManager import GoogleSheetsManager
 from Navigation_Bot.bots.dataCleaner import DataCleaner
@@ -35,6 +36,7 @@ class NavigationGUI(QWidget):
         self._log_enabled = True
         self.json_lock = Lock()
         self._single_row_processing = True
+        self._current_sort = None
 
         self.json_data = self.load_initial_data()
         self.updated_rows = []
@@ -60,7 +62,9 @@ class NavigationGUI(QWidget):
                                           json_data=self.json_data,
                                           log_func=self.log,
                                           on_row_click=self.process_selected_row,
-                                          on_edit_id_click=self.open_id_editor)
+                                          on_edit_id_click=self.open_id_editor,
+                                          gsheet=self.gsheet
+                                          )
 
         self.processor = NavigationProcessor(json_data=self.json_data,
                                              logger=self.log,
@@ -135,10 +139,6 @@ class NavigationGUI(QWidget):
 
         self.setLayout(layout)
 
-    def _on_header_clicked(self, logicalIndex: int):
-        if logicalIndex == 0:
-            self.open_id_manager()
-
     def open_id_manager(self):
         dlg = IDManagerDialog(self)
         if dlg.exec():  # нажали «Сохранить»
@@ -153,8 +153,11 @@ class NavigationGUI(QWidget):
         self.table.itemChanged.connect(self.table_manager.save_to_json_on_edit)
         self.btn_clear_json.clicked.connect(self.confirm_clear_json)
         self.btn_load_google.clicked.connect(self.load_from_google)
-        QShortcut(QKeySequence("F11"), self, activated=self.hotkeys.start)
-        QShortcut(QKeySequence("F12"), self, activated=self.hotkeys.stop)
+
+        QShortcut(QKeySequence("F11"), self).activated.connect(self.hotkeys.start)
+        QShortcut(QKeySequence("F12"), self).activated.connect(self.hotkeys.stop)
+        # QShortcut(QKeySequence("F11"), self, activated=self.hotkeys.start)
+        # QShortcut(QKeySequence("F12"), self, activated=self.hotkeys.stop)
 
     def process_selected_row(self, row_idx):
         if 0 <= row_idx < len(self.json_data):
@@ -218,18 +221,71 @@ class NavigationGUI(QWidget):
     def reload_and_show(self):
         with self.json_lock:
             self.json_data = JSONManager().load_json(str(INPUT_FILEPATH)) or []
-            self.json_data.sort(key=lambda x: x.get("index", 99999))
             init_processed_flags(self.json_data, self.json_data, loads_key="Выгрузка")
             JSONManager().save_in_json(self.json_data, str(INPUT_FILEPATH))
             self.table_manager.json_data = self.json_data
             self.processor.json_data = self.json_data
 
+        # восстанавливаем сортировку
+        if self._current_sort == "buffer":
+            self._sort_by_buffer()
+        elif self._current_sort == "arrival":
+            self._sort_by_arrival()
+        else:
+            self._sort_default()  # сортировка по index
+
+    def _on_header_clicked(self, logicalIndex: int):
+        header = self.table.horizontalHeaderItem(logicalIndex).text()
+        if header == "🔍":
+            self.open_id_manager()
+        elif header == "Запас":
+            if self._current_sort == "buffer":
+                self._sort_default()
+            else:
+                self._sort_by_buffer()
+        elif header == "Время прибытия":
+            if self._current_sort == "arrival":
+                self._sort_default()
+            else:
+                self._sort_by_arrival()
+
+    def _sort_default(self):
+        self.json_data.sort(key=lambda x: x.get("index", 99999))
+        self._current_sort = None
+        self.table_manager.json_data = self.json_data
         self.table_manager.display()
-        self.log("✅ Обновление завершено.")
+        self.log("↩️ Сортировка: по умолчанию (index)")
+
+    def _sort_by_buffer(self):
+        def get_buffer_minutes(row):
+            try:
+                return int(row.get("Маршрут", {}).get("buffer_minutes", 999999))
+            except:
+                return 999999
+
+        self.json_data.sort(key=get_buffer_minutes)
+        self._current_sort = "buffer"
+        self.table_manager.json_data = self.json_data
+        self.table_manager.display(reload_from_file=False)
+        self.log("⏳ Сортировка: по запасу времени")
+
+    def _sort_by_arrival(self):
+        def get_arrival(row):
+            try:
+                val = row.get("Маршрут", {}).get("время прибытия")
+                return datetime.strptime(val, "%d.%m.%Y %H:%M")
+            except:
+                return datetime.max
+
+        self.json_data.sort(key=get_arrival)
+        self._current_sort = "arrival"
+        self.table_manager.json_data = self.json_data
+        self.table_manager.display(reload_from_file=False)
+        self.log("🕒 Сортировка: по времени прибытия")
 
 
-# if __name__ == "__main__":
-#     app = QApplication(sys.argv)
-#     gui = NavigationGUI()
-#     gui.show()
-#     sys.exit(app.exec())
+if __name__ == "__main__":
+    app = QApplication(sys.argv)
+    gui = NavigationGUI()
+    gui.show()
+    sys.exit(app.exec())

@@ -1,17 +1,11 @@
 from PyQt6.QtWidgets import (
-    QDialog, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit,
-    QPushButton, QFormLayout
-)
-from Navigation_Bot.core.jSONManager import JSONManager
-from Navigation_Bot.core.paths import CONFIG_JSON
-"""TO DO 1.Добавить кнопку "Сбросить настройки" при клике load_data(from_default=True)
-
-"""
-from PyQt6.QtWidgets import (
     QDialog, QFormLayout, QVBoxLayout, QLabel, QLineEdit, QPushButton, QHBoxLayout, QTabWidget, QWidget
 )
-from Navigation_Bot.core.jSONManager import JSONManager
 from Navigation_Bot.core.paths import CONFIG_JSON
+from Navigation_Bot.core.jSONManager import JSONManager
+
+"""TO DO 1.Добавить кнопку "Сбросить настройки" при клике load_data(from_default=True)"""
+
 
 class GenericSettingsDialog(QWidget):
     def __init__(self, section_key: str, fields_meta: dict, parent=None):

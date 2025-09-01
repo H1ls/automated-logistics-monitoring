@@ -1,12 +1,16 @@
 from PyQt6.QtWidgets import (
     QDialog, QTabWidget, QVBoxLayout, QHBoxLayout,
-    QPushButton, QWidget, QFormLayout, QLabel, QLineEdit
-)
-from Navigation_Bot.core.jSONManager import JSONManager
-from Navigation_Bot.core.paths import CONFIG_JSON
+    QPushButton, QWidget, QFormLayout, QLabel, QLineEdit, QFileDialog, QMessageBox)
+
+import requests, zipfile, io, os, sys
+
+from Navigation_Bot.bots.googleSheetsManager import GoogleSheetsManager
 from Navigation_Bot.bots.navigationBot import NavigationBot
 from Navigation_Bot.bots.mapsBot import MapsBot
-from Navigation_Bot.bots.googleSheetsManager import GoogleSheetsManager
+
+from Navigation_Bot.core.jSONManager import JSONManager
+from Navigation_Bot.core.paths import CONFIG_JSON
+from Navigation_Bot.core.paths import VERSION
 
 
 class CombinedSettingsDialog(QDialog):
@@ -72,6 +76,7 @@ class CombinedSettingsDialog(QDialog):
                 "meta": meta,
                 "edits": edits
             }
+        self.tabs.addTab(self._create_update_tab(), "Обновление")
 
         # Кнопки
         btn_row = QHBoxLayout()
@@ -85,6 +90,58 @@ class CombinedSettingsDialog(QDialog):
         layout.addLayout(btn_row)
 
         self._load_all()
+
+    def _create_update_tab(self):
+        tab = QWidget()
+        layout = QVBoxLayout(tab)
+
+        self.version_label = QLabel(f"Текущая версия: {VERSION}")
+        self.update_status = QLabel("")
+
+        self.btn_check_update = QPushButton("🔄 Обновить ПО")
+        self.btn_check_update.clicked.connect(self._check_and_apply_update)
+
+        layout.addWidget(self.version_label)
+        layout.addWidget(self.btn_check_update)
+        layout.addWidget(self.update_status)
+        layout.addStretch()
+
+        return tab
+
+    def _check_and_apply_update(self):
+
+        self.update_status.setText("⏳ Попытка загрузки обновления с сервера...")
+        url = "https://example.com/patch.zip"
+        try:
+            response = requests.get(url, timeout=5)
+            if response.status_code == 200:
+                zip_data = zipfile.ZipFile(io.BytesIO(response.content))
+                zip_data.extractall(os.getcwd())
+                self.update_status.setText("✅ Обновление загружено и установлено.")
+                QTimer.singleShot(1000, self._restart_app)
+                return
+            else:
+                raise Exception("Сервер вернул не 200")
+        except Exception as e:
+            self.update_status.setText("⚠️ Не удалось загрузить обновление с сервера.")
+            print(f"[DEBUG] Ошибка загрузки с сервера: {e}")
+
+            # Предложить выбрать zip локально
+            file_path, _ = QFileDialog.getOpenFileName(self, "Выбери архив с обновлением", "", "ZIP-файлы (*.zip)")
+            if file_path:
+                try:
+                    with zipfile.ZipFile(file_path, "r") as zip_ref:
+                        zip_ref.extractall(os.getcwd())
+                    self.update_status.setText("✅ Обновление из файла применено.")
+                    QTimer.singleShot(1000, self._restart_app)
+                except Exception as e:
+                    QMessageBox.critical(self, "Ошибка", f"❌ Не удалось распаковать архив:\n{e}")
+            else:
+                self.update_status.setText("❌ Обновление отменено.")
+
+    def _restart_app(self):
+        python = sys.executable
+        os.execl(python, python, *sys.argv)
 
     def _load_all(self):
         data = self.json_manager.load_json() or {}
