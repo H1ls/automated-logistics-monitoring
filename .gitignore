@@ -18,13 +18,12 @@ env/
 *.log
 *.tmp
 
-# ---- Project configs (чувствительные данные) ----
+# ---- Project configs  ----
 config/cookies.pkl
 config/Credentials_wialon.json
 config/selected_data.json
 config/Id_car.json
 
-# ---- Можно оставить только example-версии ----
 !Navigation_Bot/config/*.example.json
 
 # ---- System ----
