@@ -142,3 +142,46 @@ class WebDriverManager:
         except Exception as e:
             self.log(f"❌ Ошибка переключения на вкладку {name}: {e}")
             return False
+
+    # универсальные методы для абстракции
+    def find(self, locator, timeout=10, condition="presence"):
+        conditions = {
+            "presence": EC.presence_of_element_located,
+            "visible": EC.visibility_of_element_located,
+            "clickable": EC.element_to_be_clickable
+        }
+        cond = conditions.get(condition, EC.presence_of_element_located)
+        return WebDriverWait(self.driver, timeout).until(cond(locator))
+    # костыль - переделать
+
+    def find_xpath(self, xpath: str, timeout=15, condition="visible"):
+        conditions = {
+            "presence": EC.presence_of_element_located,
+            "visible": EC.visibility_of_element_located,
+            "clickable": EC.element_to_be_clickable
+        }
+        cond = conditions.get(condition, EC.presence_of_element_located)
+        return WebDriverWait(self.driver, timeout).until(cond((By.XPATH, xpath)))
+
+    def find_all(self, locator, timeout=10):
+        WebDriverWait(self.driver, timeout).until(
+            EC.presence_of_all_elements_located(locator)
+        )
+        return self.driver.find_elements(*locator)
+
+    def click(self, locator, timeout=10):
+        el = self.find(locator, timeout, condition="clickable")
+        el.click()
+        return el
+
+    def enter(self, locator, text, clear=True, submit=False):
+        el = self.find(locator)
+        if clear:
+            el.clear()
+        el.send_keys(text)
+        if submit:
+            el.submit()
+        return el
+
+    def execute_js(self, script, element=None):
+        return self.driver.execute_script(script, element)

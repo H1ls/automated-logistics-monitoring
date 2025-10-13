@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from google.auth.environment_vars import CREDENTIALS
+
 
 ROOT_DIR = Path(__file__).resolve().parent.parent.parent
 CONFIG_DIR = ROOT_DIR / "config"

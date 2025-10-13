@@ -10,21 +10,14 @@ from Navigation_Bot.core.jSONManager import JSONManager
 from Navigation_Bot.core.paths import INPUT_FILEPATH, ID_FILEPATH
 from Navigation_Bot.gui.AddressEditDialog import AddressEditDialog
 
-"""TODO:1.json_data — передаётся и сохраняется напрямую self.json_data[row][...]
-         Предложение: DataModel 
-             Ввести отдельный DataModel, через который TableManager бы делал get(row, field) / set(row, field, value)
-        2._save_item() растёт : Количество if-ов 
-             Создать словарь стратегий:
-                 self.field_savers = {
-                   "ТС": self._save_ts_and_phone,
-                   "id": self._save_id,
-                 }
-"""
+"""TODO:2._save_item() растёт : Количество if-ов -> Создать словарь стратегий:
+                                                    self.field_savers = {"ТС": self._save_ts_and_phone,
+                                                                         "id": self._save_id}"""
 
 
 class TableManager:
-    def __init__(self, table_widget, json_data, log_func, on_row_click, on_edit_id_click, gsheet):
-        self.json_data = json_data
+    def __init__(self, table_widget, data_context, log_func, on_row_click, on_edit_id_click, gsheet):
+        self.data_context = data_context
         self.table = table_widget
         self.log = log_func
         self.on_row_click = on_row_click
@@ -32,114 +25,16 @@ class TableManager:
         self._new_entry_buffer = {}
         self.gsheet = gsheet
 
-    #   def display(self, reload_from_file=True):
-    #     if reload_from_file:
-    #         try:
-    #             self.json_data = JSONManager(str(INPUT_FILEPATH), log_func=self.log).load_json() or []
-    #         except Exception as e:
-    #             self.log(f"❌ Ошибка при загрузке JSON: {e}")
-    #             self.json_data = []
-    #
-    #     # try:
-    #     #     self.json_data = JSONManager(str(INPUT_FILEPATH), log_func=self.log).load_json() or []
-    #     # except Exception as e:
-    #     #     self.log(f"❌ Ошибка при загрузке JSON: {e}")
-    #     #     self.json_data = []
-    #     # 🔹 Безопасное сохранение scroll и selected_row
-    #     try:
-    #         scroll_value = self.table.verticalScrollBar().value()
-    #         selected_row = self.table.currentRow()
-    #     except Exception as e:
-    #         print(f'{e}')
-    #
-    #     try:
-    #         self.table.setRowCount(0)
-    #
-    #         for row_idx, row in enumerate(self.json_data):
-    #             self.table.insertRow(row_idx)
-    #
-    #             # Кнопка ▶ или 🛠
-    #             btn = QPushButton("▶" if row.get("id") else "🛠")
-    #             if not row.get("id"):
-    #                 btn.setStyleSheet("color: red;")
-    #                 btn.clicked.connect(lambda _, idx=row_idx: self.on_edit_id_click(idx))
-    #             else:
-    #                 btn.clicked.connect(lambda _, idx=row_idx: self.on_row_click(idx))
-    #             self.table.setCellWidget(row_idx, 0, btn)
-    #
-    #             # ID с кнопкой 🛠
-    #             id_value = str(row.get("id", ""))
-    #             container = QWidget()
-    #             layout = QHBoxLayout()
-    #             layout.setContentsMargins(0, 0, 0, 0)
-    #             label = QLabel(id_value)
-    #             btn_tool = QPushButton("🛠")
-    #             btn_tool.setFixedWidth(30)
-    #             btn_tool.clicked.connect(partial(self.on_edit_id_click, row_idx))
-    #             layout.addWidget(label)
-    #             layout.addWidget(btn_tool)
-    #             layout.addStretch()
-    #             container.setLayout(layout)
-    #             self.table.setCellWidget(row_idx, 1, container)
-    #
-    #             ts = row.get("ТС", "")
-    #             phone = row.get("Телефон", "")
-    #             self._set_cell(row_idx, 2, f"{ts}\n{phone}" if phone else ts, editable=True)
-    #
-    #             self._set_cell(row_idx, 3, row.get("КА", ""), editable=True)
-    #             self._set_cell(row_idx, 4, self._get_field_with_datetime(row, "Погрузка"))
-    #             # self._set_cell(row_idx, 5, self._get_field_with_datetime(row, "Выгрузка"))
-    #             self._set_unload_cell_with_status(row_idx, row)
-    #
-    #             self._set_cell(row_idx, 6, row.get("гео", ""))
-    #
-    #             arrival = row.get("Маршрут", {}).get("время прибытия", "—")
-    #             buffer = row.get("Маршрут", {}).get("time_buffer", "—")
-    #             if ":" in buffer:
-    #                 try:
-    #                     h, m = map(int, buffer.split(":"))
-    #                     buffer = f"{h}ч {m}м"
-    #                 except Exception:
-    #                     pass
-    #
-    #             self._set_readonly_cell(row_idx, 7, arrival)
-    #             self._set_readonly_cell(row_idx, 8, buffer)
-    #
-    #             # Подсветка при поздней погрузке
-    #             pg = row.get("Погрузка", [])
-    #             if pg and isinstance(pg, list) and isinstance(pg[0], dict):
-    #                 date_str = pg[0].get("Дата 1", "")
-    #                 time_str = pg[0].get("Время 1", "")
-    #                 try:
-    #                     if time_str.count(":") == 1:
-    #                         time_str += ":00"
-    #                     dt = datetime.strptime(f"{date_str} {time_str}", "%d.%m.%Y %H:%M:%S")
-    #                     if dt > datetime.now() + timedelta(hours=3):
-    #                         for col in range(self.table.columnCount()):
-    #                             item = self.table.item(row_idx, col)
-    #                             if item:
-    #                                 item.setBackground(QColor(210, 235, 255))
-    #                 except Exception as e:
-    #                     ts = row.get("ТС", "—")
-    #                     self.log(
-    #                         f"[DEBUG] ❗️ Ошибка при анализе ДАТЫ/ВРЕМЕНИ Погрузки у ТС: {ts} (строка {row_idx + 1}):")
-    #                     # print(f"[DEBUG] ❗️ Ошибка при анализе времени Погрузки у ТС: {ts} (строка {row_idx + 1}): {e}")
-    #
-    #         self.table.resizeRowsToContents()
-    #
-    #     except Exception as e:
-    #         print(f"[DEBUG] ❌ Ошибка в display(): {e}")
-    #         return
-    #     # 🔙 Восстановление scroll и выделения
-    #     QTimer.singleShot(0, lambda: self._restore_scroll(scroll_value, selected_row))
-
     def display(self, reload_from_file=True):
         if reload_from_file:
             try:
-                self.json_data = JSONManager(str(INPUT_FILEPATH), log_func=self.log).load_json() or []
+                self.data_context.reload()
             except Exception as e:
                 self.log(f"❌ Ошибка при загрузке JSON: {e}")
-                self.json_data = []
+                json_data = []
+
+        json_data = self.data_context.get()
+
         try:
             scroll_value = self.table.verticalScrollBar().value()
             selected_row = self.table.currentRow()
@@ -150,7 +45,7 @@ class TableManager:
             self.table.blockSignals(True)  # 🚫 отключаем сигналы
             self.table.setRowCount(0)
 
-            for row_idx, row in enumerate(self.json_data):
+            for row_idx, row in enumerate(json_data):
                 self.table.insertRow(row_idx)
                 # Кнопка ▶ или 🛠
                 btn = QPushButton("▶" if row.get("id") else "🛠")
@@ -322,20 +217,21 @@ class TableManager:
                 new_entry["Транзит"] = self._new_entry_buffer["Транзит"]
 
             # index
-            last_index = max([x.get("index", 0) for x in self.json_data], default=0)
+            json_data = self.data_context.get()
+            last_index = max([x.get("index", 0) for x in json_data], default=0)
             index = last_index + 1
             while not self.gsheet.is_row_empty(index):
                 index += 1
             new_entry["index"] = index
 
             # сохраняем в JSON
-            self.json_data.append(new_entry)
-            JSONManager().save_in_json(self.json_data, str(INPUT_FILEPATH))
+            json_data.append(new_entry)
+            self.data_context.save()
 
             # отправляем в Google Sheets
             self.gsheet.upload_new_row(new_entry)
             new_entry["uploaded"] = True
-            JSONManager().save_in_json(self.json_data, str(INPUT_FILEPATH))
+            self.data_context.save()
 
             self.log(f"✅ Новая запись добавлена (index={index})")
             self._new_entry_buffer = {}  # сбрасываем буфер
@@ -350,12 +246,11 @@ class TableManager:
         ka = self.table.item(row_idx, 3).text().strip()
         load = self.table.item(row_idx, 4).text().strip()
         unload = self.table.item(row_idx, 5).text().strip()
-        fio = ""  # если ФИО у тебя хранится отдельной колонкой — сюда подставить
+        fio = ""
 
         if not ts_phone:
             return None
 
-        # Разбиваем ТС и телефон
         parts = ts_phone.split()
         ts = " ".join(parts[:-1]) if len(parts) > 1 else ts_phone
         phone = parts[-1] if len(parts) > 1 else ""
@@ -397,14 +292,16 @@ class TableManager:
         else:
             return
 
+        json_data = self.data_context.get()
         # ключевая строка
-        if row >= len(self.json_data):  # ключевая строка
+        if row >= len(json_data):  # ключевая строка
             temp_entry = {"Погрузка": [], "Выгрузка": []}
             dialog = AddressEditDialog(row_data=temp_entry,
-                                       full_data=[],  # не передаём json_data
+                                       full_data=[],
                                        prefix=prefix,
                                        parent=self.table,
-                                       disable_save=True)  # запрещаем запись
+                                       disable_save=True,
+                                       data_context=self.data_context)
             if dialog.exec():
                 data_block, meta = dialog.get_result()
                 self._new_entry_buffer[prefix] = data_block
@@ -423,34 +320,35 @@ class TableManager:
             return
 
         # обычные строки
-        data_list = self.json_data[row].get(prefix, [])
-        dialog = AddressEditDialog(row_data=self.json_data[row],
-                                   full_data=self.json_data,
+        dialog = AddressEditDialog(row_data=self.data_context.get()[row],
+                                   full_data=self.data_context.get(),
                                    prefix=prefix,
-                                   parent=self.table)
+                                   parent=self.table,
+                                   data_context=self.data_context)
         if dialog.exec():
             data_block, meta = dialog.get_result()
             if not data_block:
                 self.log(f"{prefix}: Пустое редактирование в строке {row + 1} — изменения отменены.")
                 return
 
-            self.json_data[row][prefix] = data_block
+            json_data[row][prefix] = data_block
             if meta.get("Время отправки"):
-                self.json_data[row]["Время отправки"] = meta["Время отправки"]
+                json_data[row]["Время отправки"] = meta["Время отправки"]
             if meta.get("Транзит"):
-                self.json_data[row]["Транзит"] = meta["Транзит"]
+                json_data[row]["Транзит"] = meta["Транзит"]
 
-            JSONManager().save_in_json(self.json_data, str(INPUT_FILEPATH))
+            self.data_context.save()
             self.display()
 
     def save_to_json_on_edit(self, item):
         QTimer.singleShot(0, lambda: self._save_item(item))
 
     def _save_item(self, item):
+        json_data = self.data_context.get()
 
         row = item.row()
         col = item.column()
-        if row >= len(self.json_data):
+        if row >= len(json_data):
             # это ключевая строка — не сохраняем здесь
             return
         header = self.table.horizontalHeaderItem(col).text()
@@ -469,30 +367,36 @@ class TableManager:
             ts = lines[0] if lines else ""
             phone = lines[1] if len(lines) > 1 else ""
 
-            old_ts = self.json_data[row].get("ТС", "")
-            old_phone = self.json_data[row].get("Телефон", "")
+            old_ts = json_data[row].get("ТС", "")
+            old_phone = json_data[row].get("Телефон", "")
 
             if ts == old_ts and phone == old_phone:
                 return
 
-            self.json_data[row]["ТС"] = ts
-            self.json_data[row]["Телефон"] = phone
-            JSONManager().save_in_json(self.json_data, str(INPUT_FILEPATH))
+            json_data[row]["ТС"] = ts
+            json_data[row]["Телефон"] = phone
+            self.data_context.save()
             # self.log(f"✏️ Изменено: строка {row + 1}, ТС → {ts}, Телефон → {phone}")
             return
 
         # Стандартное поведение
+        # if header == "id":
+        #     try:
+        #         value = int(value)
+        #     except ValueError:
+        #         self.log(f"⚠️ Неверный формат ID в строке {row + 1}")
+        #         return
         if header == "id":
-            try:
-                value = int(value)
-            except ValueError:
-                self.log(f"⚠️ Неверный формат ID в строке {row + 1}")
+            if not value.strip().isdigit():
+                self.log(f"⚠️ Неверный ID в строке {row + 1}")
                 return
+            value = int(value)
 
-        old_value = self.json_data[row].get(header)
+        old_value = json_data[row].get(header)
+
         if old_value == value:
             return
 
-        self.json_data[row][header] = value
-        JSONManager().save_in_json(self.json_data, str(INPUT_FILEPATH))
+        json_data[row][header] = value
+        self.data_context.save()
         # self.log(f"✏️ Изменено: строка {row + 1}, колонка '{header}' → {value}")

@@ -17,8 +17,9 @@ from Navigation_Bot.core.jSONManager import JSONManager
 
 
 class MapsBot:
-    def __init__(self, driver, sheets_manager=None, log_func=None):
-        self.driver = driver
+    def __init__(self, driver_manager, sheets_manager=None, log_func=None):
+        self.driver_manager = driver_manager
+        # self.driver = driver
         self.sheets_manager = sheets_manager
         self.log = log_func or print
         self._load_selectors()
@@ -38,28 +39,18 @@ class MapsBot:
         else:
             return (By.CLASS_NAME, val)
 
-    def web_driver_wait(self, locator, timeout=10, condition="clickable"):
-        conditions = {
-            "presence": EC.presence_of_element_located,
-            "visible": EC.visibility_of_element_located,
-            "clickable": EC.element_to_be_clickable
-        }
-        cond = conditions.get(condition, EC.presence_of_element_located)
-        return WebDriverWait(self.driver, timeout).until(cond(locator))
-
     def _try_click(self, key: str, label: str = "", timeout=3) -> bool:
-        """Пробует кликнуть по элементу (по ключу из config)."""
         try:
             locator = self._by(key)
-            btn = self.web_driver_wait(locator, timeout=timeout, condition="clickable")
-            btn.click()
+            self.driver_manager.click(locator, timeout=timeout)
             if label:
                 pass
-                # print(f"✅ Нажата кнопка '{label}'")
                 # self.log(f"✅ Нажата кнопка '{label}'")
+
             time.sleep(0.3)
             return True
-        except Exception:
+        except Exception as e:
+            self.log(f"⚠️ Не удалось нажать '{label or key}': {e}")
             return False
 
     def prepare_route_interface(self):
@@ -130,8 +121,8 @@ class MapsBot:
         """работа с Я.Картами"""
         self._enter_from_coordinates(from_coords)
         self._enter_to_address(to_address)
-        # self._enter_input("from_input", from_coords, "Откуда")
-        # self._enter_input("to_input", address, "Куда")
+
+        self.driver_manager.find_all(self._by("route_item"), timeout=10)
 
         routes = self.get_route_info()
         if not routes:
@@ -143,9 +134,7 @@ class MapsBot:
     def _finalize_result(self, car: dict, result: dict, avg_distance: float, avg_minutes: float):
         """закрытие маршрута и запись результата"""
         try:
-            close_btn = self.driver.find_element(*self._by("close_route"))
-            close_btn.click()
-            time.sleep(0.3)
+            self.driver_manager.click(self._by("close_route"))
         except Exception:
             pass
 
@@ -160,22 +149,25 @@ class MapsBot:
 
     def _enter_to_address(self, address):
         self.log(f"📥 Ввод точки назначения: {address}")
-        to_input = self.web_driver_wait(self._by("to_input"))
-        to_input.send_keys(Keys.CONTROL + "a", Keys.BACKSPACE, address, Keys.ENTER)
-        time.sleep(1)
+        to_input = self.driver_manager.find(self._by("to_input"))
+        self.driver_manager.execute_js("arguments[0].focus();", to_input)
+        to_input.send_keys(Keys.CONTROL + "a", Keys.BACKSPACE, address)
+        to_input.send_keys(Keys.ENTER)
 
     def _enter_from_coordinates(self, coord):
-        # self.log(f"🚚 Ввод координат машины: {coord}")
+        self.log(f"🚚 Ввод координат машины: {coord}")
         try:
-            from_input = WebDriverWait(self.driver, 10).until(
-                EC.presence_of_element_located(self._by("from_input"))
-            )
+            locator = self._by("from_input")
+            from_input = self.driver_manager.find(locator, timeout=10)
+            from_input.click()
 
-            self.driver.execute_script("arguments[0].focus();", from_input)
-            time.sleep(0.5)
+            # фокус через JS на всякий случай
+            self.driver_manager.execute_js("arguments[0].focus();", from_input)
             from_input.send_keys(Keys.CONTROL + "a", Keys.BACKSPACE)
-            from_input.send_keys(coord, Keys.ENTER)
-            time.sleep(1)
+            from_input.send_keys(coord)
+            from_input.send_keys(Keys.ENTER)
+            # time.sleep(0.5)
+
             # self.log("✅ Координаты 'Откуда' введены.")
         except Exception as e:
             msg = str(e).splitlines()[0]
@@ -183,11 +175,13 @@ class MapsBot:
 
     def _enter_input(self, key: str, value: str, label: str = ""):
         try:
-            element = self.web_driver_wait(self._by(key))
-            self.driver.execute_script("arguments[0].focus();", element)
-            time.sleep(0.2)
+            locator = self._by(key)
+            element = self.driver_manager.find(locator)
+            self.driver_manager.execute_js("arguments[0].focus();", element)
+            # time.sleep(0.2)
             element.send_keys(Keys.CONTROL + "a", Keys.BACKSPACE, value, Keys.ENTER)
-            time.sleep(1)
+            # time.sleep(1)
+
             if label:
                 self.log(f"📥 Ввод в поле '{label}': {value}")
         except Exception as e:
@@ -198,7 +192,7 @@ class MapsBot:
         self.log("⌛ Получение всех маршрутов...")
         try:
             for _ in range(10):
-                items = self.driver.find_elements(*self._by("route_item"))
+                items = self.driver_manager.find_all(self._by("route_item"), timeout=10)
                 filtered = [el for el in items if "_type_auto" in el.get_attribute("class")]
                 if filtered:
                     break
@@ -224,7 +218,8 @@ class MapsBot:
 
     def get_first_route(self):
         try:
-            item = self.driver.find_element(*self._by("route_item"))
+            item = self.driver_manager.find_all(self._by("route_item"))
+
             if "_type_auto" not in item.get_attribute("class"):
                 return None
             return self._parse_route_item(item)

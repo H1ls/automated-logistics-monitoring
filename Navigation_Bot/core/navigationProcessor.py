@@ -4,7 +4,6 @@ from concurrent.futures import ThreadPoolExecutor
 from Navigation_Bot.bots.webDriverManager import WebDriverManager
 from Navigation_Bot.bots.navigationBot import NavigationBot
 from Navigation_Bot.bots.mapsBot import MapsBot
-from Navigation_Bot.core.jSONManager import JSONManager
 from Navigation_Bot.core.paths import CONFIG_JSON
 
 """TODO 
@@ -14,8 +13,8 @@ from Navigation_Bot.core.paths import CONFIG_JSON
 
 
 class NavigationProcessor:
-    def __init__(self, json_data: list, logger, gsheet, filepath, display_callback, single_row=True, updated_rows=None):
-        self.json_data = json_data
+    def __init__(self, data_context, logger, gsheet, filepath, display_callback, single_row=True, updated_rows=None):
+        self.data_context = data_context
         self.log = logger
         self.gsheet = gsheet
         self.filepath = filepath
@@ -30,14 +29,12 @@ class NavigationProcessor:
 
     def process_row_wrapper(self, row):
         try:
-            self.ensure_driver_and_bots()  # вот сюда
-
+            self.ensure_driver_and_bots()
             self._reload_json()
             if not self._valid_row(row):
                 return
 
-            car = self.json_data[row]
-
+            car = self.data_context.get()[row]
             updated = self._process_wialon_row(car)
             if not updated:
                 return
@@ -45,6 +42,12 @@ class NavigationProcessor:
             self._update_and_save(row, updated)
             self._process_maps_and_write(row, updated)
             self._finalize_row(updated)
+            "проверить нужно ли,тк возвращает всю запись"
+            # car.update(updated)  # добавляем новые данные в исходный словарь
+            # self._update_and_save(row, car)
+            # self._process_maps_and_write(row, car)
+            # self._finalize_row(car)
+
 
         except Exception as e:
             self.log(f"❌ Ошибка в process_row_wrapper: {e}")
@@ -61,20 +64,19 @@ class NavigationProcessor:
             self.navibot = NavigationBot(self.driver_manager.driver, log_func=self.log)
 
         if not self.mapsbot:
-            self.mapsbot = MapsBot(self.driver_manager.driver, log_func=self.log)
+            self.mapsbot = MapsBot(self.driver_manager, log_func=self.log)
 
     def _reload_json(self):
         try:
-            fresh = JSONManager(self.filepath, log_func=self.log).load_json() or []
-            self.json_data = fresh
+            self.data_context.reload()
         except Exception as e:
             self.log(f"⚠️ Не удалось перезагрузить JSON перед обработкой: {e}")
 
     def _valid_row(self, row):
-        if row >= len(self.json_data):
+        if row >= len(self.data_context.get()):
             self.log(f"⚠️ Строка {row} не существует.")
             return False
-        if not self.json_data[row].get("ТС"):
+        if not self.data_context.get()[row].get("ТС"):
             self.log(f"⛔ Пропуск: нет ТС в строке {row + 1}")
             return False
         return True
@@ -92,8 +94,9 @@ class NavigationProcessor:
         return result
 
     def _update_and_save(self, row, updated):
-        self.json_data[row].update(updated)
-        JSONManager().save_in_json(self.json_data, self.filepath)
+        json_data = self.data_context.get()
+        json_data[row].update(updated)
+        self.data_context.save()
 
     def _process_maps_and_write(self, row, car):
         self.driver_manager.switch_to_tab("yandex")
@@ -101,8 +104,12 @@ class NavigationProcessor:
         if active_unload:
             self.mapsbot.process_navigation_from_json(car, active_unload)
 
+        json_data = self.data_context.get()
+        json_data[row].update(car)
+
         self.updated_rows.append(car)
-        JSONManager().save_in_json(self.json_data, self.filepath)
+
+        self.data_context.save()
 
     def _finalize_row(self, car):
         if self._single_row_processing:
@@ -128,8 +135,8 @@ class NavigationProcessor:
         self.log("▶ Обработка всех ТС...")
 
         with ThreadPoolExecutor(max_workers=1) as executor:
-            for row in range(len(self.json_data)):
-                car = self.json_data[row]
+            for row in range(len(self.data_context.get())):
+                car = self.data_context.get()[row]
                 if not car.get("id") or not car.get("ТС"):
                     continue
                 executor.submit(self.process_row_wrapper, row)

@@ -8,13 +8,12 @@ import json
 from datetime import datetime, timedelta
 
 from Navigation_Bot.core.processedFlags import StatusEditorWidget
-from Navigation_Bot.core.jSONManager import JSONManager
 from Navigation_Bot.core.paths import INPUT_FILEPATH
+from Navigation_Bot.core.processedFlags import init_processed_flags
 
 
 class AddressEditDialog(QDialog):
-    def __init__(self, row_data, full_data, prefix, parent=None, disable_save=False):
-
+    def __init__(self, row_data, full_data, prefix, parent=None, disable_save=False, data_context=None):
         super().__init__(parent)
         self.setWindowTitle(f"Редактирование: {prefix}")
         self.prefix = prefix
@@ -22,6 +21,7 @@ class AddressEditDialog(QDialog):
         self.row_data = row_data
         self.full_data = full_data
         self.disable_save = disable_save
+        self.data_context = data_context   # вот это сохраняем
 
         data_list = self.row_data.get(self.prefix, [])
         self.resize(1000, 500)
@@ -65,9 +65,16 @@ class AddressEditDialog(QDialog):
             processed = self.status_editor.get_processed()
             self.row_data["processed"] = processed
 
-            # сохраняем JSON только если явно не запретили
-            if not self.disable_save and isinstance(self.full_data, list):
-                JSONManager().save_in_json(self.full_data, str(INPUT_FILEPATH))
+            if not self.disable_save:
+                json_data = self.data_context.get()
+                row_index = json_data.index(self.row_data) if self.row_data in json_data else None
+                if row_index is not None:
+                    json_data[row_index] = self.row_data
+
+                # пересоздаём processedFlags только для этой строки
+                init_processed_flags([self.row_data], [self.row_data], loads_key=self.prefix)
+
+                self.data_context.save()
 
             super().accept()
         except Exception as e:

@@ -1,5 +1,5 @@
 from PyQt6.QtWidgets import (QApplication, QWidget, QVBoxLayout, QHBoxLayout, QTableWidget, QPushButton, QTextEdit,
-                             QLabel, QHeaderView, QAbstractItemView, QMessageBox, QTableWidgetItem)
+                             QLabel, QHeaderView, QAbstractItemView, QMessageBox, QTableWidgetItem, QProgressBar)
 from PyQt6.QtGui import QShortcut, QKeySequence
 from PyQt6.QtCore import QTimer
 import sys
@@ -8,13 +8,17 @@ from threading import Lock
 from concurrent.futures import ThreadPoolExecutor
 from Navigation_Bot.bots.googleSheetsManager import GoogleSheetsManager
 from Navigation_Bot.bots.dataCleaner import DataCleaner
+
 from Navigation_Bot.core.jSONManager import JSONManager
 from Navigation_Bot.core.navigationProcessor import NavigationProcessor
 from Navigation_Bot.core.paths import INPUT_FILEPATH
 from Navigation_Bot.core.processedFlags import init_processed_flags
 from Navigation_Bot.core.paths import ID_FILEPATH
+from Navigation_Bot.core.dataContext import DataContext
 from Navigation_Bot.core.hotkeyManager import HotkeyManager
+
 from Navigation_Bot.gui.combinedSettingsDialog import CombinedSettingsDialog
+from Navigation_Bot.gui.trackingIdEditor import TrackingIdEditor
 from Navigation_Bot.gui.tableManager import TableManager
 from Navigation_Bot.gui.iDManagerDialog import IDManagerDialog
 
@@ -38,7 +42,10 @@ class NavigationGUI(QWidget):
         self._single_row_processing = True
         self._current_sort = None
 
-        self.json_data = self.load_initial_data()
+        # self.json_data = self.load_initial_data()
+        self.data_context = DataContext(str(INPUT_FILEPATH), log_func=self.log)
+        self.json_data = self.data_context.get()  # для обратной совместимости
+
         self.updated_rows = []
 
         self.init_ui()
@@ -59,14 +66,13 @@ class NavigationGUI(QWidget):
         self.gsheet = GoogleSheetsManager(log_func=self.log)
 
         self.table_manager = TableManager(table_widget=self.table,
-                                          json_data=self.json_data,
+                                          data_context=self.data_context,
                                           log_func=self.log,
                                           on_row_click=self.process_selected_row,
                                           on_edit_id_click=self.open_id_editor,
-                                          gsheet=self.gsheet
-                                          )
+                                          gsheet=self.gsheet)
 
-        self.processor = NavigationProcessor(json_data=self.json_data,
+        self.processor = NavigationProcessor(data_context=self.data_context,
                                              logger=self.log,
                                              gsheet=self.gsheet,
                                              filepath=str(INPUT_FILEPATH),
@@ -168,6 +174,7 @@ class NavigationGUI(QWidget):
     def log(self, message: str):
         if self._log_enabled:
             self.log_box.append(message)
+            # self.log_box.moveCursor(self.log_box.textCursor().End)
 
     def confirm_clear_json(self):
         reply = QMessageBox.question(
@@ -178,18 +185,15 @@ class NavigationGUI(QWidget):
         )
 
         if reply == QMessageBox.StandardButton.Yes:
-            self.json_data = []
-            JSONManager().save_in_json(self.json_data, str(INPUT_FILEPATH))
-            self.table_manager.json_data = self.json_data
+            self.data_context.set([])
             self.table_manager.display()
 
     def open_id_editor(self, row):
-        from Navigation_Bot.gui.trackingIdEditor import TrackingIdEditor
         car = self.json_data[row]
 
         dialog = TrackingIdEditor(car, log_func=self.log, parent=self)
         if dialog.exec():
-            JSONManager().save_in_json(self.json_data, str(INPUT_FILEPATH))
+            self.data_context.set(self.json_data)
             self.table_manager.display()
 
     def load_from_google(self):
@@ -203,10 +207,12 @@ class NavigationGUI(QWidget):
                     try:
                         cleaner = DataCleaner(log_func=self.log)
                         cleaner.start_clean()
-                        clean_data = JSONManager().load_json(str(INPUT_FILEPATH)) or []
+
+                        self.data_context.reload()
+                        clean_data = self.data_context.get() or []
 
                         init_processed_flags(clean_data, clean_data, loads_key="Выгрузка")
-                        JSONManager().save_in_json(clean_data, str(INPUT_FILEPATH))
+                        self.data_context.set(clean_data)
                     except Exception as e:
                         import traceback
                         traceback.print_exc()
@@ -220,11 +226,10 @@ class NavigationGUI(QWidget):
 
     def reload_and_show(self):
         with self.json_lock:
-            self.json_data = JSONManager().load_json(str(INPUT_FILEPATH)) or []
+            self.data_context.reload()
+            self.json_data = self.data_context.get()  # обновляем локальный alias
             init_processed_flags(self.json_data, self.json_data, loads_key="Выгрузка")
-            JSONManager().save_in_json(self.json_data, str(INPUT_FILEPATH))
-            self.table_manager.json_data = self.json_data
-            self.processor.json_data = self.json_data
+            self.data_context.save()
 
         # восстанавливаем сортировку
         if self._current_sort == "buffer":
@@ -284,8 +289,3 @@ class NavigationGUI(QWidget):
         self.log("🕒 Сортировка: по времени прибытия")
 
 
-# if __name__ == "__main__":
-#     app = QApplication(sys.argv)
-#     gui = NavigationGUI()
-#     gui.show()
-#     sys.exit(app.exec())

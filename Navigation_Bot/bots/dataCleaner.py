@@ -3,6 +3,7 @@ import re
 from pathlib import Path
 from Navigation_Bot.core.jSONManager import JSONManager
 from Navigation_Bot.core.paths import INPUT_FILEPATH, ID_FILEPATH
+from Navigation_Bot.core.dataContext import DataContext
 
 """2. Очистка данных"""
 
@@ -11,13 +12,14 @@ from Navigation_Bot.core.paths import INPUT_FILEPATH, ID_FILEPATH
 
 
 class DataCleaner:
-    def __init__(self, json_manager=None, selected_data_path=None, id_path=None, log_func=print):
-        self.json_manager = json_manager or JSONManager()
+    def __init__(self, data_context=None, id_path=None, log_func=print):
         self.log = log_func
-        self.selected_data_path = Path(selected_data_path or INPUT_FILEPATH)
+        self.data_context = data_context or DataContext(str(INPUT_FILEPATH), log_func=log_func)
+
         self.id_path = Path(id_path or ID_FILEPATH)
-        self.json_data = self.json_manager.load_json(str(self.selected_data_path))
-        self.id_data = self.json_manager.load_json(str(self.id_path))
+        self.id_data = JSONManager().load_json(str(self.id_path))
+
+        self.json_data = self.data_context.get()
 
         self.end_patterns = [
             r"тел\s*\d[\d\s\-]{8,}",
@@ -78,11 +80,11 @@ class DataCleaner:
         return results
 
     def start_clean(self):
-        if not self.selected_data_path.exists():
-            self.log(f"❌ Файл не найден: {self.selected_data_path}")
+        if not Path(self.data_context.filepath).exists():
+            self.log(f"❌ Файл не найден: {self.data_context.filepath}")
             return
 
-        self.json_data = self.json_manager.load_json(str(self.selected_data_path))
+        self.json_data = self.data_context.get()
 
         for item in self.json_data:
             if isinstance(item.get("Погрузка"), str):
@@ -97,8 +99,8 @@ class DataCleaner:
         self._clean_vehicle_names()
         self._add_id_to_data()
 
-        self.json_manager.save_in_json(self.json_data, self.selected_data_path)
-        # self.log(f"✅ Данные очищены и сохранены: {self.selected_data_path}")
+        self.data_context.save()
+        # self.log(f"✅ Данные очищены и сохранены: {self.data_context.filepath}")
 
     def _clean_vehicle_names(self):
         for row in self.json_data:
