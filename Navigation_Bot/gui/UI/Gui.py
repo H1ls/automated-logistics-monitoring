@@ -2,18 +2,16 @@ from PyQt6.QtWidgets import (QApplication, QWidget, QVBoxLayout, QHBoxLayout, QT
                              QLabel, QHeaderView, QAbstractItemView, QMessageBox, QTableWidgetItem, QProgressBar)
 from PyQt6.QtGui import QShortcut, QKeySequence
 from PyQt6.QtCore import QTimer
-import sys
-from datetime import datetime
+
+from datetime import datetime, timedelta
 from threading import Lock
 from concurrent.futures import ThreadPoolExecutor
 from Navigation_Bot.bots.googleSheetsManager import GoogleSheetsManager
 from Navigation_Bot.bots.dataCleaner import DataCleaner
 
-from Navigation_Bot.core.jSONManager import JSONManager
 from Navigation_Bot.core.navigationProcessor import NavigationProcessor
 from Navigation_Bot.core.paths import INPUT_FILEPATH
 from Navigation_Bot.core.processedFlags import init_processed_flags
-from Navigation_Bot.core.paths import ID_FILEPATH
 from Navigation_Bot.core.dataContext import DataContext
 from Navigation_Bot.core.hotkeyManager import HotkeyManager
 
@@ -27,7 +25,8 @@ from Navigation_Bot.gui.iDManagerDialog import IDManagerDialog
          Предложение:
              Сделать self.json_data централизованным классом-хранилищем (DataContext или JsonDataStore) 
              и передавать его как объект.
-        2.Перекинуть _submit_processor_row в NavigationProcessor"""
+        2.Перекинуть _submit_processor_row в NavigationProcessor
+"""
 
 
 class NavigationGUI(QWidget):
@@ -37,14 +36,12 @@ class NavigationGUI(QWidget):
         self.resize(1050, 1033)
 
         self.executor = ThreadPoolExecutor(max_workers=1)
-        self._log_enabled = True
-        self.json_lock = Lock()
         self._single_row_processing = True
+        self._log_enabled = True
         self._current_sort = None
+        self.json_lock = Lock()
 
-        # self.json_data = self.load_initial_data()
-        self.data_context = DataContext(str(INPUT_FILEPATH), log_func=self.log)
-        self.json_data = self.data_context.get()  # для обратной совместимости
+        self._row_highlight_until = {}  # {row_idx: datetime_until}
 
         self.updated_rows = []
 
@@ -54,11 +51,23 @@ class NavigationGUI(QWidget):
 
         self.table_manager.display()
 
-    def load_initial_data(self):
-        return JSONManager(INPUT_FILEPATH, log_func=self.log).load_json() or []
+    def _highlight_row(self, row_idx: int, hours: int = 2):
+        until = datetime.now() + timedelta(hours=hours)
+        self._row_highlight_until[row_idx] = until
+        self.table_manager.highlight_row(row_idx, enabled=True)
+        # Ставим одноразовый таймер на снятие подсветки
+        ms = hours * 60 * 60 * 1000
+        QTimer.singleShot(ms, lambda: self._clear_row_highlight(row_idx))
+
+    def _clear_row_highlight(self, row_idx: int):
+        if row_idx in self._row_highlight_until and datetime.now() >= self._row_highlight_until[row_idx]:
+            self._row_highlight_until.pop(row_idx, None)
+            self.table_manager.highlight_row(row_idx, enabled=False)
 
     def init_managers(self):
-
+        self.data_context = DataContext(str(INPUT_FILEPATH),
+                                        log_func=self.log)
+        self.json_data = self.data_context.get()  # для обратной совместимости
         self.hotkeys = HotkeyManager(log_func=self.log)
 
         self.settings_ui = CombinedSettingsDialog(self)
@@ -162,11 +171,10 @@ class NavigationGUI(QWidget):
 
         QShortcut(QKeySequence("F11"), self).activated.connect(self.hotkeys.start)
         QShortcut(QKeySequence("F12"), self).activated.connect(self.hotkeys.stop)
-        # QShortcut(QKeySequence("F11"), self, activated=self.hotkeys.start)
-        # QShortcut(QKeySequence("F12"), self, activated=self.hotkeys.stop)
 
     def process_selected_row(self, row_idx):
         if 0 <= row_idx < len(self.json_data):
+            self._highlight_row(row_idx, hours=2)
             self.executor.submit(self.processor.process_row_wrapper, row_idx)
         else:
             self.log(f"⚠️ Строка {row_idx} больше не существует. Пропуск.")
@@ -259,6 +267,11 @@ class NavigationGUI(QWidget):
         self._current_sort = None
         self.table_manager.json_data = self.json_data
         self.table_manager.display()
+        for idx, until in list(self._row_highlight_until.items()):
+            if datetime.now() < until:
+                self.table_manager.highlight_row(idx, enabled=True)
+            else:
+                self._row_highlight_until.pop(idx, None)
         self.log("↩️ Сортировка: по умолчанию (index)")
 
     def _sort_by_buffer(self):
@@ -287,5 +300,3 @@ class NavigationGUI(QWidget):
         self.table_manager.json_data = self.json_data
         self.table_manager.display(reload_from_file=False)
         self.log("🕒 Сортировка: по времени прибытия")
-
-
