@@ -1,18 +1,11 @@
 from functools import partial
-from collections import ChainMap
 from datetime import datetime, timedelta
 
 from PyQt6.QtCore import Qt, QTimer
-from PyQt6.QtGui import QColor
+from PyQt6.QtGui import QColor, QBrush
 from PyQt6.QtWidgets import QTableWidgetItem, QPushButton, QWidget, QHBoxLayout, QLabel, QCheckBox, QVBoxLayout
 
-from Navigation_Bot.core.jSONManager import JSONManager
-from Navigation_Bot.core.paths import INPUT_FILEPATH, ID_FILEPATH
 from Navigation_Bot.gui.AddressEditDialog import AddressEditDialog
-
-"""TODO:2._save_item() растёт : Количество if-ов -> Создать словарь стратегий:
-                                                    self.field_savers = {"ТС": self._save_ts_and_phone,
-                                                                         "id": self._save_id}"""
 
 
 class TableManager:
@@ -24,6 +17,8 @@ class TableManager:
         self.on_edit_id_click = on_edit_id_click
         self._new_entry_buffer = {}
         self.gsheet = gsheet
+        self._editable_headers = {"Телефон", "ФИО", "КА", "id"}
+        self.after_display = None
 
     def display(self, reload_from_file=True):
         if reload_from_file:
@@ -42,7 +37,7 @@ class TableManager:
             print(f'{e}')
 
         try:
-            self.table.blockSignals(True)  # 🚫 отключаем сигналы
+            self.table.blockSignals(True)  # отключаем сигналы
             self.table.setRowCount(0)
 
             for row_idx, row in enumerate(json_data):
@@ -135,12 +130,31 @@ class TableManager:
         finally:
             self.table.blockSignals(False)  # ✅ включаем сигналы обратно
             QTimer.singleShot(0, lambda: self._restore_scroll(scroll_value, selected_row))
+        if callable(self.after_display):
+            self.after_display()
 
     def _set_editable_cell(self, row, col, text):
         item = QTableWidgetItem(text)
         item.setFlags(item.flags() | Qt.ItemFlag.ItemIsEditable)
         item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
         self.table.setItem(row, col, item)
+
+    # В начале класса TableManager (рядом с другими методами)
+    def _split_points_and_comment(self, blocks: list[dict], prefix: str):
+        """Возвращает (points, comment_text). Комментарий не считается точкой."""
+        points = []
+        comment = ""
+        for d in blocks or []:
+            if not isinstance(d, dict):
+                continue
+            # поддерживаем оба варианта: "Комментарий" и "<prefix> другое"
+            if "Комментарий" in d:
+                comment = str(d.get("Комментарий", "")).strip()
+            elif f"{prefix} другое" in d:
+                comment = str(d.get(f"{prefix} другое", "")).strip()
+            elif any(k.startswith(f"{prefix} ") for k in d.keys()):
+                points.append(d)
+        return points, comment
 
     def _restore_scroll(self, scroll_value, selected_row):
         try:
@@ -150,26 +164,62 @@ class TableManager:
         except Exception as e:
             self.log(f"❌ Ошибка при восстановлении позиции: {e}")
 
+    # def _set_unload_cell_with_status(self, row_idx: int, row: dict):
+    #     unloads = row.get("Выгрузка", [])
+    #     processed = row.get("processed", [])
+    #
+    #     if len(unloads) <= 1:
+    #         self._set_cell(row_idx, 5, self._get_field_with_datetime(row, "Выгрузка"))
+    #         return
+    #
+    #     text_parts = []
+    #     for i, unload in enumerate(unloads):
+    #         prefix = f"Выгрузка {i + 1}"
+    #         address = unload.get(prefix, "")
+    #         date = unload.get(f"Дата {i + 1}", "")
+    #         time = unload.get(f"Время {i + 1}", "")
+    #
+    #         checked = processed[i] if i < len(processed) else False
+    #         checkbox = "☑️" if checked else "⬜️"
+    #
+    #         part = f"{date} {time}\n{address}  {checkbox}"
+    #         text_parts.append(part.strip())
+    #
+    #     combined = "\n\n".join(text_parts)
+    #     self._set_cell(row_idx, 5, combined, editable=False)
+
     def _set_unload_cell_with_status(self, row_idx: int, row: dict):
-        unloads = row.get("Выгрузка", [])
+        unloads_all = row.get("Выгрузка", [])
+        points, comment = self._split_points_and_comment(unloads_all, "Выгрузка")
         processed = row.get("processed", [])
 
-        if len(unloads) <= 1:
-            self._set_cell(row_idx, 5, self._get_field_with_datetime(row, "Выгрузка"))
+        # Если одна точка (или ноль) — используем общий рендер,
+        # но перед этим временно подменим список только на точки
+        if len(points) <= 1:
+            temp_row = dict(row)
+            temp_row["Выгрузка"] = points
+            base_text = self._get_field_with_datetime(temp_row, "Выгрузка")
+            if comment:
+                base_text = (base_text + ("\n\nКомментарий:\n" + comment) if base_text else "Комментарий:\n" + comment)
+            self._set_cell(row_idx, 5, base_text)
             return
 
+        # Несколько точек — рисуем со статусами + комментарий в конце
         text_parts = []
-        for i, unload in enumerate(unloads):
-            prefix = f"Выгрузка {i + 1}"
+        for i, unload in enumerate(points, start=1):
+            prefix = f"Выгрузка {i}"
             address = unload.get(prefix, "")
-            date = unload.get(f"Дата {i + 1}", "")
-            time = unload.get(f"Время {i + 1}", "")
-
-            checked = processed[i] if i < len(processed) else False
+            date = unload.get(f"Дата {i}", "")
+            time = unload.get(f"Время {i}", "")
+            checked = processed[i - 1] if i - 1 < len(processed) else False
             checkbox = "☑️" if checked else "⬜️"
-
             part = f"{date} {time}\n{address}  {checkbox}"
             text_parts.append(part.strip())
+
+        if comment:
+            text_parts.append("")
+            text_parts.append("Комментарий:")
+            text_parts.append(comment)
 
         combined = "\n\n".join(text_parts)
         self._set_cell(row_idx, 5, combined, editable=False)
@@ -264,22 +314,60 @@ class TableManager:
             "Выгрузка": [{"Выгрузка 1": unload}] if unload else []
         }
 
+    # @staticmethod
+    # def _get_field_with_datetime(row, key):
+    #     if isinstance(row.get(key), list):
+    #         blocks = []
+    #         for i, block in enumerate(row[key], 1):
+    #             date = block.get(f"Дата {i}", "")
+    #             time = block.get(f"Время {i}", "")
+    #             address = block.get(f"{key} {i}", "")
+    #             entry = f"{date} {time}".strip()
+    #             if entry and entry != "Не указано Не указано":
+    #                 blocks.append(entry)
+    #             if address:
+    #                 blocks.append(address)
+    #             if i < len(row[key]):
+    #                 blocks.append("____________________")
+    #         return "\n".join(blocks)
+    #     return ""
     @staticmethod
     def _get_field_with_datetime(row, key):
-        if isinstance(row.get(key), list):
-            blocks = []
-            for i, block in enumerate(row[key], 1):
+        blocks = row.get(key)
+        if isinstance(blocks, list):
+            points = []
+            comment = ""
+            for d in blocks:
+                if not isinstance(d, dict):
+                    continue
+                if "Комментарий" in d:
+                    comment = str(d.get("Комментарий", "")).strip()
+                    continue
+                if f"{key} другое" in d:
+                    comment = str(d.get(f"{key} другое", "")).strip()
+                    continue
+                points.append(d)
+
+            lines = []
+            for i, block in enumerate(points, 1):
                 date = block.get(f"Дата {i}", "")
                 time = block.get(f"Время {i}", "")
                 address = block.get(f"{key} {i}", "")
-                entry = f"{date} {time}".strip()
-                if entry and entry != "Не указано Не указано":
-                    blocks.append(entry)
+                dt = f"{date} {time}".strip()
+                if dt and dt != "Не указано Не указано":
+                    lines.append(dt)
                 if address:
-                    blocks.append(address)
-                if i < len(row[key]):
-                    blocks.append("____________________")
-            return "\n".join(blocks)
+                    lines.append(address)
+                if i < len(points):
+                    lines.append("____________________")
+
+            if comment:
+                if lines:
+                    lines.append("")  # пустая строка перед комментом
+                lines.append("Комментарий:")
+                lines.append(comment)
+
+            return "\n".join(lines)
         return ""
 
     def edit_cell_content(self, row, col):
@@ -294,7 +382,7 @@ class TableManager:
 
         json_data = self.data_context.get()
         # ключевая строка
-        if row >= len(json_data):  # ключевая строка
+        if row >= len(json_data):
             temp_entry = {"Погрузка": [], "Выгрузка": []}
             dialog = AddressEditDialog(row_data=temp_entry,
                                        full_data=[],
@@ -344,56 +432,37 @@ class TableManager:
         QTimer.singleShot(0, lambda: self._save_item(item))
 
     def _save_item(self, item):
-        json_data = self.data_context.get()
+        if getattr(self, "_block_item_save", False):
+            return
 
+        json_data = self.data_context.get()
         row = item.row()
         col = item.column()
         if row >= len(json_data):
             # это ключевая строка — не сохраняем здесь
             return
-        header = self.table.horizontalHeaderItem(col).text()
+
+        header_item = self.table.horizontalHeaderItem(col)
+        if not header_item:
+            return
+        header = header_item.text()
+
+        # только whitelisted
+        if header not in self._editable_headers:
+            return
+
         value = item.text()
-        if header.lower() == "гео":
-            header = "гео"
-        if header in ["Погрузка", "Выгрузка", "Время погрузки", "Время выгрузки"]:
-            return
-        if header in ["Время прибытия", "Запас", "Запас времени"]:
-            # Эти поля только для отображения — не сохраняем их
-            return
 
-        # 🔧 Обработка колонки "ТС" (с телефоном)
-        if header == "ТС":
-            lines = value.splitlines()
-            ts = lines[0] if lines else ""
-            phone = lines[1] if len(lines) > 1 else ""
-
-            old_ts = json_data[row].get("ТС", "")
-            old_phone = json_data[row].get("Телефон", "")
-
-            if ts == old_ts and phone == old_phone:
-                return
-
-            json_data[row]["ТС"] = ts
-            json_data[row]["Телефон"] = phone
-            self.data_context.save()
-            # self.log(f"✏️ Изменено: строка {row + 1}, ТС → {ts}, Телефон → {phone}")
-            return
-
-        # Стандартное поведение
-        # if header == "id":
-        #     try:
-        #         value = int(value)
-        #     except ValueError:
-        #         self.log(f"⚠️ Неверный формат ID в строке {row + 1}")
-        #         return
+        # id — отдельные правила
         if header == "id":
+            if not value.strip():
+                return
             if not value.strip().isdigit():
                 self.log(f"⚠️ Неверный ID в строке {row + 1}")
                 return
             value = int(value)
 
         old_value = json_data[row].get(header)
-
         if old_value == value:
             return
 

@@ -13,8 +13,8 @@ from Navigation_Bot.core.dataContext import DataContext
 
 class DataCleaner:
     def __init__(self, data_context=None, id_path=None, log_func=print):
-        self.log = log_func
         self.data_context = data_context or DataContext(str(INPUT_FILEPATH), log_func=log_func)
+        self.log = log_func
 
         self.id_path = Path(id_path or ID_FILEPATH)
         self.id_data = JSONManager().load_json(str(self.id_path))
@@ -49,7 +49,8 @@ class DataCleaner:
         )
         time_pattern = re.compile(r"\b(\d{1,2}[:\-]\d{2}(?::\d{2})?)\b")
         results = []
-
+        consumed_spans = []
+        
         for i, match in enumerate(unload_pattern.finditer(text), 1):
             date = match.group(2)
             time = match.group(3) or "Не указано"
@@ -77,6 +78,24 @@ class DataCleaner:
                 f"Время {i}": time
             })
 
+            consumed_spans.append(match.span())
+
+        # --- определяем "другое" (не вошедший текст) ---
+        other_parts = []
+        last_end = 0
+        for start, end in consumed_spans:
+            if start > last_end:
+                other_parts.append(text[last_end:start].strip())
+            last_end = end
+        if last_end < len(text):
+            other_parts.append(text[last_end:].strip())
+
+        # фильтруем пустое и дубли
+        other = "\n".join(p for p in other_parts if p and not p.isspace())
+
+        if other:
+            results.append({f"Комментарий": other})
+
         return results
 
     def start_clean(self):
@@ -87,9 +106,15 @@ class DataCleaner:
         self.json_data = self.data_context.get()
 
         for item in self.json_data:
+            #  Raw для MLL
+            if isinstance(item.get("Погрузка"), str) and not item.get("raw_load"):
+                item["raw_load"] = item["Погрузка"]
+            if isinstance(item.get("Выгрузка"), str) and not item.get("raw_unload"):
+                item["raw_unload"] = item["Выгрузка"]
+
+            #  Парсинг в структуру
             if isinstance(item.get("Погрузка"), str):
                 item["Погрузка"] = self._parse_info(item["Погрузка"], "Погрузка")
-
             if isinstance(item.get("Выгрузка"), str):
                 item["Выгрузка"] = self._parse_info(item["Выгрузка"], "Выгрузка")
 
@@ -98,7 +123,6 @@ class DataCleaner:
 
         self._clean_vehicle_names()
         self._add_id_to_data()
-
         self.data_context.save()
         # self.log(f"✅ Данные очищены и сохранены: {self.data_context.filepath}")
 

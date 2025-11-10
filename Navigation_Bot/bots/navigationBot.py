@@ -9,7 +9,6 @@ from Navigation_Bot.core.jSONManager import JSONManager
 from Navigation_Bot.core.paths import CONFIG_JSON
 
 """TODO Устранить
-        1.
         2.Жёсткие sleep'ы
         3.Зависимость от self.driver
 """
@@ -34,8 +33,6 @@ class NavigationBot:
     def load_selectors(self):
         try:
             selectors = JSONManager.get_selectors("wialon_selectors", CONFIG_JSON)
-            # self.log("✅ Селекторы Wialon загружены.")
-            # print(CONFIG_JSON)
             return selectors
         except Exception as e:
             self.log(f"❌ Ошибка загрузки селекторов: {e}")
@@ -121,8 +118,8 @@ class NavigationBot:
 
         try:
             search_input = self.web_driver_wait(self.selectors["search_input_xpath"], timeout=20)
-            time.sleep(0.5)
             search_input.send_keys(car_number)
+            time.sleep(0.5)
         except:
             self.log(f"❌ Не удалось ввести номер ТС:{car_number}:{car_id} ")
             return car_data

@@ -19,7 +19,6 @@ from Navigation_Bot.core.jSONManager import JSONManager
 class MapsBot:
     def __init__(self, driver_manager, sheets_manager=None, log_func=None):
         self.driver_manager = driver_manager
-        # self.driver = driver
         self.sheets_manager = sheets_manager
         self.log = log_func or print
         self._load_selectors()
@@ -161,14 +160,13 @@ class MapsBot:
             from_input = self.driver_manager.find(locator, timeout=10)
             from_input.click()
 
-            # фокус через JS на всякий случай
             self.driver_manager.execute_js("arguments[0].focus();", from_input)
             from_input.send_keys(Keys.CONTROL + "a", Keys.BACKSPACE)
             from_input.send_keys(coord)
             from_input.send_keys(Keys.ENTER)
             # time.sleep(0.5)
-
             # self.log("✅ Координаты 'Откуда' введены.")
+
         except Exception as e:
             msg = str(e).splitlines()[0]
             self.log(f"❌ Ошибка ввода в 'Откуда': {msg}")
@@ -178,9 +176,7 @@ class MapsBot:
             locator = self._by(key)
             element = self.driver_manager.find(locator)
             self.driver_manager.execute_js("arguments[0].focus();", element)
-            # time.sleep(0.2)
             element.send_keys(Keys.CONTROL + "a", Keys.BACKSPACE, value, Keys.ENTER)
-            # time.sleep(1)
 
             if label:
                 self.log(f"📥 Ввод в поле '{label}': {value}")
@@ -242,10 +238,8 @@ class MapsBot:
                 # Пробуем отфильтровать метры: "800м", "0м" и т.п.
                 if "м" in dist_text:
                     self.log(f"📏 Короткий маршрут (< 1 км): {dist_text}")
-                    return {
-                        "duration": "0",  # нулевая длительность
-                        "distance": 0.0  # 0 км
-                    }
+                    return {"duration": "0",
+                        "distance": 0.0  }
                 raise
 
             return {

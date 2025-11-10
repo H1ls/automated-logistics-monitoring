@@ -1,13 +1,10 @@
-from PyQt6.QtWidgets import (QApplication, QWidget, QVBoxLayout, QHBoxLayout, QTableWidget, QPushButton, QTextEdit,
-                             QLabel, QHeaderView, QAbstractItemView, QMessageBox, QTableWidgetItem, QProgressBar)
+from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QTableWidget, QPushButton, QTextEdit,
+                             QLabel, QHeaderView, QAbstractItemView, QMessageBox, QTableWidgetItem)
 from PyQt6.QtGui import QShortcut, QKeySequence
-from PyQt6.QtCore import QTimer
 
-from datetime import datetime, timedelta
 from threading import Lock
 from concurrent.futures import ThreadPoolExecutor
 from Navigation_Bot.bots.googleSheetsManager import GoogleSheetsManager
-from Navigation_Bot.bots.dataCleaner import DataCleaner
 
 from Navigation_Bot.core.navigationProcessor import NavigationProcessor
 from Navigation_Bot.core.paths import INPUT_FILEPATH
@@ -20,13 +17,8 @@ from Navigation_Bot.gui.trackingIdEditor import TrackingIdEditor
 from Navigation_Bot.gui.tableManager import TableManager
 from Navigation_Bot.gui.iDManagerDialog import IDManagerDialog
 
-"""TODO:1.Дублируется self.json_data -> передаётся в:TableManager NavigationProcessor
-         Но в load_from_google() -> self.json_data = self.processor.gsheet.load_from_google()
-         Предложение:
-             Сделать self.json_data централизованным классом-хранилищем (DataContext или JsonDataStore) 
-             и передавать его как объект.
-        2.Перекинуть _submit_processor_row в NavigationProcessor
-"""
+from Navigation_Bot.gui.UI.tableSortController import TableSortController
+from Navigation_Bot.gui.UI.rowHighlighter import RowHighlighter
 
 
 class NavigationGUI(QWidget):
@@ -51,43 +43,40 @@ class NavigationGUI(QWidget):
 
         self.table_manager.display()
 
-    def _highlight_row(self, row_idx: int, hours: int = 2):
-        until = datetime.now() + timedelta(hours=hours)
-        self._row_highlight_until[row_idx] = until
-        self.table_manager.highlight_row(row_idx, enabled=True)
-        # Ставим одноразовый таймер на снятие подсветки
-        ms = hours * 60 * 60 * 1000
-        QTimer.singleShot(ms, lambda: self._clear_row_highlight(row_idx))
-
-    def _clear_row_highlight(self, row_idx: int):
-        if row_idx in self._row_highlight_until and datetime.now() >= self._row_highlight_until[row_idx]:
-            self._row_highlight_until.pop(row_idx, None)
-            self.table_manager.highlight_row(row_idx, enabled=False)
-
     def init_managers(self):
         self.data_context = DataContext(str(INPUT_FILEPATH),
                                         log_func=self.log)
         self.json_data = self.data_context.get()  # для обратной совместимости
         self.hotkeys = HotkeyManager(log_func=self.log)
-
         self.settings_ui = CombinedSettingsDialog(self)
 
         self.gsheet = GoogleSheetsManager(log_func=self.log)
-
         self.table_manager = TableManager(table_widget=self.table,
                                           data_context=self.data_context,
                                           log_func=self.log,
-                                          on_row_click=self.process_selected_row,
+                                          on_row_click=None,
                                           on_edit_id_click=self.open_id_editor,
                                           gsheet=self.gsheet)
-
+        self.row_highlighter = RowHighlighter(table=self.table,
+                                              data_context=self.data_context,
+                                              log=self.log,
+                                              hours_default=2)
         self.processor = NavigationProcessor(data_context=self.data_context,
                                              logger=self.log,
                                              gsheet=self.gsheet,
                                              filepath=str(INPUT_FILEPATH),
                                              display_callback=self.reload_and_show,
                                              single_row=self._single_row_processing,
-                                             updated_rows=self.updated_rows)
+                                             updated_rows=self.updated_rows,
+                                             executor=self.executor,
+                                             highlight_callback=self.row_highlighter.highlight_for
+                                             )
+        self.sort_controller = TableSortController(data_context=self.data_context,
+                                                   table_manager=self.table_manager,
+                                                   log=self.log)
+
+        self.table_manager.on_row_click = self.processor.on_row_click
+        self.table_manager.after_display = self.row_highlighter.reapply_from_json
 
     def init_ui(self):
         layout = QVBoxLayout()
@@ -118,9 +107,8 @@ class NavigationGUI(QWidget):
         self.table = QTableWidget()
         self.table.setColumnCount(9)
         self.table.setHorizontalHeaderLabels([
-            "", "id", "ТС", "КА", "Погрузка", "Выгрузка", "гео", "Время прибытия", "Запас"
-        ])
-        self.table.setHorizontalHeaderItem(0, QTableWidgetItem("🔍"))  # или "ID-справочник"
+            "", "id", "ТС", "КА", "Погрузка", "Выгрузка", "гео", "Время прибытия", "Запас"])
+        self.table.setHorizontalHeaderItem(0, QTableWidgetItem("🔍"))
         hdr = self.table.horizontalHeader()
         hdr.setSectionsClickable(True)
         hdr.sectionClicked.connect(self._on_header_clicked)
@@ -154,83 +142,60 @@ class NavigationGUI(QWidget):
 
         self.setLayout(layout)
 
-    def open_id_manager(self):
-        dlg = IDManagerDialog(self)
-        if dlg.exec():  # нажали «Сохранить»
-            self.table_manager.display()
-            self.log("✅ Id_car.json перезаписан")
-
     def connect_signals(self):
         self.table.cellDoubleClicked.connect(self.table_manager.edit_cell_content)
-        self.btn_settings.clicked.connect(lambda: self.settings_ui.open_all_settings(self))
+
+        self.settings_ui.settings_changed.connect(self._on_settings_changed)
+        self.btn_settings.clicked.connect(lambda: self.settings_ui.exec())
+
         self.btn_process_all.clicked.connect(self.processor.process_all)
         self.btn_refresh_table.clicked.connect(self.table_manager.display)
         self.table.itemChanged.connect(self.table_manager.save_to_json_on_edit)
         self.btn_clear_json.clicked.connect(self.confirm_clear_json)
-        self.btn_load_google.clicked.connect(self.load_from_google)
-
+        self.btn_load_google.clicked.connect(lambda: self.gsheet.pull_to_context_async(data_context=self.data_context,
+                                                                                       input_filepath=str(
+                                                                                           INPUT_FILEPATH),
+                                                                                       executor=self.executor))
         QShortcut(QKeySequence("F11"), self).activated.connect(self.hotkeys.start)
         QShortcut(QKeySequence("F12"), self).activated.connect(self.hotkeys.stop)
 
-    def process_selected_row(self, row_idx):
-        if 0 <= row_idx < len(self.json_data):
-            self._highlight_row(row_idx, hours=2)
-            self.executor.submit(self.processor.process_row_wrapper, row_idx)
-        else:
-            self.log(f"⚠️ Строка {row_idx} больше не существует. Пропуск.")
+    def _on_settings_changed(self, sections: set):
+        if "google_config" in sections:
+            self.gsheet = GoogleSheetsManager(log_func=self.log)
+            self.log("🔁 GoogleSheetsManager пересоздан по новым настройкам")
+
+        driver = getattr(getattr(self, "processor", None), "driver_manager", None)
+        driver = getattr(driver, "driver", None)
+
+        if "wialon_selectors" in sections and driver:
+            from Navigation_Bot.bots.navigationBot import NavigationBot
+            self.processor.navibot = NavigationBot(driver, log_func=self.log)
+            self.log("🔁 NavigationBot пересоздан")
+
+        if "yandex_selectors" in sections:
+            from Navigation_Bot.bots.mapsBot import MapsBot
+            dm = getattr(self.processor, "driver_manager", None)
+            if dm:
+                self.processor.mapsbot = MapsBot(dm, log_func=self.log)
+                self.log("🔁 MapsBot пересоздан")
+            else:
+                self.log("ℹ️ MapsBot обновится при запуске драйвера")
+
+        if {"wialon_selectors", "yandex_selectors"} & sections and not driver:
+            self.log("ℹ️ Селекторы применятся при старте веб-драйвера")
 
     def log(self, message: str):
         if self._log_enabled:
             self.log_box.append(message)
-            # self.log_box.moveCursor(self.log_box.textCursor().End)
 
     def confirm_clear_json(self):
-        reply = QMessageBox.question(
-            self,
-            "Подтверждение очистки",
-            "Вы действительно хотите очистить все данные из JSON?\nЭто действие необратимо.",
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
-        )
+        reply = QMessageBox.question(self, "Подтверждение очистки",
+                                     "Вы действительно хотите очистить все данные из JSON?\nЭто действие необратимо.",
+                                     QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
 
         if reply == QMessageBox.StandardButton.Yes:
             self.data_context.set([])
             self.table_manager.display()
-
-    def open_id_editor(self, row):
-        car = self.json_data[row]
-
-        dialog = TrackingIdEditor(car, log_func=self.log, parent=self)
-        if dialog.exec():
-            self.data_context.set(self.json_data)
-            self.table_manager.display()
-
-    def load_from_google(self):
-        self.log("📥 Загрузка данных из Google Sheets...")
-
-        def background_task():
-            try:
-                data = self.gsheet.load_data()
-                with self.json_lock:
-                    self.gsheet.refresh_name(data, str(INPUT_FILEPATH))
-                    try:
-                        cleaner = DataCleaner(log_func=self.log)
-                        cleaner.start_clean()
-
-                        self.data_context.reload()
-                        clean_data = self.data_context.get() or []
-
-                        init_processed_flags(clean_data, clean_data, loads_key="Выгрузка")
-                        self.data_context.set(clean_data)
-                    except Exception as e:
-                        import traceback
-                        traceback.print_exc()
-                        print(f"[ERROR] Ошибка в cleaner: {e}")
-
-                QTimer.singleShot(0, self.reload_and_show)
-            except Exception as e:
-                QTimer.singleShot(0, lambda: self.log(f"❌ Ошибка при загрузке: {e}"))
-
-        self.executor.submit(background_task)
 
     def reload_and_show(self):
         with self.json_lock:
@@ -239,64 +204,35 @@ class NavigationGUI(QWidget):
             init_processed_flags(self.json_data, self.json_data, loads_key="Выгрузка")
             self.data_context.save()
 
-        # восстанавливаем сортировку
-        if self._current_sort == "buffer":
-            self._sort_by_buffer()
-        elif self._current_sort == "arrival":
-            self._sort_by_arrival()
-        else:
-            self._sort_default()  # сортировка по index
+        if self.sort_controller.current == "buffer":
+            self.sort_controller.sort_by_buffer()
+        elif self.sort_controller.current == "arrival":
+            self.sort_controller.sort_by_arrival()
+        self.table_manager.display()
 
     def _on_header_clicked(self, logicalIndex: int):
-        header = self.table.horizontalHeaderItem(logicalIndex).text()
-        if header == "🔍":
+        if logicalIndex == 0:  # 🔍 — открыть справочник ID
             self.open_id_manager()
-        elif header == "Запас":
-            if self._current_sort == "buffer":
-                self._sort_default()
-            else:
-                self._sort_by_buffer()
-        elif header == "Время прибытия":
-            if self._current_sort == "arrival":
-                self._sort_default()
-            else:
-                self._sort_by_arrival()
+            return
+        if logicalIndex == 2:  # ТС
+            self.sort_controller.sort_default()
+            return
+        if logicalIndex == 8:  # Запас
+            self.sort_controller.sort_by_buffer()
+            return
+        if logicalIndex == 7:  # Время прибытия
+            self.sort_controller.sort_by_arrival()
+            return
 
-    def _sort_default(self):
-        self.json_data.sort(key=lambda x: x.get("index", 99999))
-        self._current_sort = None
-        self.table_manager.json_data = self.json_data
-        self.table_manager.display()
-        for idx, until in list(self._row_highlight_until.items()):
-            if datetime.now() < until:
-                self.table_manager.highlight_row(idx, enabled=True)
-            else:
-                self._row_highlight_until.pop(idx, None)
-        self.log("↩️ Сортировка: по умолчанию (index)")
+    def open_id_editor(self, row):
+        car = self.json_data[row]
+        dialog = TrackingIdEditor(car, log_func=self.log, parent=self)
+        if dialog.exec():
+            self.data_context.set(self.json_data)
+            self.table_manager.display()
 
-    def _sort_by_buffer(self):
-        def get_buffer_minutes(row):
-            try:
-                return int(row.get("Маршрут", {}).get("buffer_minutes", 999999))
-            except:
-                return 999999
-
-        self.json_data.sort(key=get_buffer_minutes)
-        self._current_sort = "buffer"
-        self.table_manager.json_data = self.json_data
-        self.table_manager.display(reload_from_file=False)
-        self.log("⏳ Сортировка: по запасу времени")
-
-    def _sort_by_arrival(self):
-        def get_arrival(row):
-            try:
-                val = row.get("Маршрут", {}).get("время прибытия")
-                return datetime.strptime(val, "%d.%m.%Y %H:%M")
-            except:
-                return datetime.max
-
-        self.json_data.sort(key=get_arrival)
-        self._current_sort = "arrival"
-        self.table_manager.json_data = self.json_data
-        self.table_manager.display(reload_from_file=False)
-        self.log("🕒 Сортировка: по времени прибытия")
+    def open_id_manager(self):
+        dlg = IDManagerDialog(self)
+        if dlg.exec():
+            self.table_manager.display()
+            self.log("✅ Id_car.json перезаписан")

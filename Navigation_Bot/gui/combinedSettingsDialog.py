@@ -1,194 +1,193 @@
-from PyQt6.QtWidgets import (
-    QDialog, QTabWidget, QVBoxLayout, QHBoxLayout,
-    QPushButton, QWidget, QFormLayout, QLabel, QLineEdit, QFileDialog, QMessageBox)
+from PyQt6.QtCore import pyqtSignal
+from PyQt6.QtWidgets import (QDialog, QTabWidget, QWidget, QVBoxLayout, QFormLayout,
+                             QLineEdit, QSpinBox, QCheckBox, QPushButton, QHBoxLayout, QMessageBox)
 
-import requests, zipfile, io, os, sys
+import json
 
-from Navigation_Bot.bots.googleSheetsManager import GoogleSheetsManager
-from Navigation_Bot.bots.navigationBot import NavigationBot
-from Navigation_Bot.bots.mapsBot import MapsBot
-
-from Navigation_Bot.core.jSONManager import JSONManager
+from Navigation_Bot.core.settings_schema import SECTIONS
+from Navigation_Bot.core.jSONManager import JSONManager as JM
 from Navigation_Bot.core.paths import CONFIG_JSON
-from Navigation_Bot.core.paths import VERSION
 
 
 class CombinedSettingsDialog(QDialog):
+    settings_changed = pyqtSignal(set)
+
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setWindowTitle("Настройки")
-        self.resize(600, 400)
+        self.resize(650, 350)
+        self._forms = {}  # section_key -> SectionForm
+        self._dirty = set()  # какие секции менялись с момента открытия
 
-        self.json_manager = JSONManager(file_path=str(CONFIG_JSON))
-
-        self.sections = {
-            "wialon_selectors": (
-                "Wialon", {
-                "search_input_xpath": ("XPath поиска", str),
-                "unit_block_xpath": ("XPath блока ТС", str),
-                "address_selector": ("CSS адреса", str),
-                "copy_button_selector": ("CSS копирования координат", str),
-                "speed_selector": ("CSS скорости", str),
-            }
-            ),
-            "yandex_selectors": (
-                "Я.Карты", {
-                "route_button": ("CSS кнопка маршрута", str),
-                "close_route": ("CSS закрытия маршрута", str),
-                "from_input": ("XPath Откуда", str),
-                "to_input": ("XPath Куда", str),
-                "route_item": ("CSS Результат маршрута", str),
-                "route_duration": ("CSS длительности", str),
-                "route_distance": ("CSS расстояния", str),
-            }
-            ),
-            "google_config": (
-                "Google", {
-                "creds_file": ("Путь к creds.json", str),
-                "sheet_id": ("ID таблицы", str),
-                "worksheet_index": ("Индекс листа", int),
-                "column_index": ("Индекс колонки", int),
-                "file_path": ("Путь к JSON-файлу", str),
-            }
-            )
-        }
-
-        # UI
-        layout = QVBoxLayout(self)
+        root = QVBoxLayout(self)
         self.tabs = QTabWidget()
-        layout.addWidget(self.tabs)
+        root.addWidget(self.tabs)
 
-        # Для каждого раздела — своя форма
-        self.dialogs = {}
-        for section_key, (tab_name, meta) in self.sections.items():
-            widget = QWidget()
-            form = QFormLayout(widget)
-            edits = {}
+        for section_key, (title, fields) in SECTIONS.items():
+            form = SectionForm(section_key, title, fields, self)
+            # помечаем секцию при любом изменении
+            for w in form._widgets.values():
+                if hasattr(w, "textChanged"):
+                    w.textChanged.connect(lambda _=None, s=section_key: self._dirty.add(s))
+                elif hasattr(w, "stateChanged"):
+                    w.stateChanged.connect(lambda _=None, s=section_key: self._dirty.add(s))
+                elif hasattr(w, "valueChanged"):
+                    w.valueChanged.connect(lambda _=None, s=section_key: self._dirty.add(s))
 
-            # создаём поле
-            for key, (label, _) in meta.items():
-                edit = QLineEdit()
-                form.addRow(QLabel(label), edit)
-                edits[key] = edit
+            self._forms[section_key] = form
+            self.tabs.addTab(form, title)
 
-            self.tabs.addTab(widget, tab_name)
-            self.dialogs[section_key] = {
-                "meta": meta,
-                "edits": edits
-            }
-        self.tabs.addTab(self._create_update_tab(), "Обновление")
+        btns = QHBoxLayout()
+        self.btn_save = QPushButton("Сохранить")
+        self.btn_cancel = QPushButton("Отмена")
+        self.btn_save.clicked.connect(self._on_save)
+        self.btn_cancel.clicked.connect(self.reject)
+        btns.addStretch(1)
+        btns.addWidget(self.btn_save)
+        btns.addWidget(self.btn_cancel)
+        root.addLayout(btns)
 
-        # Кнопки
-        btn_row = QHBoxLayout()
-        btn_save = QPushButton("Сохранить")
-        btn_cancel = QPushButton("Отмена")
-        btn_save.clicked.connect(self._on_save)
-        btn_cancel.clicked.connect(self.reject)
-        btn_row.addStretch()
-        btn_row.addWidget(btn_save)
-        btn_row.addWidget(btn_cancel)
-        layout.addLayout(btn_row)
-
-        self._load_all()
-
-    def _create_update_tab(self):
-        tab = QWidget()
-        layout = QVBoxLayout(tab)
-
-        self.version_label = QLabel(f"Текущая версия: {VERSION}")
-        self.update_status = QLabel("")
-
-        self.btn_check_update = QPushButton("🔄 Обновить ПО")
-        self.btn_check_update.clicked.connect(self._check_and_apply_update)
-
-        layout.addWidget(self.version_label)
-        layout.addWidget(self.btn_check_update)
-        layout.addWidget(self.update_status)
-        layout.addStretch()
-
-        return tab
-
-    def _check_and_apply_update(self):
-
-        self.update_status.setText("⏳ Попытка загрузки обновления с сервера...")
-        url = "https://example.com/patch.zip"
-        try:
-            response = requests.get(url, timeout=5)
-            if response.status_code == 200:
-                zip_data = zipfile.ZipFile(io.BytesIO(response.content))
-                zip_data.extractall(os.getcwd())
-                self.update_status.setText("✅ Обновление загружено и установлено.")
-                QTimer.singleShot(1000, self._restart_app)
-                return
-            else:
-                raise Exception("Сервер вернул не 200")
-        except Exception as e:
-            self.update_status.setText("⚠️ Не удалось загрузить обновление с сервера.")
-            print(f"[DEBUG] Ошибка загрузки с сервера: {e}")
-
-            # Предложить выбрать zip локально
-            file_path, _ = QFileDialog.getOpenFileName(self, "Выбери архив с обновлением", "", "ZIP-файлы (*.zip)")
-            if file_path:
-                try:
-                    with zipfile.ZipFile(file_path, "r") as zip_ref:
-                        zip_ref.extractall(os.getcwd())
-                    self.update_status.setText("✅ Обновление из файла применено.")
-                    QTimer.singleShot(1000, self._restart_app)
-                except Exception as e:
-                    QMessageBox.critical(self, "Ошибка", f"❌ Не удалось распаковать архив:\n{e}")
-            else:
-                self.update_status.setText("❌ Обновление отменено.")
-
-    def _restart_app(self):
-        python = sys.executable
-        os.execl(python, python, *sys.argv)
-
-    def _load_all(self):
-        data = self.json_manager.load_json() or {}
-        for section_key, cfg in self.dialogs.items():
-            section = data.get(section_key, {})
-            custom = section.get("custom", {})
-            default = section.get("default", {})
-            for key, edit in cfg["edits"].items():
-                if key in custom:
-                    edit.setText(str(custom[key]))
-                elif key in default:
-                    edit.setText(str(default[key]))
+    def _validate_required(self) -> tuple[bool, str]:
+        # простая проверка: все required != пустая строка
+        for s_key, (_, fields) in SECTIONS.items():
+            form = self._forms[s_key]
+            for key, (label, tp, required) in fields.items():
+                if not required:
+                    continue
+                val = form.values().get(key, "")
+                if (tp is str and not str(val).strip()) or (tp is int and val is None):
+                    return False, f"В секции «{s_key}» заполните обязательное поле: {label}"
+        return True, ""
 
     def _on_save(self):
-        data = self.json_manager.load_json() or {}
-        for section_key, cfg in self.dialogs.items():
-            meta = cfg["meta"]
-            edits = cfg["edits"]
-            sec = data.setdefault(section_key, {})
-            sec["custom"] = {}
-            for key, edit in edits.items():
-                val = edit.text()
-                cast = meta[key][1]
-                try:
-                    sec["custom"][key] = cast(val)
-                except:
-                    sec["custom"][key] = val
-        self.json_manager.save_in_json(data)
-        if hasattr(self.parent(), "log"):
-            self.parent().log("📝 Настройки сохранены.")
+        ok, msg = self._validate_required()
+        if not ok:
+            QMessageBox.warning(self, "Проверка", msg)
+            return
+
+        if not self._dirty:
+            self.accept()
+            return
+
+        cfg = _read_config()
+        changed = set()
+
+        for s_key in self._dirty:
+            form = self._forms[s_key]
+            val = form.values()
+            node = cfg.setdefault(s_key, {})
+            node.setdefault("default", node.get("default", {}))
+            node["custom"] = val
+            changed.add(s_key)
+
+        _save_config(cfg)
+        self.settings_changed.emit(changed)
         self.accept()
 
-    @staticmethod
-    def open_all_settings(gui):
-        dlg = CombinedSettingsDialog(parent=gui)
-        if not dlg.exec():
-            return
-        try:
-            # Wialon-бот
-            if hasattr(gui, "driver_manager") and gui.driver_manager.driver:
-                gui.navibot = NavigationBot(gui.driver_manager.driver, log_func=gui.log)
-            # Я.Карты-бот
-            if hasattr(gui, "driver_manager") and gui.driver_manager.driver:
-                gui.mapsbot = MapsBot(gui.driver_manager.driver, log_func=gui.log)
-            # Google Sheets
-            gui.gsheet = GoogleSheetsManager(log_func=gui.log)
 
-            gui.log("🔁 Все боты пересозданы с новыми настройками")
-        except Exception as e:
-            gui.log(f"❌ Ошибка при пересоздании ботов: {e}")
+class SectionForm(QWidget):
+    def __init__(self, section_key: str, section_title: str, fields_spec: dict, parent=None):
+        super().__init__(parent)
+        self.section_key = section_key
+        self.fields_spec = fields_spec
+        self._widgets = {}
+
+        self.setLayout(QVBoxLayout())
+        form = QFormLayout()
+        self.layout().addLayout(form)
+
+        # грузим значения custom; для сброса будем смотреть default
+        cfg = _read_config()
+        section_cfg = cfg.get(section_key, {})
+        custom = section_cfg.get("custom", {})
+        default = section_cfg.get("default", {})
+
+        # редакторы
+        for key, (label, tp, required) in fields_spec.items():
+            if tp is bool:
+                w = QCheckBox()
+                w.setChecked(bool(custom.get(key, default.get(key, False))))
+                editor = w
+            elif tp is int:
+                w = QSpinBox()
+                w.setRange(-999999, 999999)
+                w.setValue(int(custom.get(key, default.get(key, 0))))
+                editor = w
+            else:
+                w = QLineEdit()
+                val = custom.get(key, default.get(key, ""))
+                w.setText("" if val is None else str(val))
+                if required:
+                    w.setPlaceholderText("Обязательное поле")
+                editor = w
+
+            self._widgets[key] = editor
+            form.addRow(label + (" *" if required else ""), editor)
+
+        btns = QHBoxLayout()
+        self.btn_reset = QPushButton("Сбросить (default)")
+        self.btn_reset.clicked.connect(self.reset_to_default)
+        btns.addStretch(1)
+        btns.addWidget(self.btn_reset)
+        self.layout().addLayout(btns)
+
+    # Переписать на читаемый, возможно использовать словари стратегий:_READERS, _CASTERS (тогда переписать весь class)
+    def values(self) -> dict:
+        out = {}
+        for key, editor in self._widgets.items():
+            spec = self.fields_spec[key]
+            tp = spec[1]
+            if isinstance(editor, QCheckBox):
+                val = editor.isChecked()
+            elif isinstance(editor, QSpinBox):
+                val = editor.value()
+            else:
+                val = editor.text().strip()
+            if tp is int:
+                try:
+                    val = int(val)
+                except:
+                    val = 0
+            elif tp is bool:
+                val = bool(val)
+            else:
+                val = str(val)
+            out[key] = val
+        return out
+
+    def reset_to_default(self):
+        cfg = _read_config()
+        section_cfg = cfg.get(self.section_key, {})
+        default = section_cfg.get("default", {})
+        # подставляем default в редакторы
+        for key, editor in self._widgets.items():
+            val = default.get(key, "")
+            if isinstance(editor, QCheckBox):
+                editor.setChecked(bool(val))
+            elif isinstance(editor, QSpinBox):
+                try:
+                    editor.setValue(int(val))
+                except:
+                    editor.setValue(0)
+            else:
+                editor.setText("" if val is None else str(val))
+
+
+# ---Вспомогательные функции--
+def _read_config() -> dict:
+    try:
+        return JM.load_json(CONFIG_JSON)
+    except Exception:
+        try:
+            with open(CONFIG_JSON, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception:
+            return {}
+
+
+def _save_config(cfg: dict) -> None:
+    try:
+        JM.save_json(CONFIG_JSON, cfg)
+    except Exception:
+        with open(CONFIG_JSON, "w", encoding="utf-8") as f:
+            json.dump(cfg, f, ensure_ascii=False, indent=2)

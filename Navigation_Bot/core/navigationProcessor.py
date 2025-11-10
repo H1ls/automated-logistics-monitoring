@@ -4,28 +4,48 @@ from concurrent.futures import ThreadPoolExecutor
 from Navigation_Bot.bots.webDriverManager import WebDriverManager
 from Navigation_Bot.bots.navigationBot import NavigationBot
 from Navigation_Bot.bots.mapsBot import MapsBot
-from Navigation_Bot.core.paths import CONFIG_JSON
-
-"""TODO 
-        1.json_data → DataModel /отделить структуру хранения
-        3.process_all() прогрессбар ?
-"""
 
 
 class NavigationProcessor:
-    def __init__(self, data_context, logger, gsheet, filepath, display_callback, single_row=True, updated_rows=None):
+    def __init__(self, data_context, logger, gsheet, filepath, display_callback, single_row, updated_rows,
+                 executor=None, highlight_callback=None):
         self.data_context = data_context
         self.log = logger
         self.gsheet = gsheet
         self.filepath = filepath
         self.display_callback = display_callback
-
         self._single_row_processing = single_row
         self.updated_rows = updated_rows if updated_rows is not None else []
+
         self.driver_manager = WebDriverManager(log_func=self.log)
         self.browser_opened = False
         self.navibot = None
         self.mapsbot = None
+        self.executor = executor
+        self.highlight_cb = highlight_callback
+
+    def on_row_click(self, row_idx: int):
+        data = self.data_context.get() or []
+        if not (0 <= row_idx < len(data)):
+            if self.logger:
+                self.logger(f"⚠️ Строка {row_idx} больше не существует. Пропуск.")
+            return
+
+        # Подсветка строки (через переданный колбэк из GUI)
+        if self.highlight_cb:
+            try:
+                self.highlight_cb(row_idx)
+            except Exception as e:
+                if self.logger:
+                    self.logger(f"⚠️ Ошибка подсветки строки {row_idx}: {e}")
+
+        # Запуск обработки в фоне
+        if self.executor:
+            self.executor.submit(self.process_row_wrapper, row_idx)
+        else:
+            # fallback, если executor не передан
+            with ThreadPoolExecutor(max_workers=1) as ex:
+                ex.submit(self.process_row_wrapper, row_idx)
 
     def process_row_wrapper(self, row):
         try:
@@ -42,13 +62,13 @@ class NavigationProcessor:
             self._update_and_save(row, updated)
             self._process_maps_and_write(row, updated)
             self._finalize_row(updated)
-            "проверить нужно ли,тк возвращает всю запись"
+            """
+            проверить нужно ли,тк возвращает всю запись
+            """
             # car.update(updated)  # добавляем новые данные в исходный словарь
             # self._update_and_save(row, car)
             # self._process_maps_and_write(row, car)
             # self._finalize_row(car)
-
-
         except Exception as e:
             self.log(f"❌ Ошибка в process_row_wrapper: {e}")
 

@@ -7,6 +7,8 @@ from PyQt6.QtCore import Qt
 from Navigation_Bot.core.jSONManager import JSONManager
 from Navigation_Bot.core.paths import ID_FILEPATH
 
+"""Использовать DataContext вместо JSONManager"""
+
 
 class IDManagerDialog(QDialog):
     def __init__(self, parent=None):
@@ -97,9 +99,9 @@ class IDManagerDialog(QDialog):
     def accept(self):
         """При сохранении обновляем записи, чьи строки были изменены, и сохраняем JSON."""
         for row in self.changed_rows:
-            id_text     = self.table.item(row, 0).text().strip()
-            name_text   = self.table.item(row, 1).text().strip()
-            ts_text     = self.table.item(row, 2).text().strip()
+            id_text = self.table.item(row, 0).text().strip()
+            name_text = self.table.item(row, 1).text().strip()
+            ts_text = self.table.item(row, 2).text().strip()
             center_text = self.table.item(row, 3).text().strip()
 
             if not id_text.isdigit():
@@ -108,9 +110,9 @@ class IDManagerDialog(QDialog):
 
             ent = self.original_entries[row]
             ent["ИДОбъекта в центре мониторинга"] = obj_id
-            ent["Наименование"]                   = name_text
-            ent["ТС"]                             = ts_text
-            ent["Центр мониторинга"]             = center_text
+            ent["Наименование"] = name_text
+            ent["ТС"] = ts_text
+            ent["Центр мониторинга"] = center_text
 
         JSONManager(ID_FILEPATH).save_in_json(self.original_entries)
         super().accept()

@@ -3,17 +3,28 @@ import os
 import gspread
 from datetime import datetime
 from oauth2client.service_account import ServiceAccountCredentials
+from PyQt6.QtCore import QObject, pyqtSignal, QTimer
 
+from Navigation_Bot.core.dataContext import DataContext
 from Navigation_Bot.core.jSONManager import JSONManager
 from Navigation_Bot.core.paths import INPUT_FILEPATH, CONFIG_JSON
+from Navigation_Bot.bots.dataCleaner import DataCleaner
+from Navigation_Bot.core.processedFlags import init_processed_flags
 
 
-class GoogleSheetsManager:
-    def __init__(self,config_key="default", log_func=None):
+class GoogleSheetsManager(QObject):
+    started = pyqtSignal()
+    finished = pyqtSignal()
+    error = pyqtSignal(str)
+
+    def __init__(self, config_key="default", log_func=None, parent=None, data_context=None):
+        super().__init__(parent)
         self.log = log_func
         self.config_key = config_key
         self.config_manager = JSONManager(CONFIG_JSON)
         self.data_manager = JSONManager(INPUT_FILEPATH)
+
+        self.data_context = data_context or DataContext(str(INPUT_FILEPATH), log_func=log_func)
 
         # основные поля
         self.creds_path = None
@@ -25,7 +36,6 @@ class GoogleSheetsManager:
         self.sheet = None
         self.load_settings()
 
-
     def load_settings(self):
         data = self.config_manager.load_json()
         if not isinstance(data, dict):
@@ -34,19 +44,20 @@ class GoogleSheetsManager:
 
         config_block = data.get("google_config", {})
         defaults = config_block.get("default", {})
-        current = config_block.get("custom", defaults)
+        # current = config_block.get("custom", defaults)
+        current = config_block.get("custom", {}) or defaults
 
         self.creds_file = str(current.get("creds_file") or defaults.get("creds_file") or "")
         self.sheet_id = str(current.get("sheet_id") or defaults.get("sheet_id") or "")
         self.worksheet_index = int(current.get("worksheet_index") or defaults.get("worksheet_index") or 0)
         self.column_index = int(current.get("column_index") or defaults.get("column_index") or 0)
+        self.file_path = str(current.get("file_path") or defaults.get("file_path") or "").strip()  # ← ВАЖНО
 
         if not os.path.exists(self.creds_file):
             self.log(f"❌ Файл авторизации не найден: {self.creds_file}")
             return
 
         try:
-            # Загружаем JSON и достаём credentials
             full_block = JSONManager().load_json(self.creds_file)
             creds_data = full_block.get("credentials")
 
@@ -71,22 +82,73 @@ class GoogleSheetsManager:
             self.log(f"❌ Ошибка подключения к Google Sheets: {e}")
             self.sheet = None
 
+    def pull_to_context(self, data_context, input_filepath: str | None = None):
+        try:
+            rows = self.load_data()
+            if not rows:
+                msg = "Загрузка отменена: нет данных из Google (ошибка/пусто)."
+                if self.log: self.log(f"⚠️ {msg}")
+                return False, msg
+
+            self.data_context = data_context or self.data_context
+            self.refresh_name(rows)
+
+            cleaner = DataCleaner(data_context=self.data_context or DataContext(self.file_path, log_func=self.log),
+                                  log_func=self.log)
+            cleaner.start_clean()
+
+            if self.data_context:
+                self.data_context.reload()
+                clean_data = self.data_context.get() or []
+                init_processed_flags(clean_data, clean_data, loads_key="Выгрузка")
+                self.data_context.set(clean_data)
+
+            return True, None
+        except Exception as e:
+            if self.log: self.log(f"❌ pull_to_context: {e}")
+            return False, str(e)
+
+    def pull_to_context_async(self, data_context, input_filepath: str, executor):
+        self.log("📥 Загрузка данных из Google Sheets...")
+        self.started.emit()
+
+        def task():
+            ok, err = self.pull_to_context(data_context, input_filepath)
+            if ok:
+                self.finished.emit()
+            else:
+                self.error.emit(err or "Unknown error")
+
+        executor.submit(task)
+
     def load_data(self):
         try:
-            return self.sheet.get_all_values() if self.sheet else []
+            if not self.sheet:
+                self.log("⚠️ Лист Google Sheets не инициализирован — пропускаю загрузку.")
+                return None
+            rows = self.sheet.get_all_values()
+            if not rows or len(rows) < 3:
+                self.log("⚠️ Таблица пуста или слишком короткая — обновление отменено.")
+                return None
+            return rows
         except Exception as e:
-            self.log(f"️ Ошибка загрузки данных с листа: {e}")
-            return []
+            self.log(f"️❌ Ошибка загрузки данных с листа: {e}")
+            return None
 
     def refresh_name(self, rows, file_path=None):
-        file_path = file_path or self.file_path
-        existing_data = self.data_manager.load_json(file_path)
-        if not isinstance(existing_data, list):
-            existing_data = []
+        if not rows:
+            self.log("↩️ Обновление отменено: нет данных (ошибка загрузки/пустой лист). Текущее состояние сохранено.")
+            return
+
+        ctx = self.data_context
+        if ctx:
+            existing_data = ctx.get() or []
+        else:
+            target_path = file_path or self.file_path
+            existing_data = JSONManager().load_json(target_path) or []
 
         existing_indexes = {entry.get("index") for entry in existing_data}
-        active_indexes = set()
-        new_entries = []
+        active_indexes, new_entries = set(), []
 
         for i, row in enumerate(rows[2:], start=3):
             if len(row) < self.column_index or row[self.column_index - 1].strip() == "Готов":
@@ -94,9 +156,7 @@ class GoogleSheetsManager:
 
             raw_ts = re.sub(r"\s+", "", row[3])  # убираем все пробелы из ТС
             number, phone = raw_ts[:9], raw_ts[9:]
-
-            # Вставляем пробел перед регионом
-            formatted_ts = number[:6] + ' ' + number[6:] if len(number) >= 9 else number
+            formatted_ts = number[:6] + ' ' + number[6:] if len(number) >= 9 else number  # пробел перед регионом
 
             fio = row[4] if len(row) > 4 else ""
             load = row[6] if len(row) > 6 else ""
@@ -117,14 +177,20 @@ class GoogleSheetsManager:
                     "Погрузка": row[6],
                     "Выгрузка": row[7],
                 })
-        filtered_data = [entry for entry in existing_data if entry.get("index") in active_indexes]
+        if not active_indexes and not new_entries:
+            self.log("↩️ В листе не найдено активных строк. Обновление пропущено, данные не изменены.")
+            return
 
+        filtered_data = [entry for entry in existing_data if entry.get("index") in active_indexes]
         result_data = filtered_data + new_entries
 
-        self.data_manager.save_in_json(result_data, file_path)
+        if ctx:
+            ctx.set(result_data)
+        else:
+            target_path = file_path or self.file_path
+            JSONManager().save_in_json(result_data, target_path)
         self.log(
             f"🔄 Обновление: добавлено {len(new_entries)}, удалено {len(existing_data) - len(filtered_data)} строк.")
-        # return new_entries
 
     def append_to_cell(self, data, column=12):
         if isinstance(data, list):

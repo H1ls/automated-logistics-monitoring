@@ -1,7 +1,5 @@
 from pathlib import Path
 
-
-
 ROOT_DIR = Path(__file__).resolve().parent.parent.parent
 CONFIG_DIR = ROOT_DIR / "config"
 
@@ -11,5 +9,9 @@ CONFIG_JSON = CONFIG_DIR / "config.json"
 COOKIES_FILE = CONFIG_DIR / "cookies.pkl"
 CREDENTIALS_WIALON = CONFIG_DIR / "Credentials_wialon.json"
 
-# paths.py
-VERSION = "1.0.3"
+UI_SETTINGS_FILE = CONFIG_DIR / "ui_settings.json"
+
+DATASET_DIR = CONFIG_DIR / "datasets"
+DATASET_FILE = DATASET_DIR / "addresses.jsonl"
+
+VERSION = "0.45"

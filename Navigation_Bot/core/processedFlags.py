@@ -41,20 +41,23 @@ def init_processed_flags(new_data: list[dict], old_data: list[dict], loads_key: 
     for row in new_data:
         key = unique_key(row)
         prev_flags = old_map.get(key, [])
-        unloads = row.get(loads_key, [])
-        cnt = len(unloads)
+        unloads = row.get(loads_key, []) or []
 
-        if not unloads:
+        def _is_real_point(d) -> bool:
+            if not isinstance(d, dict):
+                return False
+            pref = f"{loads_key} "
+            return any(k.startswith(pref) for k in d.keys())
+
+        cnt = sum(_is_real_point(d) for d in unloads)
+        if cnt == 0:
             row["processed"] = []
             continue
 
-        # если уже есть актуальные processed — расширяем, но не перезаписываем
         existing_flags = row.get("processed", [])
         if len(existing_flags) == cnt:
             continue  # ничего не меняем
 
-        # выбираем либо предыдущие флаги, либо текущие — что длиннее
         base_flags = existing_flags if len(existing_flags) > len(prev_flags) else prev_flags
 
-        # достраиваем хвост до нужной длины
         row["processed"] = (base_flags + [False] * cnt)[:cnt]
