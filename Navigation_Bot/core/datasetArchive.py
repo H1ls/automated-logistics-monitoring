@@ -10,4 +10,4 @@ class DatasetArchive:
     def append(self, sample: dict):
         with open(self.filepath, "a", encoding="utf-8") as f:
             f.write(json.dumps(sample, ensure_ascii=False) + "\n")
-        self.log(f"📦 Архивировано → {self.filepath.name}")
+        # self.log(f"📦 Архивировано → {self.filepath.name}")

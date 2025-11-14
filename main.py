@@ -1,4 +1,3 @@
-# main.py
 import sys
 from PyQt6.QtWidgets import QApplication
 from Navigation_Bot.gui.UI.Gui import NavigationGUI
@@ -9,6 +8,7 @@ def main():
     gui = NavigationGUI()
     gui.show()
     sys.exit(app.exec())
+
 
 if __name__ == "__main__":
     main()

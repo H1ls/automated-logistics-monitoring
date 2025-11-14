@@ -1,5 +1,6 @@
 from Navigation_Bot.core.jSONManager import JSONManager
 
+
 class DataContext:
     """Централизованное хранилище JSON-данных"""
 
@@ -7,6 +8,12 @@ class DataContext:
         self.filepath = filepath
         self.manager = JSONManager(filepath, log_func=log_func)
         self.log = log_func
+        self.data = self.manager.load_json() or []
+
+    def set_filepath(self, filepath: str):
+        """Сменить файл, с которым работает контекст, и сразу перезагрузить данные."""
+        self.filepath = filepath
+        self.manager = JSONManager(filepath, log_func=self.log)
         self.data = self.manager.load_json() or []
 
     def reload(self):

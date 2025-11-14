@@ -1,6 +1,8 @@
-from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QTableWidget, QPushButton, QTextEdit,
-                             QLabel, QHeaderView, QAbstractItemView, QMessageBox, QTableWidgetItem)
-from PyQt6.QtGui import QShortcut, QKeySequence
+from PyQt6.QtWidgets import (
+    QWidget, QVBoxLayout, QHBoxLayout, QTableWidget, QPushButton, QTextEdit,
+    QLabel, QHeaderView, QAbstractItemView, QMessageBox, QTableWidgetItem,
+    QToolButton, QMenu)
+from PyQt6.QtGui import QShortcut, QKeySequence, QTextCursor, QAction
 
 from threading import Lock
 from concurrent.futures import ThreadPoolExecutor
@@ -19,6 +21,8 @@ from Navigation_Bot.gui.iDManagerDialog import IDManagerDialog
 
 from Navigation_Bot.gui.UI.tableSortController import TableSortController
 from Navigation_Bot.gui.UI.rowHighlighter import RowHighlighter
+import re
+from pathlib import Path
 
 
 class NavigationGUI(QWidget):
@@ -44,19 +48,22 @@ class NavigationGUI(QWidget):
         self.table_manager.display()
 
     def init_managers(self):
-        self.data_context = DataContext(str(INPUT_FILEPATH),
-                                        log_func=self.log)
+        json_path = self._get_sheet_json_path()
+        self.data_context = DataContext(json_path, log_func=self.log)
+
         self.json_data = self.data_context.get()  # для обратной совместимости
         self.hotkeys = HotkeyManager(log_func=self.log)
         self.settings_ui = CombinedSettingsDialog(self)
 
         self.gsheet = GoogleSheetsManager(log_func=self.log)
+
         self.table_manager = TableManager(table_widget=self.table,
                                           data_context=self.data_context,
                                           log_func=self.log,
                                           on_row_click=None,
                                           on_edit_id_click=self.open_id_editor,
                                           gsheet=self.gsheet)
+
         self.row_highlighter = RowHighlighter(table=self.table,
                                               data_context=self.data_context,
                                               log=self.log,
@@ -77,6 +84,7 @@ class NavigationGUI(QWidget):
 
         self.table_manager.on_row_click = self.processor.on_row_click
         self.table_manager.after_display = self.row_highlighter.reapply_from_json
+        self._build_sheet_tabs()
 
     def init_ui(self):
         layout = QVBoxLayout()
@@ -135,12 +143,58 @@ class NavigationGUI(QWidget):
         self.log_box.setReadOnly(True)
         self.log_box.setFixedHeight(150)
 
+        # шапка лога Лог + кнопка очистки
+        log_header = QHBoxLayout()
+        log_label = QLabel("Лог:")
+        self.btn_clear_log = QPushButton("Очистить лог")
+        self.btn_clear_log.setFixedHeight(24)
+        self.btn_clear_log.setFixedWidth(120)
+        log_header.addWidget(log_label)
+        log_header.addStretch()
+        log_header.addWidget(self.btn_clear_log)
+
         layout.addLayout(top)
         layout.addWidget(self.table)
-        layout.addWidget(QLabel("Лог:"))
+
+        # Ряд кнопок-листов, как в Google Sheets
+        self.sheet_tabs_layout = QHBoxLayout()
+        layout.addLayout(self.sheet_tabs_layout)
+        layout.addLayout(log_header)
         layout.addWidget(self.log_box)
 
         self.setLayout(layout)
+
+    def _load_from_google(self):
+        """Загрузить задачи из текущего листа в свой json."""
+        json_path = self._get_sheet_json_path()
+        self.data_context.set_filepath(json_path)
+
+        self.gsheet.pull_to_context_async(
+            data_context=self.data_context,
+            input_filepath=json_path,
+            executor=self.executor
+        )
+        self.reload_and_show()
+
+    def _get_sheet_json_path(self) -> str:
+        """
+        Возвращает путь к json для текущего листа Google Sheets.
+        Например: config/selected_data_3_Kontrol_TS.json
+        """
+        base = Path(INPUT_FILEPATH)
+
+        if not getattr(self, "gsheet", None) or not getattr(self.gsheet, "sheet", None):
+            return str(base)
+
+        index = getattr(self.gsheet, "worksheet_index", 0) or 0
+        title = getattr(self.gsheet.sheet, "title", f"sheet_{index}") or f"sheet_{index}"
+
+        safe = re.sub(r"[^0-9A-Za-zА-Яа-я0-9]+", "_", title).strip("_")
+        if not safe:
+            safe = f"sheet_{index}"
+
+        filename = f"{base.stem}_{index}_{safe}.json"
+        return str(base.with_name(filename))
 
     def connect_signals(self):
         self.table.cellDoubleClicked.connect(self.table_manager.edit_cell_content)
@@ -152,10 +206,14 @@ class NavigationGUI(QWidget):
         self.btn_refresh_table.clicked.connect(self.table_manager.display)
         self.table.itemChanged.connect(self.table_manager.save_to_json_on_edit)
         self.btn_clear_json.clicked.connect(self.confirm_clear_json)
-        self.btn_load_google.clicked.connect(lambda: self.gsheet.pull_to_context_async(data_context=self.data_context,
-                                                                                       input_filepath=str(
-                                                                                           INPUT_FILEPATH),
-                                                                                       executor=self.executor))
+        self.btn_clear_log.clicked.connect(self.clear_log)
+
+        # self.btn_load_google.clicked.connect(lambda: self.gsheet.pull_to_context_async(data_context=self.data_context,
+        #                                                                                input_filepath=str(
+        #                                                                                    INPUT_FILEPATH),
+        #                                                                                executor=self.executor))
+        self.btn_load_google.clicked.connect(self._load_from_google)
+
         QShortcut(QKeySequence("F11"), self).activated.connect(self.hotkeys.start)
         QShortcut(QKeySequence("F12"), self).activated.connect(self.hotkeys.stop)
 
@@ -184,9 +242,45 @@ class NavigationGUI(QWidget):
         if {"wialon_selectors", "yandex_selectors"} & sections and not driver:
             self.log("ℹ️ Селекторы применятся при старте веб-драйвера")
 
+    def _on_sheet_button_clicked(self, index: int, clicked_btn: QPushButton):
+        for btn in getattr(self, "_sheet_buttons", []):
+            btn.setChecked(btn is clicked_btn)
+
+        # переключили лист в менеджере
+        self.gsheet.set_active_worksheet(index)
+
+        # переключаем DataContext на json этого листа
+        json_path = self._get_sheet_json_path()
+        self.data_context.set_filepath(json_path)
+
+        self.reload_and_show()
+
+    def clear_log(self):
+        self.log_box.clear()
+
     def log(self, message: str):
-        if self._log_enabled:
-            self.log_box.append(message)
+        if not self._log_enabled:
+            return
+
+        text = str(message)
+        lower = text.lower()
+        color = None
+        if text.startswith("❌") or "ошибка" in lower or "error" in lower:
+            color = "red"
+        elif text.startswith("✅") or "успеш" in lower or "успех" in lower:
+            color = "green"
+        elif text.startswith("⚠") or "предупр" in lower or "warning" in lower:
+            color = "#c08000"
+
+        if color:
+            self.log_box.append(f'<span style="color:{color};">{text}</span>')
+        else:
+            self.log_box.append(text)
+
+        # автоскролл
+        cursor = self.log_box.textCursor()
+        cursor.movePosition(QTextCursor.MoveOperation.End)
+        self.log_box.setTextCursor(cursor)
 
     def confirm_clear_json(self):
         reply = QMessageBox.question(self, "Подтверждение очистки",
@@ -200,7 +294,7 @@ class NavigationGUI(QWidget):
     def reload_and_show(self):
         with self.json_lock:
             self.data_context.reload()
-            self.json_data = self.data_context.get()  # обновляем локальный alias
+            self.json_data = self.data_context.get()  # обновляем локальный
             init_processed_flags(self.json_data, self.json_data, loads_key="Выгрузка")
             self.data_context.save()
 
@@ -236,3 +330,82 @@ class NavigationGUI(QWidget):
         if dlg.exec():
             self.table_manager.display()
             self.log("✅ Id_car.json перезаписан")
+
+    def _build_sheet_tabs(self):
+        """Создаёт кнопки листов снизу, как в Google Sheets, + фильтр справа."""
+        while self.sheet_tabs_layout.count():
+            item = self.sheet_tabs_layout.takeAt(0)
+            w = item.widget()
+            if w:
+                w.deleteLater()
+
+        if not getattr(self, "gsheet", None):
+            return
+
+        worksheets = self.gsheet.list_worksheets()
+        if not worksheets:
+            self.log("⚠️ Не удалось получить список листов Google Sheets.")
+            return
+
+        self._sheet_buttons = []
+        self._sheet_buttons_by_index = {}
+
+        current_index = getattr(self.gsheet, "worksheet_index", 0)
+
+        for ws in worksheets:
+            idx = ws["index"]
+            title = ws["title"]
+
+            btn = QPushButton(title)
+            btn.setCheckable(True)
+
+            # отметим активный лист
+            if idx == current_index:
+                btn.setChecked(True)
+
+            btn.clicked.connect(lambda _, sheet_idx=idx, b=btn: self._on_sheet_button_clicked(sheet_idx, b))
+
+            self.sheet_tabs_layout.addWidget(btn)
+            self._sheet_buttons.append(btn)
+            self._sheet_buttons_by_index[idx] = btn
+
+        # небольшой растягивающий спейсер перед выпадающим списком
+        self.sheet_tabs_layout.addStretch()
+
+        self.sheet_filter_button = QToolButton(self)
+        self.sheet_filter_button.setText("Листы ▼")
+        self.sheet_filter_button.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
+
+        menu = QMenu(self)
+        self._sheet_actions = {}
+
+        for ws in worksheets:
+            idx = ws["index"]
+            title = ws["title"]
+
+            act = QAction(title, self)
+            act.setCheckable(True)
+            act.setChecked(True)  # по умолчанию все видимы
+            act.toggled.connect(lambda checked, sheet_idx=idx: self._on_sheet_visibility_toggled(sheet_idx, checked))
+
+            menu.addAction(act)
+            self._sheet_actions[idx] = act
+
+        self.sheet_filter_button.setMenu(menu)
+        self.sheet_tabs_layout.addWidget(self.sheet_filter_button)
+
+    def _on_sheet_visibility_toggled(self, sheet_index: int, visible: bool):
+        """Показать/скрыть кнопку листа через меню."""
+        btn = getattr(self, "_sheet_buttons_by_index", {}).get(sheet_index)
+        if not btn:
+            return
+
+        btn.setVisible(visible)
+
+        if not visible and btn.isChecked():
+            btn.setChecked(False)
+
+            for other_idx, other_btn in getattr(self, "_sheet_buttons_by_index", {}).items():
+                if other_btn.isVisible():
+                    self._on_sheet_button_clicked(other_idx, other_btn)
+                    break

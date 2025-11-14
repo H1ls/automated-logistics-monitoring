@@ -31,7 +31,7 @@ class NavigationProcessor:
                 self.logger(f"⚠️ Строка {row_idx} больше не существует. Пропуск.")
             return
 
-        # Подсветка строки (через переданный колбэк из GUI)
+        # Подсветка строки, через переданный колбэк из GUI
         if self.highlight_cb:
             try:
                 self.highlight_cb(row_idx)
@@ -43,7 +43,6 @@ class NavigationProcessor:
         if self.executor:
             self.executor.submit(self.process_row_wrapper, row_idx)
         else:
-            # fallback, если executor не передан
             with ThreadPoolExecutor(max_workers=1) as ex:
                 ex.submit(self.process_row_wrapper, row_idx)
 
@@ -62,15 +61,14 @@ class NavigationProcessor:
             self._update_and_save(row, updated)
             self._process_maps_and_write(row, updated)
             self._finalize_row(updated)
-            """
-            проверить нужно ли,тк возвращает всю запись
-            """
+
+            """проверить нужно ли,тк возвращает всю запись"""
             # car.update(updated)  # добавляем новые данные в исходный словарь
             # self._update_and_save(row, car)
             # self._process_maps_and_write(row, car)
             # self._finalize_row(car)
         except Exception as e:
-            self.log(f"❌ Ошибка в process_row_wrapper: {e}")
+            self.log(f"❌ Ошибка в process_row_wrapper: \n Скорей всего не открыт браузер")
 
     def ensure_driver_and_bots(self):
         if not self.browser_opened:

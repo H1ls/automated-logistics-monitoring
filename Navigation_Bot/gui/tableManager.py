@@ -2,8 +2,8 @@ from functools import partial
 from datetime import datetime, timedelta
 
 from PyQt6.QtCore import Qt, QTimer
-from PyQt6.QtGui import QColor, QBrush
-from PyQt6.QtWidgets import QTableWidgetItem, QPushButton, QWidget, QHBoxLayout, QLabel, QCheckBox, QVBoxLayout
+from PyQt6.QtGui import QColor
+from PyQt6.QtWidgets import QTableWidgetItem, QPushButton, QWidget, QHBoxLayout, QLabel
 
 from Navigation_Bot.gui.AddressEditDialog import AddressEditDialog
 
@@ -72,8 +72,7 @@ class TableManager:
 
                 self._set_cell(row_idx, 3, row.get("КА", ""), editable=True)
                 self._set_cell(row_idx, 4, self._get_field_with_datetime(row, "Погрузка"))
-                # self._set_cell(row_idx, 5, self._get_field_with_datetime(row, "Выгрузка"))
-                self._set_unload_cell_with_status(row_idx, row)
+                self._set_unload_cell_with_status(row_idx, row)  # Выгрузка
 
                 self._set_cell(row_idx, 6, row.get("гео", ""))
 
@@ -107,7 +106,6 @@ class TableManager:
                         ts = row.get("ТС", "—")
                         self.log(
                             f"[DEBUG] ❗️ Ошибка при анализе ДАТЫ/ВРЕМЕНИ Погрузки у ТС: {ts} (строка {row_idx + 1}):")
-                        # print(f"[DEBUG] ❗️ Ошибка при анализе времени Погрузки у ТС: {ts} (строка {row_idx + 1}): {e}")
 
             self.table.resizeRowsToContents()
 
@@ -139,7 +137,6 @@ class TableManager:
         item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
         self.table.setItem(row, col, item)
 
-    # В начале класса TableManager (рядом с другими методами)
     def _split_points_and_comment(self, blocks: list[dict], prefix: str):
         """Возвращает (points, comment_text). Комментарий не считается точкой."""
         points = []
@@ -147,7 +144,7 @@ class TableManager:
         for d in blocks or []:
             if not isinstance(d, dict):
                 continue
-            # поддерживаем оба варианта: "Комментарий" и "<prefix> другое"
+            # поддерживаем оба варианта Комментарий и <prefix> другое
             if "Комментарий" in d:
                 comment = str(d.get("Комментарий", "")).strip()
             elif f"{prefix} другое" in d:
@@ -164,37 +161,12 @@ class TableManager:
         except Exception as e:
             self.log(f"❌ Ошибка при восстановлении позиции: {e}")
 
-    # def _set_unload_cell_with_status(self, row_idx: int, row: dict):
-    #     unloads = row.get("Выгрузка", [])
-    #     processed = row.get("processed", [])
-    #
-    #     if len(unloads) <= 1:
-    #         self._set_cell(row_idx, 5, self._get_field_with_datetime(row, "Выгрузка"))
-    #         return
-    #
-    #     text_parts = []
-    #     for i, unload in enumerate(unloads):
-    #         prefix = f"Выгрузка {i + 1}"
-    #         address = unload.get(prefix, "")
-    #         date = unload.get(f"Дата {i + 1}", "")
-    #         time = unload.get(f"Время {i + 1}", "")
-    #
-    #         checked = processed[i] if i < len(processed) else False
-    #         checkbox = "☑️" if checked else "⬜️"
-    #
-    #         part = f"{date} {time}\n{address}  {checkbox}"
-    #         text_parts.append(part.strip())
-    #
-    #     combined = "\n\n".join(text_parts)
-    #     self._set_cell(row_idx, 5, combined, editable=False)
-
     def _set_unload_cell_with_status(self, row_idx: int, row: dict):
         unloads_all = row.get("Выгрузка", [])
         points, comment = self._split_points_and_comment(unloads_all, "Выгрузка")
         processed = row.get("processed", [])
 
-        # Если одна точка (или ноль) — используем общий рендер,
-        # но перед этим временно подменим список только на точки
+        # Если 0/1 точка используем общий рендер перед этим временно подменим список только на точки
         if len(points) <= 1:
             temp_row = dict(row)
             temp_row["Выгрузка"] = points
@@ -204,7 +176,7 @@ class TableManager:
             self._set_cell(row_idx, 5, base_text)
             return
 
-        # Несколько точек — рисуем со статусами + комментарий в конце
+        # Несколько точек, рисуем со статусами + комментарий в конце
         text_parts = []
         for i, unload in enumerate(points, start=1):
             prefix = f"Выгрузка {i}"
@@ -314,23 +286,6 @@ class TableManager:
             "Выгрузка": [{"Выгрузка 1": unload}] if unload else []
         }
 
-    # @staticmethod
-    # def _get_field_with_datetime(row, key):
-    #     if isinstance(row.get(key), list):
-    #         blocks = []
-    #         for i, block in enumerate(row[key], 1):
-    #             date = block.get(f"Дата {i}", "")
-    #             time = block.get(f"Время {i}", "")
-    #             address = block.get(f"{key} {i}", "")
-    #             entry = f"{date} {time}".strip()
-    #             if entry and entry != "Не указано Не указано":
-    #                 blocks.append(entry)
-    #             if address:
-    #                 blocks.append(address)
-    #             if i < len(row[key]):
-    #                 blocks.append("____________________")
-    #         return "\n".join(blocks)
-    #     return ""
     @staticmethod
     def _get_field_with_datetime(row, key):
         blocks = row.get(key)
@@ -389,7 +344,9 @@ class TableManager:
                                        prefix=prefix,
                                        parent=self.table,
                                        disable_save=True,
-                                       data_context=self.data_context)
+                                       data_context=self.data_context,
+                                       log_func=self.log)
+
             if dialog.exec():
                 data_block, meta = dialog.get_result()
                 self._new_entry_buffer[prefix] = data_block
@@ -398,7 +355,7 @@ class TableManager:
                 if meta.get("Транзит"):
                     self._new_entry_buffer["Транзит"] = meta["Транзит"]
 
-                # отрисовать в таблице превью (только текст, JSON не трогаем)
+                # отрисовать в таблице превью только текст, JSON не трогаем
                 temp_entry[prefix] = data_block
                 preview_text = self._get_field_with_datetime(temp_entry, prefix)
 
@@ -412,7 +369,8 @@ class TableManager:
                                    full_data=self.data_context.get(),
                                    prefix=prefix,
                                    parent=self.table,
-                                   data_context=self.data_context)
+                                   data_context=self.data_context,
+                                   log_func=self.log)
         if dialog.exec():
             data_block, meta = dialog.get_result()
             if not data_block:

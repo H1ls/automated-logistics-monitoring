@@ -40,7 +40,7 @@ class RowHighlighter:
         QTimer.singleShot(hours * 60 * 60 * 1000, lambda: self._clear_if_expired(row_idx))
 
     def reapply_from_json(self):
-        """Вызывай после display()/reload_and_show() — позиция = индекс в списке."""
+        """Вызывай после reload_and_show() - позиция = индекс в списке."""
         data = self.data_context.get() or []
         now = datetime.now(timezone.utc)
         changed = False
@@ -57,7 +57,6 @@ class RowHighlighter:
                 continue
 
             if now < until:
-                # позиция i соответствует текущей строке i
                 if 0 <= i < self.table.rowCount():
                     self._paint_row(i, enabled=True)
                     self.until_map[i] = until
@@ -67,6 +66,9 @@ class RowHighlighter:
 
         if changed:
             self.data_context.save()
+
+        # после восстановления выделений - подсветка просроченных выгрузок
+        self.highlight_expired_unloads()
 
     def _clear_if_expired(self, row_idx: int):
         data = self.data_context.get() or []
@@ -84,8 +86,61 @@ class RowHighlighter:
                     self.log(f"🧽 highlight_until снят для row {row_idx}")
 
     def _paint_row(self, row_idx: int, enabled: bool):
-        brush = QBrush(QColor("#e9f2d3")) if enabled else QBrush()
+
+        default_brush = QBrush()
+        green_brush = QBrush(QColor("#e9f2d3"))
+
         for col in range(self.table.columnCount()):
-            it = self.table.item(row_idx, col)
-            if it:
-                it.setBackground(brush)
+            item = self.table.item(row_idx, col)
+            if not item:
+                continue
+
+            #  Если это колонка 'Выгрузка' и уже есть красная подсветка - не трогаем
+            current_color = item.background().color().name()
+            if col == 5 and current_color.lower() in ["#ffd6d6", "#ffcccc"]:
+                continue
+
+            item.setBackground(green_brush if enabled else default_brush)
+
+    def highlight_expired_unloads(self):
+        """Подсвечивает первую непройденную выгрузку, если её время уже меньше текущего."""
+        from datetime import datetime
+        from PyQt6.QtGui import QColor, QBrush
+
+        data = self.data_context.get() or []
+        now = datetime.now()
+
+        for row_idx, rec in enumerate(data):
+            unloads = rec.get("Выгрузка", [])
+            processed = rec.get("processed", [])
+            if not unloads or not isinstance(unloads, list):
+                continue
+
+            # находим первую непройденную точку (processed=False)
+            for i, unload in enumerate(unloads):
+                is_done = processed[i] if i < len(processed) else False
+                if is_done:
+                    continue
+
+                date_key = f"Дата {i + 1}"
+                time_key = f"Время {i + 1}"
+                date_str = unload.get(date_key, "")
+                time_str = unload.get(time_key, "")
+
+                if not date_str or not time_str:
+                    continue
+
+                try:
+                    if time_str.count(":") == 1:
+                        time_str += ":00"
+                    dt_unload = datetime.strptime(f"{date_str} {time_str}", "%d.%m.%Y %H:%M:%S")
+
+                    if dt_unload < now:
+                        # подсветка светло-красным
+                        brush = QBrush(QColor("#FFD6D6"))
+                        item = self.table.item(row_idx, 5)
+                        if item:
+                            item.setBackground(brush)
+                        break  # только первую просроченную отмечаем
+                except Exception:
+                    continue

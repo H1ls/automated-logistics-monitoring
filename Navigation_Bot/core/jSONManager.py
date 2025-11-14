@@ -1,9 +1,7 @@
 import os
 import json
-import logging
 from typing import Any
 from pathlib import Path
-from Navigation_Bot.core.paths import CONFIG_JSON
 
 
 class JSONManager:

@@ -3,7 +3,7 @@ import os
 import gspread
 from datetime import datetime
 from oauth2client.service_account import ServiceAccountCredentials
-from PyQt6.QtCore import QObject, pyqtSignal, QTimer
+from PyQt6.QtCore import QObject, pyqtSignal
 
 from Navigation_Bot.core.dataContext import DataContext
 from Navigation_Bot.core.jSONManager import JSONManager
@@ -39,19 +39,27 @@ class GoogleSheetsManager(QObject):
     def load_settings(self):
         data = self.config_manager.load_json()
         if not isinstance(data, dict):
-            self.log("❌ config_manager.load_json() вернул не dict — проверь CONFIG_JSON")
+            self.log("❌ config_manager.load_json() вернул не dict - проверь CONFIG_JSON")
             return
 
         config_block = data.get("google_config", {})
-        defaults = config_block.get("default", {})
-        # current = config_block.get("custom", defaults)
-        current = config_block.get("custom", {}) or defaults
+        defaults = config_block.get("default", {}) or {}
+        custom = config_block.get("custom") or {}
 
-        self.creds_file = str(current.get("creds_file") or defaults.get("creds_file") or "")
-        self.sheet_id = str(current.get("sheet_id") or defaults.get("sheet_id") or "")
-        self.worksheet_index = int(current.get("worksheet_index") or defaults.get("worksheet_index") or 0)
-        self.column_index = int(current.get("column_index") or defaults.get("column_index") or 0)
-        self.file_path = str(current.get("file_path") or defaults.get("file_path") or "").strip()  # ← ВАЖНО
+        self.creds_file = str(custom.get("creds_file") or defaults.get("creds_file") or "")
+        self.sheet_id = str(custom.get("sheet_id") or defaults.get("sheet_id") or "")
+
+        if "worksheet_index" in custom:
+            self.worksheet_index = int(custom["worksheet_index"])
+        else:
+            self.worksheet_index = int(defaults.get("worksheet_index") or 0)
+
+        if "column_index" in custom:
+            self.column_index = int(custom["column_index"])
+        else:
+            self.column_index = int(defaults.get("column_index") or 0)
+
+        self.file_path = str(custom.get("file_path") or defaults.get("file_path") or "").strip()
 
         if not os.path.exists(self.creds_file):
             self.log(f"❌ Файл авторизации не найден: {self.creds_file}")
@@ -75,12 +83,67 @@ class GoogleSheetsManager(QObject):
             )
 
             client = gspread.authorize(creds)
-            sheet = client.open_by_key(self.sheet_id)
-            self.sheet = sheet.get_worksheet(self.worksheet_index)
+            spreadsheet = client.open_by_key(self.sheet_id)
+
+            # сохраняем кэш всех листов
+            self.spreadsheet = spreadsheet
+            self._worksheets_cache = spreadsheet.worksheets()
+
+            # если индекс вдруг вышел за границы
+            if 0 <= self.worksheet_index < len(self._worksheets_cache):
+                self.sheet = self._worksheets_cache[self.worksheet_index]
+            else:
+                self.log(f"⚠️ Некорректный worksheet_index={self.worksheet_index}, беру 0")
+                self.worksheet_index = 0
+                self.sheet = self._worksheets_cache[0]
+
 
         except Exception as e:
             self.log(f"❌ Ошибка подключения к Google Sheets: {e}")
             self.sheet = None
+
+    def list_worksheets(self):
+        """Возвращает список листов: [{'title': str, 'index': int}, ...]"""
+        try:
+            if not getattr(self, "spreadsheet", None):
+                return []
+            result = []
+            for ws in self.spreadsheet.worksheets():
+                # ws.index у gspread 0-based, как у get_worksheet()
+                result.append({"title": ws.title, "index": ws.index})
+            return result
+        except Exception as e:
+            if self.log:
+                self.log(f"⚠️ Не удалось получить список листов: {e}")
+            return []
+
+    def set_active_worksheet(self, index: int):
+        """Быстро переключает активный лист, без обращений к Google."""
+
+        cache = getattr(self, "_worksheets_cache", None)
+        if not cache:
+            if self.log:
+                self.log("⚠️ Листы ещё не загружены (нет _worksheets_cache).")
+            return
+
+        if not (0 <= index < len(cache)):
+            if self.log:
+                self.log(f"⚠️ Некорректный индекс листа: {index}")
+            return
+
+        # просто берем из кэша - это локальная операция, без сети
+        self.sheet = cache[index]
+        self.worksheet_index = index
+
+        # сохраняем выбор в config.custom
+        cfg = self.config_manager.load_json() or {}
+        gcfg = cfg.setdefault("google_config", {})
+        custom = gcfg.setdefault("custom", {})
+        custom["worksheet_index"] = index
+        self.config_manager.save_in_json(cfg)
+
+        if self.log:
+            self.log(f"📄 Активный лист: {self.sheet.title} (index={index})")
 
     def pull_to_context(self, data_context, input_filepath: str | None = None):
         try:
@@ -92,9 +155,7 @@ class GoogleSheetsManager(QObject):
 
             self.data_context = data_context or self.data_context
             self.refresh_name(rows)
-
-            cleaner = DataCleaner(data_context=self.data_context or DataContext(self.file_path, log_func=self.log),
-                                  log_func=self.log)
+            cleaner = DataCleaner(data_context=data_context, log_func=self.log)
             cleaner.start_clean()
 
             if self.data_context:
@@ -124,18 +185,18 @@ class GoogleSheetsManager(QObject):
     def load_data(self):
         try:
             if not self.sheet:
-                self.log("⚠️ Лист Google Sheets не инициализирован — пропускаю загрузку.")
+                self.log("⚠️ Лист Google Sheets не инициализирован - пропускаю загрузку.")
                 return None
             rows = self.sheet.get_all_values()
             if not rows or len(rows) < 3:
-                self.log("⚠️ Таблица пуста или слишком короткая — обновление отменено.")
+                self.log("⚠️ Таблица пуста или слишком короткая - обновление отменено.")
                 return None
             return rows
         except Exception as e:
             self.log(f"️❌ Ошибка загрузки данных с листа: {e}")
             return None
 
-    def refresh_name(self, rows, file_path=None):
+    def refresh_name(self, rows, file_path=None):  # Возможно перенести в dataCleaner
         if not rows:
             self.log("↩️ Обновление отменено: нет данных (ошибка загрузки/пустой лист). Текущее состояние сохранено.")
             return
@@ -258,11 +319,11 @@ class GoogleSheetsManager(QObject):
             )
 
             row_data = [
-                ts_with_phone,  # col D (ТС + телефон)
+                ts_with_phone,         # col D (ТС + телефон)
                 entry.get("ФИО", ""),  # col E (ФИО)
-                entry.get("КА", ""),  # col F (КА)
-                load_str,  # col G (Погрузка)
-                unload_str  # col H (Выгрузка)
+                entry.get("КА", ""),   # col F (КА)
+                load_str,              # col G (Погрузка)
+                unload_str             # col H (Выгрузка)
             ]
 
             self.sheet.update(f"D{row_index}:H{row_index}", [row_data])

@@ -1,25 +1,35 @@
-import os
 import re
+import os
 from pathlib import Path
-from Navigation_Bot.core.jSONManager import JSONManager
+from typing import List, Dict, Any
+
 from Navigation_Bot.core.paths import INPUT_FILEPATH, ID_FILEPATH
 from Navigation_Bot.core.dataContext import DataContext
 
 """2. Очистка данных"""
 
-"""TO DO 1._parse_info() - разбить 
-         2.Объединение с ML"""
-
 
 class DataCleaner:
-    def __init__(self, data_context=None, id_path=None, log_func=print):
-        self.data_context = data_context or DataContext(str(INPUT_FILEPATH), log_func=log_func)
+    def __init__(self, data_context: DataContext | None = None,
+                 id_context: DataContext | None = None,
+                 log_func=print):
+
         self.log = log_func
 
-        self.id_path = Path(id_path or ID_FILEPATH)
-        self.id_data = JSONManager().load_json(str(self.id_path))
+        self.data_context = data_context or DataContext(str(INPUT_FILEPATH), log_func=log_func)
+        self.id_context = id_context or DataContext(str(ID_FILEPATH), log_func=log_func)
 
-        self.json_data = self.data_context.get()
+        self.json_data: List[Dict[str, Any]] = self.data_context.get() or []
+        self.id_data: List[Dict[str, Any]] = self.id_context.get() or []
+
+        self.unload_re = re.compile(
+            r"(\d+\))?\s*"
+            r"(\d{1,2}\.\d{2}\.\d{4})\s*,?\s*"          # дата
+            r"(\d{1,2}[:\-]\d{2}(?::\d{2})?)?\s*,?\s*"  # время (опц.)
+            r"(.*?)(?=\d+\)|$)",                        # адрес до следующего блока или конца
+            re.DOTALL
+        )
+        self.time_re = re.compile(r"\b(\d{1,2}[:\-]\d{2}(?::\d{2})?)\b")
 
         self.end_patterns = [
             r"тел\s*\d[\d\s\-]{8,}",
@@ -32,8 +42,7 @@ class DataCleaner:
             r"\тел\s",
             r"\ООО\s",
             r"\Контрагент\s",
-            r"\по ТТН\s",
-            r'по ттн'
+            r"\bпо\s+ттн\b",
         ]
 
     def _file_exists(self, filepath):
@@ -42,79 +51,91 @@ class DataCleaner:
             return False
         return True
 
-    def _parse_info(self, text, address="Точка"):
-        unload_pattern = re.compile(
-            r"(\d+\))?\s*(\d{1,2}\.\d{2}\.\d{4})\s*,?\s*(\d{1,2}[:\-]\d{2}(?::\d{2})?)?\s*,?\s*(.*?)(?=\d+\)|$)",
-            re.DOTALL
-        )
-        time_pattern = re.compile(r"\b(\d{1,2}[:\-]\d{2}(?::\d{2})?)\b")
-        results = []
-        consumed_spans = []
-        
-        for i, match in enumerate(unload_pattern.finditer(text), 1):
-            date = match.group(2)
-            time = match.group(3) or "Не указано"
-            address_info = match.group(4).strip()
+    def _parse_info(self, text: str, prefix: str) -> list[dict]:
 
-            address_info = re.sub(r"\bприбыть\s+(к|до)\b\s*,?\s*", "", address_info)
+        if not isinstance(text, str) or not text.strip():
+            return []
 
+        results: list[dict] = []
+        consumed: list[tuple[int, int]] = []
+
+        for i, m in enumerate(self.unload_re.finditer(text), 1):
+            date = (m.group(2) or "").strip()
+            time = (m.group(3) or "").strip() or "Не указано"
+            addr = (m.group(4) or "").strip()
+
+            # убираем "прибыть к/до"
+            addr = re.sub(r"\bприбыть\s+(к|до)\b\s*,?\s*", "", addr, flags=re.IGNORECASE)
+
+            # если время оказалось внутри адреса
             if time == "Не указано":
-                time_match = time_pattern.search(address_info)
-                if time_match:
-                    time = time_match.group(1)
-                    address_info = address_info.replace(time_match.group(0), "").strip()
+                t = self.time_re.search(addr)
+                if t:
+                    time = t.group(1)
+                    addr = addr.replace(t.group(0), "").strip()
 
-            address_info = re.sub(r"^,\s*", "", address_info)
+            # подчистим запятую в начале
+            addr = re.sub(r"^,\s*", "", addr)
 
-            for pattern in self.end_patterns:
-                end_match = re.search(pattern, address_info)
-                if end_match:
-                    address_info = address_info[: end_match.start()].strip()
+            # отрезаем хвосты по стоп-словам
+            for p in self.end_patterns:
+                end = re.search(p, addr, flags=re.IGNORECASE)
+                if end:
+                    addr = addr[: end.start()].strip()
                     break
 
             results.append({
-                f"{address} {i}": address_info,
+                f"{prefix} {i}": addr,
                 f"Дата {i}": date,
                 f"Время {i}": time
             })
+            consumed.append(m.span())
 
-            consumed_spans.append(match.span())
+        # другое/комментарий - всё, что не попало в матчи
+        other_parts: list[str] = []
+        last = 0
+        for s, e in consumed:
+            if s > last:
+                other_parts.append(text[last:s].strip())
+            last = e
+        if last < len(text):
+            other_parts.append(text[last:].strip())
 
-        # --- определяем "другое" (не вошедший текст) ---
-        other_parts = []
-        last_end = 0
-        for start, end in consumed_spans:
-            if start > last_end:
-                other_parts.append(text[last_end:start].strip())
-            last_end = end
-        if last_end < len(text):
-            other_parts.append(text[last_end:].strip())
-
-        # фильтруем пустое и дубли
-        other = "\n".join(p for p in other_parts if p and not p.isspace())
-
-        if other:
-            results.append({f"Комментарий": other})
+        # Соберём комментарий
+        comment = "\n".join(p for p in other_parts if p)
+        if comment:
+            results.append({"Комментарий": comment})
 
         return results
 
-    def start_clean(self):
+    def start_clean(self) -> None:
+        """
+        1) Один раз сохраняем сырые строки в raw_load / raw_unload (для ML)
+        2) Преобразуем строки Погрузка/Выгрузка → список блоков
+        3) Чистим поле 'ТС'
+        4) Привязываем ID из Id_car.json
+        5) Сохраняем через DataContext
+        """
         if not Path(self.data_context.filepath).exists():
             self.log(f"❌ Файл не найден: {self.data_context.filepath}")
             return
 
-        self.json_data = self.data_context.get()
+        # актуальные данные и id-справочник
+        self.json_data = self.data_context.get() or []
+        self.id_data = self.id_context.get() or []
 
         for item in self.json_data:
-            #  Raw для MLL
+            #  1. RAW для ML
             if isinstance(item.get("Погрузка"), str) and not item.get("raw_load"):
                 item["raw_load"] = item["Погрузка"]
+
             if isinstance(item.get("Выгрузка"), str) and not item.get("raw_unload"):
                 item["raw_unload"] = item["Выгрузка"]
 
-            #  Парсинг в структуру
+            #  2. Парсинг в структурированный вид
             if isinstance(item.get("Погрузка"), str):
                 item["Погрузка"] = self._parse_info(item["Погрузка"], "Погрузка")
+
             if isinstance(item.get("Выгрузка"), str):
                 item["Выгрузка"] = self._parse_info(item["Выгрузка"], "Выгрузка")
 
@@ -123,30 +144,39 @@ class DataCleaner:
 
         self._clean_vehicle_names()
         self._add_id_to_data()
-        self.data_context.save()
-        # self.log(f"✅ Данные очищены и сохранены: {self.data_context.filepath}")
 
-    def _clean_vehicle_names(self):
+        self.data_context.set(self.json_data)
+
+    def _clean_vehicle_names(self) -> None:
+        """Оставляем в 'ТС' только номер (без телефона и переносов)."""
         for row in self.json_data:
             ts = row.get("ТС", "")
-            if ts and "\n" in ts:
-                row["ТС"] = ts.split("\n")[0].strip()
+            if isinstance(ts, str) and "\n" in ts:
+                row["ТС"] = ts.split("\n", 1)[0].strip()
 
-    def _add_id_to_data(self):
-        # Создаём словарь: "Р703ТХ790" → ID
-        lookup = {
-            re.sub(r"\s+", "", entry["Наименование"]): entry["ИДОбъекта в центре мониторинга"]
-            for entry in self.id_data if "Наименование" in entry
-        }
+    def _add_id_to_data(self) -> None:
+        """
+        Привязка ID к ТС:
+          - ключ по справочнику: 'Наименование' без пробелов
+          - ключ по данным: 'ТС' без пробелов (и без телефона)
+        """
+        # создаём lookup: "Р703ТХ790" → 123456
+        lookup = {}
+        for entry in (self.id_data or []):
+            name = entry.get("Наименование")
+            obj_id = entry.get("ИДОбъекта в центре мониторинга")
+            if isinstance(name, str) and obj_id is not None:
+                key = re.sub(r"\s+", "", name)
+                lookup[key] = obj_id
 
         for row in self.json_data:
             ts = row.get("ТС", "")
-            ts_clean = ts.split("\n")[0].strip()  # убираем телефон, если есть
-            ts_key = re.sub(r"\s+", "", ts_clean)  # убираем все пробелы для сравнения
-
-            found_id = lookup.get(ts_key)
-            if found_id:
-                row["id"] = found_id
-                # self.log(f"✔️ Привязан ID {found_id} к ТС: {ts_clean}")
+            if not isinstance(ts, str) or not ts:
+                continue
+            ts_clean = ts.split("\n", 1)[0].strip()
+            key = re.sub(r"\s+", "", ts_clean)
+            found = lookup.get(key)
+            if found is not None:
+                row["id"] = found
             else:
                 self.log(f"❌ Не найден ID для ТС: {ts_clean}")
