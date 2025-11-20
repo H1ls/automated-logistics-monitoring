@@ -60,15 +60,17 @@ class JSONManager:
                 config = json.load(f)
 
             section_data = config.get(section, {})
-            custom = section_data.get("custom", {})
-            default = section_data.get("default", {})
+            default = section_data.get("default", {}) or {}
+            custom = section_data.get("custom", {}) or {}
 
-            if custom:
-                return custom
-            if default:
-                return default
+            # сначала берём default, поверх накатываем custom
+            merged = {**default, **custom}
+            if merged:
+                return merged
+
             raise ValueError(f"⛔ Нет селекторов в разделе '{section}'")
 
         except Exception as e:
             print(f"❌ Ошибка при загрузке селекторов '{section}': {e}")
             return {}
+

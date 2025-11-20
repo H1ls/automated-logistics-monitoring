@@ -2,16 +2,14 @@ import json, pickle, time
 from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
-from selenium.common.exceptions import TimeoutException
 from selenium.webdriver.support import expected_conditions as EC
+from selenium.common.exceptions import TimeoutException, WebDriverException
 
 from Navigation_Bot.core.paths import CREDENTIALS_WIALON, COOKIES_FILE
 
 """6. Настройка WebDriver"""
 
-"""TO DO 1. чтение json -> JSONManager
-        2. Проверка авторизация - True/Fasle
-        3. Сначала куки потом авторизация self.driver.get(...)self.load_cookies()self.driver.refresh()"""
+"""TO DO: 1. чтение json -> JSONManager"""
 
 
 class WebDriverManager:
@@ -23,19 +21,45 @@ class WebDriverManager:
 
     def web_driver_wait(self, xpath, timeout=10):
         return WebDriverWait(self.driver, timeout).until(
-            EC.visibility_of_element_located((By.XPATH, xpath))
-        )
+            EC.visibility_of_element_located((By.XPATH, xpath)))
 
-    def start_browser(self):
-        self.driver = webdriver.Chrome()
-        self.driver.maximize_window()
-        self.log("✅ Браузер запущен.")
+    def is_alive(self) -> bool:
+        """Проверяем, что драйвер жив и у него есть открытые окна"""
+        if self.driver is None:
+            return False
+        try:
+            return len(self.driver.window_handles) > 0
+        except WebDriverException:
+            return False
+
+    def start_browser(self,rect=None):
+        """Стартуем Chrome, если он ещё не жив"""
+        if self.is_alive():
+            # self.log("ℹ️ Браузер уже запущен, переиспользую текущий драйвер.")
+            return
+
+        try:
+            self.driver = webdriver.Chrome()
+            if rect:
+                try:
+                    self.driver.set_window_rect(
+                        rect.get("x", 0),
+                        rect.get("y", 0),
+                        rect.get("width", 1024),
+                        rect.get("height", 768))
+                except Exception as e:
+                    self.log(f"⚠️ Не удалось установить позицию окна браузера: {e}")
+                    self.driver.maximize_window()
+        except Exception as e:
+            self.driver = None
+            self.log(f"❌ Не удалось запустить браузер: {e}")
+            raise
 
     def save_cookies(self):
         try:
             with open(self.cookies_path, "wb") as file:
                 pickle.dump(self.driver.get_cookies(), file)
-            self.log("💾 Куки сохранены.")
+            self.log("💾 Куки сохранены")
         except Exception as e:
             self.log(f"❌ Ошибка при сохранении cookies: {e}")
 
@@ -45,36 +69,28 @@ class WebDriverManager:
                 cookies = pickle.load(file)
             for cookie in cookies:
                 self.driver.add_cookie(cookie)
-            self.log("🍪 Куки загружены.")
+            # self.log("🍪 Куки загружены.")
             return True
         except FileNotFoundError:
-            self.log("⚠️ Файл cookies.pkl не найден, потребуется авторизация.")
+            self.log("⚠️ Файл cookies.pkl не найден, потребуется авторизация")
             return False
         except Exception as e:
-            self.log(f"❌ Ошибка загрузки cookies: {e}")
+            self.log(f"❌ Ошибка загрузки cookies:\n {e}")
             return False
 
     def login_wialon(self):
         """Открывает/логинит Wialon и переключает на мониторинг"""
+
         self.driver.get("https://wialon.rtmglonass.ru/?lang=ru")
 
-        # пробуем загрузить куки
-        # if self.load_cookies():
-        #     self.driver.refresh()
+        if self.load_cookies(): self.driver.refresh()
 
-        # проверяем, авторизован ли пользователь
         try:
-            self.web_driver_wait("//*[@id='hb_mi_monitoring']", timeout=5)
+            self.web_driver_wait("//*[@id='hb_mi_monitoring']", timeout=1)
             self.log("🔑 Авторизация уже выполнена (по cookies).")
         except TimeoutException:
+            # self.log("ℹ️ Куки не сработали, пробуем логин по логину/паролю")
             self._login_wialon()
-
-        # переключаемся в "Мониторинг"
-        try:
-            self.web_driver_wait("//*[@id='hb_mi_monitoring']").click()
-            self.log("📊 Переключено на мониторинг.")
-        except Exception:
-            self.log("⚠️ Не удалось кликнуть 'Мониторинг'.")
 
     def _login_wialon(self):
         """Авторизуется в Wialon, если нет сохранённых cookies"""
@@ -88,17 +104,27 @@ class WebDriverManager:
             self.web_driver_wait("//*[@data-testid='LoginMainPassInput']").send_keys(password)
 
             login_button = WebDriverWait(self.driver, 10).until(
-                EC.element_to_be_clickable((By.XPATH, "//*[@data-testid='LoginMainSubmitButton']"))
-            )
+                EC.element_to_be_clickable((By.XPATH, "//*[@data-testid='LoginMainSubmitButton']")))
             login_button.click()
             # self.save_cookies()
 
-            try:
-                self.web_driver_wait("//*[@id='hb_mi_monitoring']").click()
-            except:
-                self.log(f'в "class WebDriverManager -> login_wialon"\n Не смог найти class=hb_item_text')
+            clicked = False
+            for attempt in range(10):
+                try:
+                    btn = self.web_driver_wait("//*[@id='hb_mi_monitoring']", timeout=3)
+                    btn.click()
+                    self.log("📡 Открыт 'Мониторинг'.")
+                    clicked = True
+                    break
+                except TimeoutException:
+                    self.log(f"⌛ Ожидаем появление 'Мониторинг'... (попытка {attempt + 1})")
+                    time.sleep(1)
+
+            if not clicked:
+                self.log("⚠️ Не удалось кликнуть 'Мониторинг' после логина.")
+
         except Exception as e:
-            self.log(f"❌ Ошибка при логине в Wialon: {e}")
+            self.log(f"❌ Ошибка при логине в Wialon:\n {e}")
 
     def open_yandex_maps(self):
         # self.log("🗺️ Проверка вкладок с Яндекс.Картами...")
@@ -110,40 +136,58 @@ class WebDriverManager:
 
                 if ("yandex" in current_url and "maps" in current_url) or \
                         ("yandex" in title or "яндекс" in title):
-                    self.log("🔁 Найдена вкладка Яндекс.Карт — переключаемся.")
-                    return  # уже открыта и активирована
+                    self.log("🔁 Найдена вкладка Яндекс.Карт — переключаемся")
+                    return
 
-            # Не нашли — открываем новую
+                    # Не нашли - открываем новую
             # self.log("➕ Открытие новой вкладки с Я.Картами...")
             self.driver.execute_script("window.open('https://yandex.ru/maps', '_blank');")
-            time.sleep(1)
+            time.sleep(2)
             self.driver.switch_to.window(self.driver.window_handles[-1])
 
             WebDriverWait(self.driver, 10).until(
                 EC.presence_of_element_located((By.TAG_NAME, "body"))
             )
-            # self.log("🗺️ Новая вкладка Я.Карт открыта.")
+            self.log("🗺️ Новая вкладка Я.Карт открыта")
 
         except Exception as e:
-            self.log(f"❌ Ошибка при открытии Я.Карт: {e}")
+            self.log(f"❌ Ошибка при открытии Я.Карт:\n {e}")
 
     def switch_to_tab(self, name: str) -> bool:
-        """Переключение по имени: 'wialon' или 'yandex'"""
+        """Если вкладка Яндекс.Карт закрыта — пытаемся открыть её заново"""
+
         try:
+            # Ищем среди уже открытых вкладок
             for handle in self.driver.window_handles:
                 self.driver.switch_to.window(handle)
                 url = self.driver.current_url.lower()
+
                 if name == "wialon" and "wialon" in url:
                     return True
+
                 if name == "yandex" and "yandex" in url and "maps" in url:
                     return True
+
+            # Если вкладка Я.Карт не найдена - пробуем открыть новую
+            if name == "yandex":
+                self.log("ℹ️ Вкладка 'yandex' не найдена, открываю Яндекс.Карты...")
+                self.open_yandex_maps()
+
+                # после открытия ещё раз ищем вкладку карт
+                for handle in self.driver.window_handles:
+                    self.driver.switch_to.window(handle)
+                    url = self.driver.current_url.lower()
+                    if "yandex" in url and "maps" in url:
+                        return True
+
+            # Если так и не нашли
             self.log(f"❌ Вкладка '{name}' не найдена.")
             return False
+
         except Exception as e:
             self.log(f"❌ Ошибка переключения на вкладку {name}: {e}")
             return False
 
-    # универсальные методы для абстракции
     def find(self, locator, timeout=10, condition="presence"):
         conditions = {
             "presence": EC.presence_of_element_located,
@@ -152,16 +196,6 @@ class WebDriverManager:
         }
         cond = conditions.get(condition, EC.presence_of_element_located)
         return WebDriverWait(self.driver, timeout).until(cond(locator))
-    # костыль - переделать
-
-    def find_xpath(self, xpath: str, timeout=15, condition="visible"):
-        conditions = {
-            "presence": EC.presence_of_element_located,
-            "visible": EC.visibility_of_element_located,
-            "clickable": EC.element_to_be_clickable
-        }
-        cond = conditions.get(condition, EC.presence_of_element_located)
-        return WebDriverWait(self.driver, timeout).until(cond((By.XPATH, xpath)))
 
     def find_all(self, locator, timeout=10):
         WebDriverWait(self.driver, timeout).until(
@@ -172,15 +206,6 @@ class WebDriverManager:
     def click(self, locator, timeout=10):
         el = self.find(locator, timeout, condition="clickable")
         el.click()
-        return el
-
-    def enter(self, locator, text, clear=True, submit=False):
-        el = self.find(locator)
-        if clear:
-            el.clear()
-        el.send_keys(text)
-        if submit:
-            el.submit()
         return el
 
     def execute_js(self, script, element=None):

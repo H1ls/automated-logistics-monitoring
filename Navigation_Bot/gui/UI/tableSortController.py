@@ -1,3 +1,6 @@
+from datetime import datetime
+
+
 class TableSortController:
     def __init__(self, data_context, table_manager, log):
         self.data_context = data_context
@@ -28,7 +31,7 @@ class TableSortController:
         self.log("⏳ Сортировка: по запасу времени")
 
     def sort_by_arrival(self):
-        from datetime import datetime
+
         data = self.data_context.get()
 
         def arr(row):

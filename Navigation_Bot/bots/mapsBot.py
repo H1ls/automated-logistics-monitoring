@@ -9,8 +9,7 @@ from selenium.webdriver.common.by import By
 from Navigation_Bot.core.paths import CONFIG_JSON
 from Navigation_Bot.core.jSONManager import JSONManager
 
-"""TODO 1.Обновить выбор адреса (под будущую ML-фильтрацию)
-        MapsBot - запускает вспомогательные классы 
+"""TODO 1.MapsBot - запускает вспомогательные классы 
         2.Вынести ввод и клики в MapsUIHelper
         3.Вынести парсинг маршрутов в отдельный класс
         4.Вынести address+datetime обработку"""
@@ -42,8 +41,8 @@ class MapsBot:
         try:
             locator = self._by(key)
             self.driver_manager.click(locator, timeout=timeout)
-            if label:
-                pass
+            # if label:
+            #     pass
                 # self.log(f"✅ Нажата кнопка '{label}'")
 
             time.sleep(0.3)
@@ -104,7 +103,9 @@ class MapsBot:
     def _handle_short_route(self, car: dict):
         """обработка выгрузки без маршрута"""
         self.log("📦 Короткий маршрут — выгрузка на месте.")
-        car["гео"] = "выгрузка"
+        car["гео"] = "у выгрузки"
+
+        # Убрать, кроме выгрузки данные не нужны
         car["коор"] = ""
         car["скорость"] = 0
         arrival = datetime.now().strftime("%d.%m.%Y %H:%M")
@@ -152,6 +153,27 @@ class MapsBot:
         self.driver_manager.execute_js("arguments[0].focus();", to_input)
         to_input.send_keys(Keys.CONTROL + "a", Keys.BACKSPACE, address)
         to_input.send_keys(Keys.ENTER)
+        time.sleep(0.5)
+
+        # появился ли класс "_disabled" у scroll-контейнера
+        try:
+            scroll_el = self.driver_manager.driver.find_element(By.CSS_SELECTOR, "div.scroll._width_narrow")
+            class_value = scroll_el.get_attribute("class")
+
+            if "_disabled" in class_value:
+                # открылся список подсказок
+                # self.log("🟡 Обнаружен список подсказок - выбираю первый элемент.")
+                to_input.send_keys(Keys.ARROW_DOWN)
+                time.sleep(0.1)
+                to_input.send_keys(Keys.ENTER)
+
+            # ?
+            else:
+                pass
+                # self.log("🟢 Список подсказок НЕ появился - адрес принят сразу.")
+
+        except Exception as e:
+            self.log(f"⚠️ Не удалось проверить состояние scroll-контейнера: {e}")
 
     def _enter_from_coordinates(self, coord):
         self.log(f"🚚 Ввод координат машины: {coord}")
@@ -164,28 +186,14 @@ class MapsBot:
             from_input.send_keys(Keys.CONTROL + "a", Keys.BACKSPACE)
             from_input.send_keys(coord)
             from_input.send_keys(Keys.ENTER)
-            # time.sleep(0.5)
             # self.log("✅ Координаты 'Откуда' введены.")
 
         except Exception as e:
             msg = str(e).splitlines()[0]
             self.log(f"❌ Ошибка ввода в 'Откуда': {msg}")
 
-    def _enter_input(self, key: str, value: str, label: str = ""):
-        try:
-            locator = self._by(key)
-            element = self.driver_manager.find(locator)
-            self.driver_manager.execute_js("arguments[0].focus();", element)
-            element.send_keys(Keys.CONTROL + "a", Keys.BACKSPACE, value, Keys.ENTER)
-
-            if label:
-                self.log(f"📥 Ввод в поле '{label}': {value}")
-        except Exception as e:
-            msg = str(e).splitlines()[0]
-            self.log(f"❌ Ошибка ввода в '{label or key}': {msg}")
-
     def get_route_info(self):
-        self.log("⌛ Получение всех маршрутов...")
+        # self.log("⌛ Получение всех маршрутов...")
         try:
             for _ in range(10):
                 items = self.driver_manager.find_all(self._by("route_item"), timeout=10)
@@ -204,7 +212,7 @@ class MapsBot:
                 if parsed:
                     all_routes.append(parsed)
 
-            self.log(f"📦 Найдено маршрутов: {len(all_routes)}\n {all_routes}")
+            # self.log(f"📦 Найдено маршрутов: {len(all_routes)}\n {all_routes}")
             return all_routes
 
         except Exception as e:
@@ -239,7 +247,7 @@ class MapsBot:
                 if "м" in dist_text:
                     self.log(f"📏 Короткий маршрут (< 1 км): {dist_text}")
                     return {"duration": "0",
-                        "distance": 0.0  }
+                            "distance": 0.0}
                 raise
 
             return {

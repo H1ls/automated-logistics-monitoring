@@ -1,17 +1,23 @@
 from functools import partial
 from datetime import datetime, timedelta
 
-from PyQt6.QtCore import Qt, QTimer
-from PyQt6.QtGui import QColor
-from PyQt6.QtWidgets import QTableWidgetItem, QPushButton, QWidget, QHBoxLayout, QLabel
+from PyQt6.QtWidgets import (QTableWidgetItem, QPushButton, QWidget, QHBoxLayout, QLabel, QStyledItemDelegate)
+from PyQt6.QtCore import Qt, QTimer, QRect
+from PyQt6.QtGui import QColor, QPainter
 
 from Navigation_Bot.gui.AddressEditDialog import AddressEditDialog
+from Navigation_Bot.gui.combinedSettingsDialog import VerticalTextDelegate
 
 
 class TableManager:
     def __init__(self, table_widget, data_context, log_func, on_row_click, on_edit_id_click, gsheet):
         self.data_context = data_context
         self.table = table_widget
+
+        # Делегат для вертикального текста в колонке "КА" (индекс 3)
+        self._vertical_delegate = VerticalTextDelegate(self.table)
+        self.table.setItemDelegateForColumn(3, self._vertical_delegate)
+
         self.log = log_func
         self.on_row_click = on_row_click
         self.on_edit_id_click = on_edit_id_click
@@ -128,6 +134,7 @@ class TableManager:
         finally:
             self.table.blockSignals(False)  # ✅ включаем сигналы обратно
             QTimer.singleShot(0, lambda: self._restore_scroll(scroll_value, selected_row))
+
         if callable(self.after_display):
             self.after_display()
 
@@ -326,66 +333,69 @@ class TableManager:
         return ""
 
     def edit_cell_content(self, row, col):
-        col_name = self.table.horizontalHeaderItem(col).text()
+        try:
 
-        if col_name in ["Погрузка", "Время погрузки"]:
-            prefix = "Погрузка"
-        elif col_name in ["Выгрузка", "Время выгрузки"]:
-            prefix = "Выгрузка"
-        else:
-            return
+            col_name = self.table.horizontalHeaderItem(col).text()
 
-        json_data = self.data_context.get()
-        # ключевая строка
-        if row >= len(json_data):
-            temp_entry = {"Погрузка": [], "Выгрузка": []}
-            dialog = AddressEditDialog(row_data=temp_entry,
-                                       full_data=[],
-                                       prefix=prefix,
-                                       parent=self.table,
-                                       disable_save=True,
-                                       data_context=self.data_context,
-                                       log_func=self.log)
-
-            if dialog.exec():
-                data_block, meta = dialog.get_result()
-                self._new_entry_buffer[prefix] = data_block
-                if meta.get("Время отправки"):
-                    self._new_entry_buffer["Время отправки"] = meta["Время отправки"]
-                if meta.get("Транзит"):
-                    self._new_entry_buffer["Транзит"] = meta["Транзит"]
-
-                # отрисовать в таблице превью только текст, JSON не трогаем
-                temp_entry[prefix] = data_block
-                preview_text = self._get_field_with_datetime(temp_entry, prefix)
-
-                self.table.blockSignals(True)
-                self._set_editable_cell(row, col, preview_text)
-                self.table.blockSignals(False)
-            return
-
-        # обычные строки
-        dialog = AddressEditDialog(row_data=self.data_context.get()[row],
-                                   full_data=self.data_context.get(),
-                                   prefix=prefix,
-                                   parent=self.table,
-                                   data_context=self.data_context,
-                                   log_func=self.log)
-        if dialog.exec():
-            data_block, meta = dialog.get_result()
-            if not data_block:
-                self.log(f"{prefix}: Пустое редактирование в строке {row + 1} — изменения отменены.")
+            if col_name in ["Погрузка", "Время погрузки"]:
+                prefix = "Погрузка"
+            elif col_name in ["Выгрузка", "Время выгрузки"]:
+                prefix = "Выгрузка"
+            else:
                 return
 
-            json_data[row][prefix] = data_block
-            if meta.get("Время отправки"):
-                json_data[row]["Время отправки"] = meta["Время отправки"]
-            if meta.get("Транзит"):
-                json_data[row]["Транзит"] = meta["Транзит"]
+            json_data = self.data_context.get()
+            # ключевая строка
+            if row >= len(json_data):
+                temp_entry = {"Погрузка": [], "Выгрузка": []}
+                dialog = AddressEditDialog(row_data=temp_entry,
+                                           full_data=[],
+                                           prefix=prefix,
+                                           parent=self.table,
+                                           disable_save=True,
+                                           data_context=self.data_context,
+                                           log_func=self.log)
 
-            self.data_context.save()
-            self.display()
+                if dialog.exec():
+                    data_block, meta = dialog.get_result()
+                    self._new_entry_buffer[prefix] = data_block
+                    if meta.get("Время отправки"):
+                        self._new_entry_buffer["Время отправки"] = meta["Время отправки"]
+                    if meta.get("Транзит"):
+                        self._new_entry_buffer["Транзит"] = meta["Транзит"]
 
+                    # отрисовать в таблице превью только текст, JSON не трогаем
+                    temp_entry[prefix] = data_block
+                    preview_text = self._get_field_with_datetime(temp_entry, prefix)
+
+                    self.table.blockSignals(True)
+                    self._set_editable_cell(row, col, preview_text)
+                    self.table.blockSignals(False)
+                return
+
+            # обычные строки
+            dialog = AddressEditDialog(row_data=self.data_context.get()[row],
+                                       full_data=self.data_context.get(),
+                                       prefix=prefix,
+                                       parent=self.table,
+                                       data_context=self.data_context,
+                                       log_func=self.log)
+            if dialog.exec():
+                data_block, meta = dialog.get_result()
+                if not data_block:
+                    self.log(f"{prefix}: Пустое редактирование в строке {row + 1} — изменения отменены.")
+                    return
+
+                json_data[row][prefix] = data_block
+                if meta.get("Время отправки"):
+                    json_data[row]["Время отправки"] = meta["Время отправки"]
+                if meta.get("Транзит"):
+                    json_data[row]["Транзит"] = meta["Транзит"]
+
+                self.data_context.save()
+                self.display()
+        except:
+            print("edit_cell_content")
     def save_to_json_on_edit(self, item):
         QTimer.singleShot(0, lambda: self._save_item(item))
 

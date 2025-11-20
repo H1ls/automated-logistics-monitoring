@@ -7,6 +7,8 @@ SECTIONS = {
             "address_selector": ("CSS адреса", str, True),
             "copy_button_selector": ("CSS копирования координат", str, True),
             "speed_selector": ("CSS скорости", str, False),
+            "gps_sats_xpath": ("XPath иконки GPS/спутников", str, False),
+            "text_tooltip-gps": ("CSS tooltip GPS", str, False),
         }
     ),
     "yandex_selectors": (

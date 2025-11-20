@@ -5,7 +5,9 @@
       "unit_block_xpath": "//*[@id='monitoring_units_custom_name_{car_id}']",
       "address_selector": ".addressName_WTb9",
       "copy_button_selector": "button .icon-copy-coordinates",
-      "speed_selector": "td.speed_BuUT > div"
+      "speed_selector": "td.speed_BuUT > div",
+      "gps_sats_xpath": "//*[@id='monitoring_units_state_gps_sats_{car_id}']",
+      "text_tooltip-gps": "#tooltip .tooltip-gps"
     },
     "custom": {
       "search_input_xpath": "//*[@id='monitoring_search_container']//input[@placeholder='Поиск']",
@@ -45,7 +47,7 @@
     },
     "custom": {
       "creds_file": "D:\\PycharmProjects\\pet.project\\config\\Credentials_wialon.json",
-      "sheet_id": "1Xk8-kiVk7Lm6CIsweIA8yh6bGgyO9cxk-xyphfOYZ48",
+      "sheet_id": "1al_8ECo4JMDuInwuJTh9QwNLI8X--GuAbMrYn-toEms",
       "worksheet_index": 3,
       "column_index": 13,
       "file_path": "selected_data.json"

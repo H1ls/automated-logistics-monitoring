@@ -11,10 +11,13 @@ class DataContext:
         self.data = self.manager.load_json() or []
 
     def set_filepath(self, filepath: str):
-        """Сменить файл, с которым работает контекст, и сразу перезагрузить данные."""
-        self.filepath = filepath
-        self.manager = JSONManager(filepath, log_func=self.log)
-        self.data = self.manager.load_json() or []
+        """Сменить файл, с которым работает контекст, и сразу перезагрузить данные"""
+        try:
+            self.filepath = filepath
+            self.manager = JSONManager(filepath, log_func=self.log)
+            self.data = self.manager.load_json() or []
+        except:
+            print("set filepath error")
 
     def reload(self):
         self.data = self.manager.load_json() or []

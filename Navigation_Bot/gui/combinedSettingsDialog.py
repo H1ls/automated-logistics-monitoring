@@ -1,17 +1,23 @@
-from PyQt6.QtCore import pyqtSignal
-from PyQt6.QtWidgets import (QDialog, QTabWidget, QWidget, QVBoxLayout, QFormLayout,
-                             QLineEdit, QSpinBox, QCheckBox, QPushButton, QHBoxLayout, QMessageBox)
+from PyQt6.QtWidgets import (QDialog, QTabWidget, QWidget, QVBoxLayout, QFormLayout, QStyledItemDelegate,
+                             QLineEdit, QSpinBox, QCheckBox, QPushButton, QHBoxLayout, QMessageBox,
+                             QTableWidgetItem, QLabel, QStyle, QStyleOptionViewItem, QApplication)
+
+from PyQt6.QtCore import pyqtSignal, QRect, Qt, QTimer
+from PyQt6.QtGui import QPainter, QColor
 
 import json
 
 from Navigation_Bot.core.settings_schema import SECTIONS
 from Navigation_Bot.core.jSONManager import JSONManager as JM
 from Navigation_Bot.core.paths import CONFIG_JSON
+from Navigation_Bot.bots.mapsBot import MapsBot
+from Navigation_Bot.bots.navigationBot import NavigationBot
+from Navigation_Bot.bots.googleSheetsManager import GoogleSheetsManager
 
 
 class CombinedSettingsDialog(QDialog):
     settings_changed = pyqtSignal(set)
-
+    clear_json_requested = pyqtSignal()
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setWindowTitle("Настройки")
@@ -48,16 +54,65 @@ class CombinedSettingsDialog(QDialog):
         root.addLayout(btns)
 
     def _validate_required(self) -> tuple[bool, str]:
-        # простая проверка: все required != пустая строка
-        for s_key, (_, fields) in SECTIONS.items():
+        for s_key, (title, fields) in SECTIONS.items():
             form = self._forms[s_key]
             for key, (label, tp, required) in fields.items():
                 if not required:
                     continue
                 val = form.values().get(key, "")
                 if (tp is str and not str(val).strip()) or (tp is int and val is None):
-                    return False, f"В секции «{s_key}» заполните обязательное поле: {label}"
+                    return False, f"В секции «{title}» заполните обязательное поле: {label}"
         return True, ""
+
+    def on_settings_changed(self, sections: set):
+        if "google_config" in sections:
+            self.gsheet = GoogleSheetsManager(log_func=self.log)
+            self.log("🔁 GoogleSheetsManager пересоздан по новым настройкам")
+
+        driver = getattr(getattr(self, "processor", None), "driver_manager", None)
+        driver = getattr(driver, "driver", None)
+
+        if "wialon_selectors" in sections and driver:
+            self.processor.navibot = NavigationBot(driver, log_func=self.log)
+            self.log("🔁 NavigationBot пересоздан")
+
+        if "yandex_selectors" in sections:
+
+            dm = getattr(self.processor, "driver_manager", None)
+            if dm:
+                self.processor.mapsbot = MapsBot(dm, log_func=self.log)
+                self.log("🔁 MapsBot пересоздан")
+            else:
+                self.log("ℹ️ MapsBot обновится при запуске драйвера")
+
+        if {"wialon_selectors", "yandex_selectors"} & sections and not driver:
+            self.log("ℹ️ Селекторы применятся при старте веб-драйвера")
+
+    def clear_json(self):
+        """Очистка основного JSON через parent (NavigationGUI)."""
+        parent_gui = self.parent()
+        if not parent_gui:
+            QMessageBox.warning(self, "Ошибка", "Родительское окно не найдено.")
+            return
+
+        reply = QMessageBox.question(
+            self,
+            "Подтверждение очистки",
+            "Вы действительно хотите очистить все данные из JSON?\nЭто действие необратимо.",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+        )
+
+        if reply != QMessageBox.StandardButton.Yes:
+            return
+
+        data_context = getattr(parent_gui, "data_context", None)
+        table_manager = getattr(parent_gui, "table_manager", None)
+
+        if data_context is not None:
+            data_context.set([])
+
+        if table_manager is not None:
+            table_manager.display()
 
     def _on_save(self):
         ok, msg = self._validate_required()
@@ -96,7 +151,7 @@ class SectionForm(QWidget):
         form = QFormLayout()
         self.layout().addLayout(form)
 
-        # грузим значения custom; для сброса будем смотреть default
+        # грузим значения custom, для сброса будем смотреть default
         cfg = _read_config()
         section_cfg = cfg.get(section_key, {})
         custom = section_cfg.get("custom", {})
@@ -127,11 +182,25 @@ class SectionForm(QWidget):
         btns = QHBoxLayout()
         self.btn_reset = QPushButton("Сбросить (default)")
         self.btn_reset.clicked.connect(self.reset_to_default)
+
+        self.btn_clear_json = QPushButton("Очистить JSON")
+        # parent здесь - CombinedSettingsDialog
+        if isinstance(parent, CombinedSettingsDialog):
+            self.btn_clear_json.clicked.connect(parent.clear_json)
+
         btns.addStretch(1)
         btns.addWidget(self.btn_reset)
+        btns.addWidget(self.btn_clear_json)
         self.layout().addLayout(btns)
 
-    # Переписать на читаемый, возможно использовать словари стратегий:_READERS, _CASTERS (тогда переписать весь class)
+        # btns = QHBoxLayout()
+        # self.btn_reset = QPushButton("Сбросить (default)")
+        # self.btn_reset.clicked.connect(self.reset_to_default)
+        # btns.addStretch(1)
+        # btns.addWidget(self.btn_reset)
+        # self.layout().addLayout(btns)
+
+    # Переписать на читаемый, возможно использовать словари _READERS, _CASTERS (тогда переписать весь class)
     def values(self) -> dict:
         out = {}
         for key, editor in self._widgets.items():
@@ -173,10 +242,78 @@ class SectionForm(QWidget):
                 editor.setText("" if val is None else str(val))
 
 
-# ---Вспомогательные функции--
+class VerticalTextDelegate(QStyledItemDelegate):
+    def paint(self, painter: QPainter, option, index):
+        # 1️⃣ Даем Qt нарисовать ячейку (фон, выделение, фокус, бордеры) БЕЗ текста
+        opt = QStyleOptionViewItem(option)
+        self.initStyleOption(opt, index)
+
+        text = opt.text  # сохраняем текст
+        opt.text = ""  # очищаем, чтобы базовый стиль текст не рисовал
+
+        style = opt.widget.style() if opt.widget else QApplication.style()
+        style.drawControl(QStyle.ControlElement.CE_ItemViewItem, opt, painter, opt.widget)
+
+        # 2️⃣ Рисуем только повернутый текст поверх уже готовой ячейки
+        if not text:
+            return
+
+        painter.save()
+        rect = opt.rect
+
+        painter.translate(rect.x(), rect.y() + rect.height())
+        painter.rotate(-90)
+
+        painter.drawText(
+            QRect(0, 0, rect.height(), rect.width()),
+            Qt.AlignmentFlag.AlignCenter,
+            text
+        )
+
+        painter.restore()
+
+
+# class VerticalTextDelegate(QStyledItemDelegate):
+#     def paint(self, painter: QPainter, option, index):
+#         painter.save()
+#
+#         rect = option.rect
+#         text = index.data()
+#
+#         # 1️⃣ Фон: выделение / фон из RowHighlighter / база таблицы
+#         try:
+#             if option.state & QStyle.StateFlag.State_Selected:
+#                 # выделенная строка
+#                 painter.fillRect(rect, option.palette.highlight())
+#             else:
+#                 bg_brush = index.data(Qt.ItemDataRole.BackgroundRole)
+#                 if bg_brush:
+#                     painter.fillRect(rect, bg_brush)
+#                 else:
+#                     painter.fillRect(rect, option.palette.base())
+#         except Exception:
+#             # на всякий случай, чтобы делегат не уронил всё приложение
+#             painter.fillRect(rect, option.palette.base())
+#
+#         # 2️⃣ Поворот и текст
+#         if text:
+#             painter.translate(rect.x(), rect.y() + rect.height())
+#             painter.rotate(-90)
+#
+#             painter.drawText(
+#                 QRect(0, 0, rect.height(), rect.width()),
+#                 Qt.AlignmentFlag.AlignCenter,
+#                 str(text)
+#             )
+#
+#         painter.restore()
+
+
+# Вспомогательные функции
 def _read_config() -> dict:
     try:
-        return JM.load_json(CONFIG_JSON)
+        manager = JM(CONFIG_JSON)
+        return manager.load_json() or {}
     except Exception:
         try:
             with open(CONFIG_JSON, "r", encoding="utf-8") as f:
@@ -187,7 +324,8 @@ def _read_config() -> dict:
 
 def _save_config(cfg: dict) -> None:
     try:
-        JM.save_json(CONFIG_JSON, cfg)
+        manager = JM(CONFIG_JSON)
+        manager.save_in_json(cfg)
     except Exception:
         with open(CONFIG_JSON, "w", encoding="utf-8") as f:
             json.dump(cfg, f, ensure_ascii=False, indent=2)
