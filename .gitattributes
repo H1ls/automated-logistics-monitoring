@@ -1,3 +1,0 @@
-# Принудительно использовать LF для всего
-*.py text eol=lf
-*.json text eol=lf
