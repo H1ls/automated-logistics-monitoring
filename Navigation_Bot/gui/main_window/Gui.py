@@ -8,28 +8,30 @@ from threading import Lock
 from concurrent.futures import ThreadPoolExecutor
 
 from Navigation_Bot.bots.googleSheetsManager import GoogleSheetsManager
-from Navigation_Bot.bots.mapsBot import MapsBot
-from Navigation_Bot.bots.navigationBot import NavigationBot
 
+from Navigation_Bot.core.SettingsController import SettingsController
 from Navigation_Bot.core.navigationProcessor import NavigationProcessor
 from Navigation_Bot.core.paths import INPUT_FILEPATH
 from Navigation_Bot.core.processedFlags import init_processed_flags
 from Navigation_Bot.core.dataContext import DataContext
 from Navigation_Bot.core.hotkeyManager import HotkeyManager
-from Navigation_Bot.core.globalSearchBar import GlobalSearchBar
-from Navigation_Bot.gui.combinedSettingsDialog import CombinedSettingsDialog
-from Navigation_Bot.gui.trackingIdEditor import TrackingIdEditor
-from Navigation_Bot.gui.tableManager import TableManager
-from Navigation_Bot.gui.iDManagerDialog import IDManagerDialog
-from Navigation_Bot.gui.UI.tableSortController import TableSortController
-from Navigation_Bot.gui.UI.rowHighlighter import RowHighlighter
+from Navigation_Bot.gui.widgets.globalSearchBar import GlobalSearchBar
+from Navigation_Bot.gui.settings.uiSettings import UiSettingsManager
+
+from Navigation_Bot.gui.dialogs.combinedSettingsDialog import CombinedSettingsDialog
+from Navigation_Bot.gui.dialogs.trackingIdEditor import TrackingIdEditor
+from Navigation_Bot.gui.widgets.tableManager import TableManager
+from Navigation_Bot.gui.dialogs.iDManagerDialog import IDManagerDialog
+from Navigation_Bot.gui.widgets.smooth_scroll import SmoothScrollController
+
+from Navigation_Bot.gui.widgets.tableSortController import TableSortController
+from Navigation_Bot.gui.widgets.rowHighlighter import RowHighlighter
 
 
 class NavigationGUI(QWidget):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Navigation Manager")
-        self.resize(1050, 1033)
 
         self.executor = ThreadPoolExecutor(max_workers=1)
         self._single_row_processing = True
@@ -38,19 +40,36 @@ class NavigationGUI(QWidget):
         self.json_lock = Lock()
 
         self._row_highlight_until = {}  # {row_idx: datetime_until}
-
         self.updated_rows = []
 
+        self.ui_settings = UiSettingsManager(log_func=self.log)
+
         self.init_ui()
+        # !! Не сохраняются настройки позиции окна при закрытии
+        if self.ui_settings.has_window_settings():
+            self.ui_settings.apply_window(self)
+        else:
+            self._setup_dual_screen_layout()
+
+        self.ui_settings.apply_window(self)
+        self.ui_settings.apply_table(self.table)
+        self.ui_settings.apply_row_heights(self.table)
+
         self._setup_dual_screen_layout()
         self.init_managers()
         self.connect_signals()
 
         self.table_manager.display()
 
+    def closeEvent(self, event):
+        self.ui_settings.save_window(self)
+        super().closeEvent(event)
+
     def init_managers(self):
         json_path = self._get_sheet_json_path()
         self.data_context = DataContext(json_path, log_func=self.log)
+
+        self.settings_controller = SettingsController(self)
 
         self.json_data = self.data_context.get()  # для обратной совместимости
         self.hotkeys = HotkeyManager(log_func=self.log)
@@ -113,7 +132,23 @@ class NavigationGUI(QWidget):
         top.addWidget(self.btn_refresh_table)
         top.addWidget(self.btn_settings)
         self.table = QTableWidget()
+        # Скролл по пикселям вместо по строкам
+        self.table.setVerticalScrollMode(QAbstractItemView.ScrollMode.ScrollPerPixel)
+
+        # Размер шага при прокрутке колёсиком (в пикселях)
+        self.table.verticalScrollBar().setSingleStep(20)
+        self.smooth_scroll = SmoothScrollController(self.table, speed=0.18)
+        # self.smooth_scroll = SmoothScrollController(self.table, speed=0.22)
+
         self.table.setColumnCount(9)
+
+        hdr_h = self.table.horizontalHeader()
+        hdr_v = self.table.verticalHeader()
+        hdr_h.sectionResized.connect(
+            lambda logical, old, new: self.ui_settings.on_col_resized(logical, old, new, self.table))
+        hdr_v.sectionResized.connect(
+            lambda logical, old, new: self.ui_settings.on_row_resized(logical, old, new, self.table))
+
         self.table.setHorizontalHeaderLabels([
             "", "id", "ТС", "КА", "Погрузка", "Выгрузка", "гео", "Время прибытия", "Запас"])
         self.table.setHorizontalHeaderItem(0, QTableWidgetItem("🔍"))
@@ -240,11 +275,12 @@ class NavigationGUI(QWidget):
     def connect_signals(self):
         self.table.cellDoubleClicked.connect(self.table_manager.edit_cell_content)
 
-        self.settings_ui.settings_changed.connect(self._on_settings_changed)
-
+        # self.settings_ui.settings_changed.connect(self._on_settings_changed)
+        # self.btn_settings.clicked.connect(lambda: self.settings_ui.exec())
+        self.settings_ui.settings_changed.connect(self.settings_controller.on_settings_changed)
         self.btn_settings.clicked.connect(lambda: self.settings_ui.exec())
+
         self.btn_process_all.clicked.connect(self.processor.process_all)
-        # self.btn_refresh_table.clicked.connect(self.table_manager.display)
         self.btn_refresh_table.clicked.connect(self.reload_and_show)
         self.table.itemChanged.connect(self.table_manager.save_to_json_on_edit)
         self.btn_clear_log.clicked.connect(self.clear_log)
@@ -253,31 +289,6 @@ class NavigationGUI(QWidget):
         QShortcut(QKeySequence("F11"), self).activated.connect(self.hotkeys.start)
         QShortcut(QKeySequence("F12"), self).activated.connect(self.hotkeys.stop)
         QShortcut(QKeySequence("Ctrl+F"), self).activated.connect(self._toggle_search_bar)
-
-    def _on_settings_changed(self, sections: set):
-        if "google_config" in sections:
-            self.gsheet = GoogleSheetsManager()
-            self.gsheet.log_message.connect(self.log)
-            self.log("🔁 GoogleSheetsManager пересоздан по новым настройкам")
-
-        driver = getattr(getattr(self, "processor", None), "driver_manager", None)
-        driver = getattr(driver, "driver", None)
-
-        if "wialon_selectors" in sections and driver:
-            self.processor.navibot = NavigationBot(driver, log_func=self.log)
-            self.log("🔁 NavigationBot пересоздан")
-
-        if "yandex_selectors" in sections:
-
-            dm = getattr(self.processor, "driver_manager", None)
-            if dm:
-                self.processor.mapsbot = MapsBot(dm, log_func=self.log)
-                self.log("🔁 MapsBot пересоздан")
-            else:
-                self.log("ℹ️ MapsBot обновится при запуске драйвера")
-
-        if {"wialon_selectors", "yandex_selectors"} & sections and not driver:
-            self.log("ℹ️ Селекторы применятся при старте веб-драйвера")
 
     def _on_sheet_button_clicked(self, index: int, clicked_btn: QPushButton):
         for btn in getattr(self, "_sheet_buttons", []):
@@ -337,7 +348,6 @@ class NavigationGUI(QWidget):
         elif self.sort_controller.current == "arrival":
             self.sort_controller.sort_by_arrival()
         self.table_manager.display()
-        # print("reload_and_show/sort_by_buffer/sort_by_arrival")
 
     def _on_header_clicked(self, logicalIndex: int):
         if logicalIndex == 0:  # 🔍 — открыть справочник ID

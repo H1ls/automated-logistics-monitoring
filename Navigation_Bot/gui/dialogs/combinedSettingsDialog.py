@@ -1,23 +1,21 @@
 from PyQt6.QtWidgets import (QDialog, QTabWidget, QWidget, QVBoxLayout, QFormLayout, QStyledItemDelegate,
                              QLineEdit, QSpinBox, QCheckBox, QPushButton, QHBoxLayout, QMessageBox,
-                             QTableWidgetItem, QLabel, QStyle, QStyleOptionViewItem, QApplication)
+                             QStyle, QStyleOptionViewItem, QApplication)
 
-from PyQt6.QtCore import pyqtSignal, QRect, Qt, QTimer
-from PyQt6.QtGui import QPainter, QColor
+from PyQt6.QtCore import pyqtSignal, QRect, Qt
+from PyQt6.QtGui import QPainter
 
 import json
 
 from Navigation_Bot.core.settings_schema import SECTIONS
 from Navigation_Bot.core.jSONManager import JSONManager as JM
 from Navigation_Bot.core.paths import CONFIG_JSON
-from Navigation_Bot.bots.mapsBot import MapsBot
-from Navigation_Bot.bots.navigationBot import NavigationBot
-from Navigation_Bot.bots.googleSheetsManager import GoogleSheetsManager
 
 
 class CombinedSettingsDialog(QDialog):
     settings_changed = pyqtSignal(set)
     clear_json_requested = pyqtSignal()
+
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setWindowTitle("Настройки")
@@ -63,30 +61,6 @@ class CombinedSettingsDialog(QDialog):
                 if (tp is str and not str(val).strip()) or (tp is int and val is None):
                     return False, f"В секции «{title}» заполните обязательное поле: {label}"
         return True, ""
-
-    def on_settings_changed(self, sections: set):
-        if "google_config" in sections:
-            self.gsheet = GoogleSheetsManager(log_func=self.log)
-            self.log("🔁 GoogleSheetsManager пересоздан по новым настройкам")
-
-        driver = getattr(getattr(self, "processor", None), "driver_manager", None)
-        driver = getattr(driver, "driver", None)
-
-        if "wialon_selectors" in sections and driver:
-            self.processor.navibot = NavigationBot(driver, log_func=self.log)
-            self.log("🔁 NavigationBot пересоздан")
-
-        if "yandex_selectors" in sections:
-
-            dm = getattr(self.processor, "driver_manager", None)
-            if dm:
-                self.processor.mapsbot = MapsBot(dm, log_func=self.log)
-                self.log("🔁 MapsBot пересоздан")
-            else:
-                self.log("ℹ️ MapsBot обновится при запуске драйвера")
-
-        if {"wialon_selectors", "yandex_selectors"} & sections and not driver:
-            self.log("ℹ️ Селекторы применятся при старте веб-драйвера")
 
     def clear_json(self):
         """Очистка основного JSON через parent (NavigationGUI)."""

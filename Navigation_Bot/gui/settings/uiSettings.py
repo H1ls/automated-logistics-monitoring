@@ -7,15 +7,14 @@ from Navigation_Bot.core.jSONManager import JSONManager
 
 
 class UiSettingsManager:
-    """
+    """Хранение — в config/ui_settings.json
     Хранит/восстанавливает:
       - размер/позицию окна
       - ширины колонок таблицы
-      - высоты строк таблицы (если пользователь вручную менял)
-    Хранение — в config/ui_settings.json
-    """
+      - высоты строк таблицы"""
 
     def __init__(self, log_func=print):
+
         self.log = log_func or (lambda *_: None)
         self.store = JSONManager(str(UI_SETTINGS_FILE), log_func=self.log)
         data = self.store.load_json() or {}
@@ -26,6 +25,9 @@ class UiSettingsManager:
         self._save_timer = QTimer()
         self._save_timer.setSingleShot(True)
         self._save_timer.timeout.connect(self._flush)
+
+    def has_window_settings(self):
+        return bool(self.data.get("window"))
 
     def _schedule_save(self, delay_ms=200):
         self._save_timer.start(delay_ms)
@@ -61,8 +63,6 @@ class UiSettingsManager:
                     table.setColumnWidth(i, int(widths[str(i)]))
                 except Exception:
                     pass
-        # высоты строк (после заполнения таблицы удобнее дергать отдельно — см. apply_row_heights)
-        # здесь ничего не делаем
 
     def apply_row_heights(self, table: QTableWidget):
         tbl = self.data.get("table", {})

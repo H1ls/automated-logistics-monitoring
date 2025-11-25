@@ -125,14 +125,14 @@ class DataCleaner:
         self.id_data = self.id_context.get() or []
 
         for item in self.json_data:
-            #  1. RAW для ML
+            #  RAW для ML
             if isinstance(item.get("Погрузка"), str) and not item.get("raw_load"):
                 item["raw_load"] = item["Погрузка"]
 
             if isinstance(item.get("Выгрузка"), str) and not item.get("raw_unload"):
                 item["raw_unload"] = item["Выгрузка"]
 
-            #  2. Парсинг в структурированный вид
+            #  Парсинг в структурированный вид
             if isinstance(item.get("Погрузка"), str):
                 item["Погрузка"] = self._parse_info(item["Погрузка"], "Погрузка")
 

@@ -1,12 +1,12 @@
 from functools import partial
 from datetime import datetime, timedelta
 
-from PyQt6.QtWidgets import (QTableWidgetItem, QPushButton, QWidget, QHBoxLayout, QLabel, QStyledItemDelegate)
-from PyQt6.QtCore import Qt, QTimer, QRect
-from PyQt6.QtGui import QColor, QPainter
+from PyQt6.QtWidgets import (QTableWidgetItem, QPushButton, QWidget, QHBoxLayout, QLabel)
+from PyQt6.QtCore import Qt, QTimer
+from PyQt6.QtGui import QColor
 
-from Navigation_Bot.gui.AddressEditDialog import AddressEditDialog
-from Navigation_Bot.gui.combinedSettingsDialog import VerticalTextDelegate
+from Navigation_Bot.gui.dialogs.AddressEditDialog import AddressEditDialog
+from Navigation_Bot.gui.dialogs.combinedSettingsDialog import VerticalTextDelegate
 
 
 class TableManager:
@@ -26,117 +26,117 @@ class TableManager:
         self._editable_headers = {"Телефон", "ФИО", "КА", "id"}
         self.after_display = None
 
-    def display(self, reload_from_file=True):
-        if reload_from_file:
-            try:
-                self.data_context.reload()
-            except Exception as e:
-                self.log(f"❌ Ошибка при загрузке JSON: {e}")
-                json_data = []
-
-        json_data = self.data_context.get()
-
-        try:
-            scroll_value = self.table.verticalScrollBar().value()
-            selected_row = self.table.currentRow()
-        except Exception as e:
-            print(f'{e}')
-
-        try:
-            self.table.blockSignals(True)  # отключаем сигналы
-            self.table.setRowCount(0)
-
-            for row_idx, row in enumerate(json_data):
-                self.table.insertRow(row_idx)
-                # Кнопка ▶ или 🛠
-                btn = QPushButton("▶" if row.get("id") else "🛠")
-                if not row.get("id"):
-                    btn.setStyleSheet("color: red;")
-                    btn.clicked.connect(lambda _, idx=row_idx: self.on_edit_id_click(idx))
-                else:
-                    btn.clicked.connect(lambda _, idx=row_idx: self.on_row_click(idx))
-                self.table.setCellWidget(row_idx, 0, btn)
-
-                # ID с кнопкой 🛠
-                id_value = str(row.get("id", ""))
-                container = QWidget()
-                layout = QHBoxLayout()
-                layout.setContentsMargins(0, 0, 0, 0)
-                label = QLabel(id_value)
-                btn_tool = QPushButton("🛠")
-                btn_tool.setFixedWidth(30)
-                btn_tool.clicked.connect(partial(self.on_edit_id_click, row_idx))
-                layout.addWidget(label)
-                layout.addWidget(btn_tool)
-                layout.addStretch()
-                container.setLayout(layout)
-                self.table.setCellWidget(row_idx, 1, container)
-
-                ts = row.get("ТС", "")
-                phone = row.get("Телефон", "")
-                self._set_cell(row_idx, 2, f"{ts}\n{phone}" if phone else ts, editable=True)
-
-                self._set_cell(row_idx, 3, row.get("КА", ""), editable=True)
-                self._set_cell(row_idx, 4, self._get_field_with_datetime(row, "Погрузка"))
-                self._set_unload_cell_with_status(row_idx, row)  # Выгрузка
-
-                self._set_cell(row_idx, 6, row.get("гео", ""))
-
-                arrival = row.get("Маршрут", {}).get("время прибытия", "—")
-                buffer = row.get("Маршрут", {}).get("time_buffer", "—")
-                if ":" in buffer:
-                    try:
-                        h, m = map(int, buffer.split(":"))
-                        buffer = f"{h}ч {m}м"
-                    except Exception:
-                        pass
-
-                self._set_readonly_cell(row_idx, 7, arrival)
-                self._set_readonly_cell(row_idx, 8, buffer)
-
-                # Подсветка при поздней погрузке
-                pg = row.get("Погрузка", [])
-                if pg and isinstance(pg, list) and isinstance(pg[0], dict):
-                    date_str = pg[0].get("Дата 1", "")
-                    time_str = pg[0].get("Время 1", "")
-                    try:
-                        if time_str.count(":") == 1:
-                            time_str += ":00"
-                        dt = datetime.strptime(f"{date_str} {time_str}", "%d.%m.%Y %H:%M:%S")
-                        if dt > datetime.now() + timedelta(hours=3):
-                            for col in range(self.table.columnCount()):
-                                item = self.table.item(row_idx, col)
-                                if item:
-                                    item.setBackground(QColor(210, 235, 255))
-                    except Exception as e:
-                        ts = row.get("ТС", "—")
-                        self.log(
-                            f"[DEBUG] ❗️ Ошибка при анализе ДАТЫ/ВРЕМЕНИ Погрузки у ТС: {ts} (строка {row_idx + 1}):")
-
-            self.table.resizeRowsToContents()
-
-            # --- добавляем ключевую строку ---
-            extra_row = self.table.rowCount()
-            self.table.insertRow(extra_row)
-
-            btn = QPushButton("➕")
-            btn.setStyleSheet("color: green; font-weight: bold;")
-            btn.clicked.connect(lambda _, idx=extra_row: self.handle_new_entry(idx))
-            self.table.setCellWidget(extra_row, 0, btn)
-
-            id_item = QTableWidgetItem("—")
-            id_item.setFlags(Qt.ItemFlag.ItemIsEnabled)
-            self.table.setItem(extra_row, 1, id_item)
-
-            for col in range(2, self.table.columnCount()):
-                self._set_editable_cell(extra_row, col, "")
-
-        finally:
-            self.table.blockSignals(False)  # ✅ включаем сигналы обратно
-            QTimer.singleShot(0, lambda: self._restore_scroll(scroll_value, selected_row))
-
-        if callable(self.after_display):
-            self.after_display()
+    # def display(self, reload_from_file=True):
+    #     if reload_from_file:
+    #         try:
+    #             self.data_context.reload()
+    #         except Exception as e:
+    #             json_data = []
+    #             self.log(f"❌ Ошибка при загрузке JSON: {e}")
+    #
+    #     json_data = self.data_context.get()
+    #
+    #     try:
+    #         scroll_value = self.table.verticalScrollBar().value()
+    #         selected_row = self.table.currentRow()
+    #     except Exception as e:
+    #         print(f'{e}')
+    #
+    #     try:
+    #         self.table.blockSignals(True)  # отключаем сигналы
+    #         self.table.setRowCount(0)
+    #
+    #         for row_idx, row in enumerate(json_data):
+    #             self.table.insertRow(row_idx)
+    #             # Кнопка ▶ или 🛠
+    #             btn = QPushButton("▶" if row.get("id") else "🛠")
+    #             if not row.get("id"):
+    #                 btn.setStyleSheet("color: red;")
+    #                 btn.clicked.connect(lambda _, idx=row_idx: self.on_edit_id_click(idx))
+    #             else:
+    #                 btn.clicked.connect(lambda _, idx=row_idx: self.on_row_click(idx))
+    #             self.table.setCellWidget(row_idx, 0, btn)
+    #
+    #             # ID с кнопкой 🛠
+    #             id_value = str(row.get("id", ""))
+    #             container = QWidget()
+    #             layout = QHBoxLayout()
+    #             layout.setContentsMargins(0, 0, 0, 0)
+    #             label = QLabel(id_value)
+    #             btn_tool = QPushButton("🛠")
+    #             btn_tool.setFixedWidth(30)
+    #             btn_tool.clicked.connect(partial(self.on_edit_id_click, row_idx))
+    #             layout.addWidget(label)
+    #             layout.addWidget(btn_tool)
+    #             layout.addStretch()
+    #             container.setLayout(layout)
+    #             self.table.setCellWidget(row_idx, 1, container)
+    #
+    #             ts = row.get("ТС", "")
+    #             phone = row.get("Телефон", "")
+    #             self._set_cell(row_idx, 2, f"{ts}\n{phone}" if phone else ts, editable=True)
+    #
+    #             self._set_cell(row_idx, 3, row.get("КА", ""), editable=True)
+    #             self._set_cell(row_idx, 4, self._get_field_with_datetime(row, "Погрузка"))
+    #             self._set_unload_cell_with_status(row_idx, row)  # Выгрузка
+    #
+    #             self._set_cell(row_idx, 6, row.get("гео", ""))
+    #
+    #             arrival = row.get("Маршрут", {}).get("время прибытия", "—")
+    #             buffer = row.get("Маршрут", {}).get("time_buffer", "—")
+    #             if ":" in buffer:
+    #                 try:
+    #                     h, m = map(int, buffer.split(":"))
+    #                     buffer = f"{h}ч {m}м"
+    #                 except Exception:
+    #                     pass
+    #
+    #             self._set_readonly_cell(row_idx, 7, arrival)
+    #             self._set_readonly_cell(row_idx, 8, buffer)
+    #
+    #             # Подсветка при поздней погрузке
+    #             pg = row.get("Погрузка", [])
+    #             if pg and isinstance(pg, list) and isinstance(pg[0], dict):
+    #                 date_str = pg[0].get("Дата 1", "")
+    #                 time_str = pg[0].get("Время 1", "")
+    #                 try:
+    #                     if time_str.count(":") == 1:
+    #                         time_str += ":00"
+    #                     dt = datetime.strptime(f"{date_str} {time_str}", "%d.%m.%Y %H:%M:%S")
+    #                     if dt > datetime.now() + timedelta(hours=3):
+    #                         for col in range(self.table.columnCount()):
+    #                             item = self.table.item(row_idx, col)
+    #                             if item:
+    #                                 item.setBackground(QColor(210, 235, 255))
+    #                 except Exception as e:
+    #                     ts = row.get("ТС", "—")
+    #                     self.log(
+    #                         f"[DEBUG] ❗️ Ошибка при анализе ДАТЫ/ВРЕМЕНИ Погрузки у ТС: {ts} (строка {row_idx + 1}):")
+    #
+    #         self.table.resizeRowsToContents()
+    #
+    #         # --- добавляем ключевую строку ---
+    #         extra_row = self.table.rowCount()
+    #         self.table.insertRow(extra_row)
+    #
+    #         btn = QPushButton("➕")
+    #         btn.setStyleSheet("color: green; font-weight: bold;")
+    #         btn.clicked.connect(lambda _, idx=extra_row: self.handle_new_entry(idx))
+    #         self.table.setCellWidget(extra_row, 0, btn)
+    #
+    #         id_item = QTableWidgetItem("—")
+    #         id_item.setFlags(Qt.ItemFlag.ItemIsEnabled)
+    #         self.table.setItem(extra_row, 1, id_item)
+    #
+    #         for col in range(2, self.table.columnCount()):
+    #             self._set_editable_cell(extra_row, col, "")
+    #
+    #     finally:
+    #         self.table.blockSignals(False)  # ✅ включаем сигналы обратно
+    #         QTimer.singleShot(0, lambda: self._restore_scroll(scroll_value, selected_row))
+    #
+    #     if callable(self.after_display):
+    #         self.after_display()
 
     def _set_editable_cell(self, row, col, text):
         item = QTableWidgetItem(text)
@@ -333,8 +333,8 @@ class TableManager:
         return ""
 
     def edit_cell_content(self, row, col):
-        try:
 
+        try:
             col_name = self.table.horizontalHeaderItem(col).text()
 
             if col_name in ["Погрузка", "Время погрузки"]:
@@ -396,6 +396,7 @@ class TableManager:
                 self.display()
         except:
             print("edit_cell_content")
+
     def save_to_json_on_edit(self, item):
         QTimer.singleShot(0, lambda: self._save_item(item))
 
@@ -437,3 +438,163 @@ class TableManager:
         json_data[row][header] = value
         self.data_context.save()
         # self.log(f"✏️ Изменено: строка {row + 1}, колонка '{header}' → {value}")
+
+    def display(self, reload_from_file=True):
+        # 1. Перечитать JSON при необходимости
+        self._reload_context(reload_from_file)
+
+        # 2. Забрать актуальные данные
+        json_data = self.data_context.get()
+
+        # 3. Сохранить положение скролла и выделенную строку
+        scroll_value, selected_row = self._capture_view_state()
+
+        try:
+            # 4. Отключаем сигналы и очищаем таблицу
+            self.table.blockSignals(True)
+            self.table.setRowCount(0)
+
+            # 5. Рисуем все обычные строки
+            self._render_all_rows(json_data)
+
+            # 6. Подгоняем высоту строк
+            self.table.resizeRowsToContents()
+
+            # 7. Добавляем ключевую строку (строка с ➕)
+            self._add_new_entry_row()
+
+        finally:
+            # 8. Включаем сигналы обратно и восстанавливаем скролл/выделение
+            self.table.blockSignals(False)
+            QTimer.singleShot(0, lambda: self._restore_scroll(scroll_value, selected_row))
+
+        # 9. Колбэк после отрисовки (RowHighlighter и т.п.)
+        if callable(self.after_display):
+            self.after_display()
+
+    #  Вспомогательные методы для display()
+    def _reload_context(self, reload_from_file: bool):
+        """Перечитывает DataContext при необходимости."""
+        if not reload_from_file:
+            return
+        try:
+            self.data_context.reload()
+        except Exception as e:
+            self.log(f"❌ Ошибка при загрузке JSON: {e}")
+
+    def _capture_view_state(self):
+        """Запоминает положение скролла и выделенную строку."""
+        try:
+            scroll_value = self.table.verticalScrollBar().value()
+            selected_row = self.table.currentRow()
+        except Exception as e:
+            print(f"{e}")
+            scroll_value, selected_row = 0, -1
+        return scroll_value, selected_row
+
+    def _render_all_rows(self, json_data: list[dict]):
+        """Отрисовывает все обычные строки таблицы."""
+        for row_idx, row in enumerate(json_data):
+            self.table.insertRow(row_idx)
+            self._render_row_actions(row_idx, row)
+            self._render_row_id_cell(row_idx, row)
+            self._render_row_main_cells(row_idx, row)
+            self._render_row_route_cells(row_idx, row)
+            self._highlight_future_load(row_idx, row)
+
+    def _render_row_actions(self, row_idx: int, row: dict):
+        """Кнопка ▶ или 🛠 в первом столбце."""
+        btn = QPushButton("▶" if row.get("id") else "🛠")
+        if not row.get("id"):
+            btn.setStyleSheet("color: red;")
+            btn.clicked.connect(lambda _, idx=row_idx: self.on_edit_id_click(idx))
+        else:
+            btn.clicked.connect(lambda _, idx=row_idx: self.on_row_click(idx))
+        self.table.setCellWidget(row_idx, 0, btn)
+
+    def _render_row_id_cell(self, row_idx: int, row: dict):
+        """Ячейка id с кнопкой 🛠 внутри."""
+        id_value = str(row.get("id", ""))
+        container = QWidget()
+        layout = QHBoxLayout()
+        layout.setContentsMargins(0, 0, 0, 0)
+
+        label = QLabel(id_value)
+        btn_tool = QPushButton("🛠")
+        btn_tool.setFixedWidth(30)
+        btn_tool.clicked.connect(partial(self.on_edit_id_click, row_idx))
+
+        layout.addWidget(label)
+        layout.addWidget(btn_tool)
+        layout.addStretch()
+        container.setLayout(layout)
+
+        self.table.setCellWidget(row_idx, 1, container)
+
+    def _render_row_main_cells(self, row_idx: int, row: dict):
+        """ТС/Телефон, КА, Погрузка, Выгрузка, гео."""
+        ts = row.get("ТС", "")
+        phone = row.get("Телефон", "")
+        self._set_cell(row_idx, 2, f"{ts}\n{phone}" if phone else ts, editable=True)
+
+        self._set_cell(row_idx, 3, row.get("КА", ""), editable=True)
+        self._set_cell(row_idx, 4, self._get_field_with_datetime(row, "Погрузка"))
+        self._set_unload_cell_with_status(row_idx, row)  # Выгрузка
+        self._set_cell(row_idx, 6, row.get("гео", ""))
+
+    def _render_row_route_cells(self, row_idx: int, row: dict):
+        """Время прибытия и запас времени."""
+        route = row.get("Маршрут", {}) or {}
+        arrival = route.get("время прибытия", "—")
+        buffer = route.get("time_buffer", "—")
+
+        if isinstance(buffer, str) and ":" in buffer:
+            try:
+                h, m = map(int, buffer.split(":"))
+                buffer = f"{h}ч {m}м"
+            except Exception:
+                # оставляем как есть, если не распарсилось
+                pass
+
+        self._set_readonly_cell(row_idx, 7, arrival)
+        self._set_readonly_cell(row_idx, 8, buffer)
+
+    def _highlight_future_load(self, row_idx: int, row: dict):
+        """Подсветка строки, если погрузка сильно в будущем."""
+        pg = row.get("Погрузка", [])
+        if not (pg and isinstance(pg, list) and isinstance(pg[0], dict)):
+            return
+
+        date_str = pg[0].get("Дата 1", "")
+        time_str = pg[0].get("Время 1", "")
+        try:
+            if time_str and time_str.count(":") == 1:
+                time_str += ":00"
+            dt = datetime.strptime(f"{date_str} {time_str}", "%d.%m.%Y %H:%M:%S")
+            if dt > datetime.now() + timedelta(hours=3):
+                for col in range(self.table.columnCount()):
+                    item = self.table.item(row_idx, col)
+                    if item:
+                        item.setBackground(QColor(210, 235, 255))
+        except Exception:
+            ts = row.get("ТС", "—")
+            self.log(
+                f"[DEBUG] ❗️ Ошибка при анализе ДАТЫ/ВРЕМЕНИ Погрузки у ТС: {ts} (строка {row_idx + 1}):"
+            )
+
+    def _add_new_entry_row(self):
+        """Добавляет в конец таблицы ключевую строку с ➕."""
+        extra_row = self.table.rowCount()
+        self.table.insertRow(extra_row)
+
+        btn = QPushButton("➕")
+        btn.setStyleSheet("color: green; font-weight: bold;")
+        btn.clicked.connect(lambda _, idx=extra_row: self.handle_new_entry(idx))
+        self.table.setCellWidget(extra_row, 0, btn)
+
+        id_item = QTableWidgetItem("—")
+        id_item.setFlags(Qt.ItemFlag.ItemIsEnabled)
+        self.table.setItem(extra_row, 1, id_item)
+
+        for col in range(2, self.table.columnCount()):
+            self._set_editable_cell(extra_row, col, "")

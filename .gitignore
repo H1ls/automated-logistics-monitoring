@@ -38,3 +38,7 @@ ollama_client/
 pdf/
 trash/
 config/
+datasets/
+.gitattributes
+.gitignore
+main.spec
