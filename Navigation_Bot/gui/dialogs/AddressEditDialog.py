@@ -182,7 +182,6 @@ class AddressEditDialog(QDialog):
         btn_calc.clicked.connect(calculate_arrival)
 
     #       UI для точек
-
     def add_entry(self, address="", date="", time=""):
         container = QWidget()
         wrapper = QVBoxLayout(container)

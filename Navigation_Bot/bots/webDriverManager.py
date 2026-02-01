@@ -32,7 +32,7 @@ class WebDriverManager:
         except WebDriverException:
             return False
 
-    def start_browser(self,rect=None):
+    def start_browser(self, rect=None):
         """Стартуем Chrome, если он ещё не жив"""
         if self.is_alive():
             # self.log("ℹ️ Браузер уже запущен, переиспользую текущий драйвер.")

@@ -7,7 +7,7 @@ class SmoothScrollController(QObject):
         self.table = table
         self.bar = table.verticalScrollBar()
 
-        self.speed = speed          # 0.1 – супер плавно, 0.2–0.25 – быстрее
+        self.speed = speed  # 0.1 – супер плавно, 0.2–0.25 – быстрее
         self.target = self.bar.value()
         self.current = self.bar.value()
 
@@ -15,7 +15,7 @@ class SmoothScrollController(QObject):
 
         self.timer = QTimer()
         self.timer.timeout.connect(self._animate_step)
-        self.timer.start(10)        # чаще тики → более плавно (10–15 мс)
+        self.timer.start(10)  # чаще тики → более плавно (10–15 мс)
 
         # ловим обычный скролл
         self.bar.valueChanged.connect(self._on_user_scroll)

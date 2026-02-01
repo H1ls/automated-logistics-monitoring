@@ -1,6 +1,7 @@
 import json
 from Navigation_Bot.core.paths import DATASET_DIR, DATASET_FILE
 
+
 class DatasetArchive:
     def __init__(self, log_func=print):
         self.log = log_func

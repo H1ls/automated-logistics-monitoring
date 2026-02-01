@@ -8,7 +8,7 @@ from Navigation_Bot.bots.mapsBot import MapsBot
 
 class NavigationProcessor:
     def __init__(self, data_context, logger, gsheet, filepath, display_callback, single_row, updated_rows,
-                 executor=None, highlight_callback=None,browser_rect=None):
+                 executor=None, highlight_callback=None, browser_rect=None):
         self.data_context = data_context
         self.log = logger
         self.gsheet = gsheet
@@ -26,6 +26,32 @@ class NavigationProcessor:
         self.browser_opened = False
         self.navibot = None
         self.mapsbot = None
+
+    def _merge_row(self, row: int, updated: dict) -> dict:
+        """Обновляет строку в data_context, но НЕ сохраняет"""
+        json_data = self.data_context.get()
+        json_data[row].update(updated)
+        return json_data[row]
+
+    def _save_json(self) -> None:
+        """Единая точка сохранения"""
+        self.data_context.save()
+
+    def _switch_tab_or_log(self, name: str) -> bool:
+        ok = self.driver_manager.switch_to_tab(name)
+        if ok:
+            return True
+
+        # запасной вариант: если в navibot есть страховка — пробуем
+        if name == "wialon" and self.navibot and hasattr(self.navibot, "_ensure_on_wialon_tab"):
+            try:
+                if self.navibot._ensure_on_wialon_tab():
+                    return True
+            except Exception:
+                pass
+
+        self.log(f"⛔ Не удалось переключиться на вкладку: {name}")
+        return False
 
     def on_row_click(self, row_idx: int):
         data = self.data_context.get() or []
@@ -49,7 +75,7 @@ class NavigationProcessor:
             with ThreadPoolExecutor(max_workers=1) as ex:
                 ex.submit(self.process_row_wrapper, row_idx)
 
-    def process_row_wrapper(self, row):
+    def process_row_wrapper(self, row: int):
         try:
             self.ensure_driver_and_bots()
             self._reload_json()
@@ -58,13 +84,24 @@ class NavigationProcessor:
                 return
 
             car = self.data_context.get()[row]
+
             updated = self._process_wialon_row(car)
             if not updated:
                 return
 
-            self._update_and_save(row, updated)
-            self._process_maps_and_write(row, updated)
-            self._finalize_row(updated)
+            merged = self._merge_row(row, updated)
+
+            # Maps только если есть новые координаты
+            should_maps = bool(merged.get("_новые_координаты")) and bool(merged.get("коор")) and (
+                    "," in str(merged["коор"]))
+            if should_maps:
+                merged = self._process_maps(row, merged)  # вернёт обновлённый dict (без save)
+
+            self.updated_rows.append(merged)
+            self._save_json()
+
+            self._finalize_row(merged)
+
         except Exception as e:
             self.log(f"❌ Ошибка в process_row_wrapper: {e}")
             self.log(traceback.format_exc())
@@ -72,7 +109,7 @@ class NavigationProcessor:
     def ensure_driver_and_bots(self):
         """Готовим браузер и ботов:
         - один раз при первом ▶,
-        - либо после падения/закрытия браузера.
+        - либо после падения/закрытия браузера
         """
         # 1. Если драйвер отсутствует или умер – сбрасываем состояние
         driver = getattr(self.driver_manager, "driver", None)
@@ -83,7 +120,6 @@ class NavigationProcessor:
 
         # Если браузер ещё не открыт – стартуем и открываем вкладки
         if not self.browser_opened:
-
             self.driver_manager.start_browser(self.browser_rect)
             self.driver_manager.login_wialon()  # один раз: Wialon + Мониторинг
             self.driver_manager.open_yandex_maps()  # один раз: Я.Карты
@@ -105,50 +141,53 @@ class NavigationProcessor:
 
     def _valid_row(self, row):
         try:
-            if row >= len(self.data_context.get()):
+            data = self.data_context.get() or []
+            if row >= len(data):
                 self.log(f"⚠️ Строка {row} не существует.")
                 return False
-            if not self.data_context.get()[row].get("ТС"):
+            if not data[row].get("ТС"):
                 self.log(f"⛔ Пропуск: нет ТС в строке {row + 1}")
                 return False
             return True
-        except:
-            print("_valid_row")
+        except Exception as e:
+            self.log(f"⚠️ _valid_row error: {e}")
+            return False
 
-    def _process_wialon_row(self, car):
+    def _process_wialon_row(self, car: dict) -> dict | None:
         try:
-            self.driver_manager.switch_to_tab("wialon")
-            result = self.navibot.process_row(car, switch_to_wialon=False)
-            if not result.get("_новые_координаты"):
-                self.log(f"⚠️ Координаты не получены — пропуск Я.Карт для ТС {car.get('ТС')}")
+            if not self._switch_tab_or_log("wialon"):
                 return None
 
-            if "processed" in car:
+            result = self.navibot.process_row(car, switch_to_wialon=False)
+            if not result:
+                return None
+
+            # сохраняем processed, если было
+            if "processed" in car and "processed" not in result:
                 result["processed"] = car["processed"]
 
+            # если координаты не обновились — лог, но не ошибка
+            if not result.get("_новые_координаты"):
+                self.log(f"⚠️ Координаты не получены — пропуск Я.Карт для ТС {car.get('ТС')}")
+
             return result
-        except:
-            print("❌ Ошибка _process_wialon_row")
 
-    def _update_and_save(self, row, updated):
-        json_data = self.data_context.get()
-        json_data[row].update(updated)
-        self.data_context.save()
+        except Exception as e:
+            self.log(f"⛔ Ошибка _process_wialon_row: {e}")
+            self.log(traceback.format_exc())
+            return None
 
-    def _process_maps_and_write(self, row, car):
-        if not self.driver_manager.switch_to_tab("yandex"):
-            self.log("⛔ Не удалось переключиться на Яндекс.Карты — пропускаю расчёт маршрута.")
-            return
+    def _process_maps(self, row: int, car: dict) -> dict:
+        if not self._switch_tab_or_log("yandex"):
+            return car
 
         active_unload = self.get_first_unprocessed_unload(car)
         if active_unload:
             self.mapsbot.process_navigation_from_json(car, active_unload)
 
-        json_data = self.data_context.get()
-        json_data[row].update(car)
-
-        self.updated_rows.append(car)
-        self.data_context.save()
+        # после mapsbot могли поменяться поля в car
+        self._merge_row(row, car)
+        return self.data_context.get()[row]
 
     def _finalize_row(self, car):
         if self._single_row_processing:
@@ -180,7 +219,7 @@ class NavigationProcessor:
                     continue
                 executor.submit(self.process_row_wrapper, row)
 
-        QTimer.singleShot(5000, self.display_callback)
+        QTimer.singleShot(0, display_callback)
 
     def write_all_to_google(self):
         if self.updated_rows:

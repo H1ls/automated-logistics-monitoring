@@ -26,118 +26,6 @@ class TableManager:
         self._editable_headers = {"Телефон", "ФИО", "КА", "id"}
         self.after_display = None
 
-    # def display(self, reload_from_file=True):
-    #     if reload_from_file:
-    #         try:
-    #             self.data_context.reload()
-    #         except Exception as e:
-    #             json_data = []
-    #             self.log(f"❌ Ошибка при загрузке JSON: {e}")
-    #
-    #     json_data = self.data_context.get()
-    #
-    #     try:
-    #         scroll_value = self.table.verticalScrollBar().value()
-    #         selected_row = self.table.currentRow()
-    #     except Exception as e:
-    #         print(f'{e}')
-    #
-    #     try:
-    #         self.table.blockSignals(True)  # отключаем сигналы
-    #         self.table.setRowCount(0)
-    #
-    #         for row_idx, row in enumerate(json_data):
-    #             self.table.insertRow(row_idx)
-    #             # Кнопка ▶ или 🛠
-    #             btn = QPushButton("▶" if row.get("id") else "🛠")
-    #             if not row.get("id"):
-    #                 btn.setStyleSheet("color: red;")
-    #                 btn.clicked.connect(lambda _, idx=row_idx: self.on_edit_id_click(idx))
-    #             else:
-    #                 btn.clicked.connect(lambda _, idx=row_idx: self.on_row_click(idx))
-    #             self.table.setCellWidget(row_idx, 0, btn)
-    #
-    #             # ID с кнопкой 🛠
-    #             id_value = str(row.get("id", ""))
-    #             container = QWidget()
-    #             layout = QHBoxLayout()
-    #             layout.setContentsMargins(0, 0, 0, 0)
-    #             label = QLabel(id_value)
-    #             btn_tool = QPushButton("🛠")
-    #             btn_tool.setFixedWidth(30)
-    #             btn_tool.clicked.connect(partial(self.on_edit_id_click, row_idx))
-    #             layout.addWidget(label)
-    #             layout.addWidget(btn_tool)
-    #             layout.addStretch()
-    #             container.setLayout(layout)
-    #             self.table.setCellWidget(row_idx, 1, container)
-    #
-    #             ts = row.get("ТС", "")
-    #             phone = row.get("Телефон", "")
-    #             self._set_cell(row_idx, 2, f"{ts}\n{phone}" if phone else ts, editable=True)
-    #
-    #             self._set_cell(row_idx, 3, row.get("КА", ""), editable=True)
-    #             self._set_cell(row_idx, 4, self._get_field_with_datetime(row, "Погрузка"))
-    #             self._set_unload_cell_with_status(row_idx, row)  # Выгрузка
-    #
-    #             self._set_cell(row_idx, 6, row.get("гео", ""))
-    #
-    #             arrival = row.get("Маршрут", {}).get("время прибытия", "—")
-    #             buffer = row.get("Маршрут", {}).get("time_buffer", "—")
-    #             if ":" in buffer:
-    #                 try:
-    #                     h, m = map(int, buffer.split(":"))
-    #                     buffer = f"{h}ч {m}м"
-    #                 except Exception:
-    #                     pass
-    #
-    #             self._set_readonly_cell(row_idx, 7, arrival)
-    #             self._set_readonly_cell(row_idx, 8, buffer)
-    #
-    #             # Подсветка при поздней погрузке
-    #             pg = row.get("Погрузка", [])
-    #             if pg and isinstance(pg, list) and isinstance(pg[0], dict):
-    #                 date_str = pg[0].get("Дата 1", "")
-    #                 time_str = pg[0].get("Время 1", "")
-    #                 try:
-    #                     if time_str.count(":") == 1:
-    #                         time_str += ":00"
-    #                     dt = datetime.strptime(f"{date_str} {time_str}", "%d.%m.%Y %H:%M:%S")
-    #                     if dt > datetime.now() + timedelta(hours=3):
-    #                         for col in range(self.table.columnCount()):
-    #                             item = self.table.item(row_idx, col)
-    #                             if item:
-    #                                 item.setBackground(QColor(210, 235, 255))
-    #                 except Exception as e:
-    #                     ts = row.get("ТС", "—")
-    #                     self.log(
-    #                         f"[DEBUG] ❗️ Ошибка при анализе ДАТЫ/ВРЕМЕНИ Погрузки у ТС: {ts} (строка {row_idx + 1}):")
-    #
-    #         self.table.resizeRowsToContents()
-    #
-    #         # --- добавляем ключевую строку ---
-    #         extra_row = self.table.rowCount()
-    #         self.table.insertRow(extra_row)
-    #
-    #         btn = QPushButton("➕")
-    #         btn.setStyleSheet("color: green; font-weight: bold;")
-    #         btn.clicked.connect(lambda _, idx=extra_row: self.handle_new_entry(idx))
-    #         self.table.setCellWidget(extra_row, 0, btn)
-    #
-    #         id_item = QTableWidgetItem("—")
-    #         id_item.setFlags(Qt.ItemFlag.ItemIsEnabled)
-    #         self.table.setItem(extra_row, 1, id_item)
-    #
-    #         for col in range(2, self.table.columnCount()):
-    #             self._set_editable_cell(extra_row, col, "")
-    #
-    #     finally:
-    #         self.table.blockSignals(False)  # ✅ включаем сигналы обратно
-    #         QTimer.singleShot(0, lambda: self._restore_scroll(scroll_value, selected_row))
-    #
-    #     if callable(self.after_display):
-    #         self.after_display()
-
     def _set_editable_cell(self, row, col, text):
         item = QTableWidgetItem(text)
         item.setFlags(item.flags() | Qt.ItemFlag.ItemIsEditable)
@@ -145,7 +33,7 @@ class TableManager:
         self.table.setItem(row, col, item)
 
     def _split_points_and_comment(self, blocks: list[dict], prefix: str):
-        """Возвращает (points, comment_text). Комментарий не считается точкой."""
+        """Возвращает (points, comment_text). Комментарий не считается точкой"""
         points = []
         comment = ""
         for d in blocks or []:
@@ -474,7 +362,7 @@ class TableManager:
 
     #  Вспомогательные методы для display()
     def _reload_context(self, reload_from_file: bool):
-        """Перечитывает DataContext при необходимости."""
+        """Перечитывает DataContext при необходимости"""
         if not reload_from_file:
             return
         try:
@@ -483,7 +371,7 @@ class TableManager:
             self.log(f"❌ Ошибка при загрузке JSON: {e}")
 
     def _capture_view_state(self):
-        """Запоминает положение скролла и выделенную строку."""
+        """Запоминает положение скролла и выделенную строку"""
         try:
             scroll_value = self.table.verticalScrollBar().value()
             selected_row = self.table.currentRow()
@@ -493,7 +381,7 @@ class TableManager:
         return scroll_value, selected_row
 
     def _render_all_rows(self, json_data: list[dict]):
-        """Отрисовывает все обычные строки таблицы."""
+        """Отрисовывает все обычные строки таблицы"""
         for row_idx, row in enumerate(json_data):
             self.table.insertRow(row_idx)
             self._render_row_actions(row_idx, row)
@@ -513,7 +401,7 @@ class TableManager:
         self.table.setCellWidget(row_idx, 0, btn)
 
     def _render_row_id_cell(self, row_idx: int, row: dict):
-        """Ячейка id с кнопкой 🛠 внутри."""
+        """Ячейка id с кнопкой 🛠 внутри"""
         id_value = str(row.get("id", ""))
         container = QWidget()
         layout = QHBoxLayout()
@@ -532,7 +420,7 @@ class TableManager:
         self.table.setCellWidget(row_idx, 1, container)
 
     def _render_row_main_cells(self, row_idx: int, row: dict):
-        """ТС/Телефон, КА, Погрузка, Выгрузка, гео."""
+        """ТС/Телефон, КА, Погрузка, Выгрузка, гео"""
         ts = row.get("ТС", "")
         phone = row.get("Телефон", "")
         self._set_cell(row_idx, 2, f"{ts}\n{phone}" if phone else ts, editable=True)
@@ -553,14 +441,13 @@ class TableManager:
                 h, m = map(int, buffer.split(":"))
                 buffer = f"{h}ч {m}м"
             except Exception:
-                # оставляем как есть, если не распарсилось
                 pass
 
         self._set_readonly_cell(row_idx, 7, arrival)
         self._set_readonly_cell(row_idx, 8, buffer)
 
     def _highlight_future_load(self, row_idx: int, row: dict):
-        """Подсветка строки, если погрузка сильно в будущем."""
+        """Подсветка строки, если погрузка сильно в будущем"""
         pg = row.get("Погрузка", [])
         if not (pg and isinstance(pg, list) and isinstance(pg[0], dict)):
             return
@@ -579,7 +466,7 @@ class TableManager:
         except Exception:
             ts = row.get("ТС", "—")
             self.log(
-                f"[DEBUG] ❗️ Ошибка при анализе ДАТЫ/ВРЕМЕНИ Погрузки у ТС: {ts} (строка {row_idx + 1}):"
+                f"[DEBUG] ❗️ Ошибка при анализе ДАТЫ/ВРЕМЕНИ у ТС: {ts} (строка {row_idx + 1}):"
             )
 
     def _add_new_entry_row(self):

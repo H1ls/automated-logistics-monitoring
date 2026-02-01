@@ -167,13 +167,6 @@ class SectionForm(QWidget):
         btns.addWidget(self.btn_clear_json)
         self.layout().addLayout(btns)
 
-        # btns = QHBoxLayout()
-        # self.btn_reset = QPushButton("Сбросить (default)")
-        # self.btn_reset.clicked.connect(self.reset_to_default)
-        # btns.addStretch(1)
-        # btns.addWidget(self.btn_reset)
-        # self.layout().addLayout(btns)
-
     # Переписать на читаемый, возможно использовать словари _READERS, _CASTERS (тогда переписать весь class)
     def values(self) -> dict:
         out = {}
@@ -218,7 +211,7 @@ class SectionForm(QWidget):
 
 class VerticalTextDelegate(QStyledItemDelegate):
     def paint(self, painter: QPainter, option, index):
-        # 1️⃣ Даем Qt нарисовать ячейку (фон, выделение, фокус, бордеры) БЕЗ текста
+        # Даем Qt нарисовать ячейку (фон, выделение, фокус, бордеры) БЕЗ текста
         opt = QStyleOptionViewItem(option)
         self.initStyleOption(opt, index)
 
@@ -228,7 +221,7 @@ class VerticalTextDelegate(QStyledItemDelegate):
         style = opt.widget.style() if opt.widget else QApplication.style()
         style.drawControl(QStyle.ControlElement.CE_ItemViewItem, opt, painter, opt.widget)
 
-        # 2️⃣ Рисуем только повернутый текст поверх уже готовой ячейки
+        # Рисуем только повернутый текст поверх уже готовой ячейки
         if not text:
             return
 
@@ -247,43 +240,6 @@ class VerticalTextDelegate(QStyledItemDelegate):
         painter.restore()
 
 
-# class VerticalTextDelegate(QStyledItemDelegate):
-#     def paint(self, painter: QPainter, option, index):
-#         painter.save()
-#
-#         rect = option.rect
-#         text = index.data()
-#
-#         # 1️⃣ Фон: выделение / фон из RowHighlighter / база таблицы
-#         try:
-#             if option.state & QStyle.StateFlag.State_Selected:
-#                 # выделенная строка
-#                 painter.fillRect(rect, option.palette.highlight())
-#             else:
-#                 bg_brush = index.data(Qt.ItemDataRole.BackgroundRole)
-#                 if bg_brush:
-#                     painter.fillRect(rect, bg_brush)
-#                 else:
-#                     painter.fillRect(rect, option.palette.base())
-#         except Exception:
-#             # на всякий случай, чтобы делегат не уронил всё приложение
-#             painter.fillRect(rect, option.palette.base())
-#
-#         # 2️⃣ Поворот и текст
-#         if text:
-#             painter.translate(rect.x(), rect.y() + rect.height())
-#             painter.rotate(-90)
-#
-#             painter.drawText(
-#                 QRect(0, 0, rect.height(), rect.width()),
-#                 Qt.AlignmentFlag.AlignCenter,
-#                 str(text)
-#             )
-#
-#         painter.restore()
-
-
-# Вспомогательные функции
 def _read_config() -> dict:
     try:
         manager = JM(CONFIG_JSON)

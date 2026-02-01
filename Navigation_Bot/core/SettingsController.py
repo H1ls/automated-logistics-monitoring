@@ -2,6 +2,7 @@ from Navigation_Bot.bots.mapsBot import MapsBot
 from Navigation_Bot.bots.navigationBot import NavigationBot
 from Navigation_Bot.bots.googleSheetsManager import GoogleSheetsManager
 
+
 class SettingsController:
     def __init__(self, gui):
         self.gui = gui

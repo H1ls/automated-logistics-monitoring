@@ -10,22 +10,22 @@ if __name__ == "__main__":
 
     gsheet = GoogleSheetsManager(log_func=print)
 
-    while True:
-        login_dialog = LoginDialog()
-        result = login_dialog.exec()
-
-        if result != QDialog.DialogCode.Accepted:
-            sys.exit(0)
-
-        login = login_dialog.login
-        password = login_dialog.password
-
-        ok, msg = gsheet.check_user_credentials(login, password)
-
-        if ok:
-            break
-        else:
-            QMessageBox.warning(None, "Вход", msg)
+    # while True:
+    #     login_dialog = LoginDialog()
+    #     result = login_dialog.exec()
+    #
+    #     if result != QDialog.DialogCode.Accepted:
+    #         sys.exit(0)
+    #
+    #     login = login_dialog.login
+    #     password = login_dialog.password
+    #
+    #     ok, msg = gsheet.check_user_credentials(login, password)
+    #
+    #     if ok:
+    #         break
+    #     else:
+    #         QMessageBox.warning(None, "Вход", msg)
 
     window = NavigationGUI()
     window.show()

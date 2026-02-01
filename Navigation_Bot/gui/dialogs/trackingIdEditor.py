@@ -7,6 +7,7 @@ from Navigation_Bot.core.jSONManager import JSONManager
         2.Проверка дубликатов
 """
 
+
 class TrackingIdEditor(QDialog):
     def __init__(self, car_data, log_func=print, parent=None):
         super().__init__(parent)

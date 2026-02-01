@@ -7,7 +7,8 @@
       "copy_button_selector": "button .icon-copy-coordinates",
       "speed_selector": "td.speed_BuUT > div",
       "gps_sats_xpath": "//*[@id='monitoring_units_state_gps_sats_{car_id}']",
-      "text_tooltip-gps": "#tooltip .tooltip-gps"
+      "text_tooltip-gps": "#tooltip .tooltip-gps",
+      "monitoring": "//*[@id='hb_mi_monitoring']"
     },
     "custom": {
       "search_input_xpath": "//*[@id='monitoring_search_container']//input[@placeholder='Поиск']",

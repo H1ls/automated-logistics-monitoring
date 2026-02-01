@@ -73,4 +73,3 @@ class JSONManager:
         except Exception as e:
             print(f"❌ Ошибка при загрузке селекторов '{section}': {e}")
             return {}
-

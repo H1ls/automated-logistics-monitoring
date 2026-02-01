@@ -26,7 +26,7 @@ class RowHighlighter:
             return
 
         hours = hours or self.hours_default
-        until_dt = datetime.now(timezone.utc) + timedelta(hours=hours)
+        until_dt = datetime.now(timezone.utc) + timedelta(hours=hours, minutes=-5)
         until_iso = self._to_iso_utc(until_dt)
 
         self._paint_row(row_idx, enabled=True)

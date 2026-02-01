@@ -61,10 +61,9 @@ class LoginDialog(QDialog):
         self.login = self.edit_login.text()
         self.password = self.edit_password.text()
 
-        # Можно слегка валидировать локально:
+        # Можно валидировать локально:
         if not self.login or not self.password:
             QMessageBox.warning(self, "Вход", "Введите логин и пароль.")
             return
 
         self.accept()
-

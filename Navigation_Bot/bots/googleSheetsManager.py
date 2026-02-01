@@ -122,7 +122,6 @@ class GoogleSheetsManager(QObject):
                            sheet_id: str | None = None):
         """
         Ищет лист с аккаунтами по названию в отдельной таблице.
-
         sheet_id:
           - если передан явно -> используем его
           - иначе берем self.auth_sheet_id (из config.json)
@@ -489,6 +488,8 @@ class GoogleSheetsManager(QObject):
             self._log(f"❌ refresh_name error: {e}")
 
     def append_to_cell(self, data, column=12):
+        # self._log(f"GSHEET append => sheet_id={self.sheet_id}, ws_index={self.worksheet_index}, col={column}")
+
         if isinstance(data, list):
             for item in data:
                 self._append_entry(item, column)
@@ -506,16 +507,20 @@ class GoogleSheetsManager(QObject):
                 self._log("⚠️ Пропуск записи: нет индекса строки")
                 return
 
-            geo = item.get("гео", "")
-            coor = item.get("коор", "")
-            if not geo and not coor:
+            current_time = datetime.now().strftime("%d-%m %H:%M")
+
+            geo = item.get("гео") or ""
+            coor = item.get("коор") or ""
+            speed = item.get("скорость")
+
+            if geo == "нет навигации":
+                new_text = f"{current_time} нет навигации"
+            elif not geo and not coor:
                 self._log(f"⚠️ Пропуск строки {row_index}: нет гео/координат")
                 return
-
-            current_time = datetime.now().strftime("%d-%m %H:%M")
-            speed = item.get("скорость", 0)
-            status = "стоит" if isinstance(speed, (int, float)) and speed < 5 else "едет"
-            new_text = f"{current_time} {status} {geo} {coor}"
+            else:
+                status = "стоит" if isinstance(speed, (int, float)) and speed < 5 else "едет"
+                new_text = f"{current_time} {status} {geo}{' ' + coor if coor else ''}"
 
             try:
                 cell_value = self.sheet.cell(row_index, column).value
