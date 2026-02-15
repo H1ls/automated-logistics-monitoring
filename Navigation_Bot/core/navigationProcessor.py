@@ -1,14 +1,15 @@
-from PyQt6.QtCore import QTimer
-from concurrent.futures import ThreadPoolExecutor
+import threading
 import traceback
-from Navigation_Bot.bots.webDriverManager import WebDriverManager
-from Navigation_Bot.bots.navigationBot import NavigationBot
+from concurrent.futures import ThreadPoolExecutor
+
 from Navigation_Bot.bots.mapsBot import MapsBot
+from Navigation_Bot.bots.navigationBot import NavigationBot
+from Navigation_Bot.bots.webDriverManager import WebDriverManager
 
 
 class NavigationProcessor:
     def __init__(self, data_context, logger, gsheet, filepath, display_callback, single_row, updated_rows,
-                 executor=None, highlight_callback=None, browser_rect=None):
+                 executor=None, highlight_callback=None, browser_rect=None, ui_bridge=None):
         self.data_context = data_context
         self.log = logger
         self.gsheet = gsheet
@@ -26,6 +27,8 @@ class NavigationProcessor:
         self.browser_opened = False
         self.navibot = None
         self.mapsbot = None
+        self._is_processing = False
+        self.ui_bridge = ui_bridge
 
     def _merge_row(self, row: int, updated: dict) -> dict:
         """Обновляет строку в data_context, но НЕ сохраняет"""
@@ -54,19 +57,32 @@ class NavigationProcessor:
         return False
 
     def on_row_click(self, row_idx: int):
+        if self._is_processing:
+            if self.log:
+                self.log("⏳ Уже идёт обработка. Дождись завершения.")
+            return
+
         data = self.data_context.get() or []
+
+        # ✅ сначала проверка границ
         if not (0 <= row_idx < len(data)):
             if self.log:
                 self.log(f"⚠️ Строка {row_idx} больше не существует. Пропуск.")
             return
 
+        car = data[row_idx] or {}
+
+        # ✅ теперь можно включать блокировку
+        self._is_processing = True
+
+        index_key = car.get("index")
+        if self.ui_bridge and index_key is not None:
+            self.ui_bridge.set_busy.emit(index_key, True)
+
         # Подсветка строки (по ключу записи index)
         if self.highlight_cb:
             try:
-                index_key = (data[row_idx] or {}).get("index")
                 if index_key is None:
-                    # запасной вариант: если вдруг нет index — можно подсветить по старому
-                    # но лучше залогировать, чтобы ты потом поправил данные
                     if self.log:
                         self.log(f"⚠️ Нет поля 'index' у строки {row_idx}. Подсветка пропущена.")
                 else:
@@ -83,9 +99,14 @@ class NavigationProcessor:
                 ex.submit(self.process_row_wrapper, row_idx)
 
     def process_row_wrapper(self, row: int):
+        index_key = None
         try:
             self.ensure_driver_and_bots()
             self._reload_json()
+
+            data = self.data_context.get() or []
+            if 0 <= row < len(data):
+                index_key = (data[row] or {}).get("index")
 
             if not self._valid_row(row):
                 return
@@ -98,20 +119,22 @@ class NavigationProcessor:
 
             merged = self._merge_row(row, updated)
 
-            # Maps только если есть новые координаты
             should_maps = bool(merged.get("_новые_координаты")) and bool(merged.get("коор")) and (
                     "," in str(merged["коор"]))
             if should_maps:
-                merged = self._process_maps(row, merged)  # вернёт обновлённый dict (без save)
+                merged = self._process_maps(row, merged)
 
             self.updated_rows.append(merged)
             self._save_json()
-
             self._finalize_row(merged)
 
         except Exception as e:
             self.log(f"❌ Ошибка в process_row_wrapper: {e}")
             self.log(traceback.format_exc())
+        finally:
+            self._is_processing = False
+            if self.ui_bridge and index_key is not None:
+                self.ui_bridge.set_busy.emit(index_key, False)
 
     def ensure_driver_and_bots(self):
         """Готовим браузер и ботов:
@@ -149,6 +172,10 @@ class NavigationProcessor:
     def _valid_row(self, row):
         try:
             data = self.data_context.get() or []
+            if row < 0:
+                self.log(f"⚠️ Некорректный индекс строки: {row}")
+                return False
+
             if row >= len(data):
                 self.log(f"⚠️ Строка {row} не существует.")
                 return False
@@ -201,7 +228,10 @@ class NavigationProcessor:
             self.gsheet.append_to_cell(car)
             # self.log("📤 Данные записаны в Google Sheets")
 
-        QTimer.singleShot(0, self.display_callback)
+        if self.ui_bridge:
+            self.ui_bridge.refresh.emit()
+        else:
+            self.display_callback()
         self.log(f"✅ Завершено для ТС: {car.get('ТС')}")
 
     @staticmethod
@@ -215,18 +245,53 @@ class NavigationProcessor:
         return None
 
     def process_all(self):
+        # Не стартуем второй batch/single во время текущей обработки
+        if self._is_processing:
+            self.log("⏳ Уже идёт обработка. Дождись завершения.")
+            return
+
+        self._is_processing = True
+        prev_single_mode = self._single_row_processing
         self._single_row_processing = False
         self.updated_rows = []
         self.log("▶ Обработка всех ТС...")
 
-        with ThreadPoolExecutor(max_workers=1) as executor:
-            for row in range(len(self.data_context.get())):
-                car = self.data_context.get()[row]
-                if not car.get("id") or not car.get("ТС"):
-                    continue
-                executor.submit(self.process_row_wrapper, row)
+        data = self.data_context.get() or []
+        rows = [
+            i for i, car in enumerate(data)
+            if isinstance(car, dict) and car.get("id") and car.get("ТС")
+        ]
 
-        QTimer.singleShot(0, display_callback)
+        # Нечего обрабатывать
+        if not rows:
+            self._is_processing = False
+            self._single_row_processing = prev_single_mode
+            if self.ui_bridge:
+                self.ui_bridge.refresh.emit()
+            else:
+                self.display_callback()
+            self.log("ℹ️ Нет строк для обработки.")
+            return
+
+        # Ждём completion в отдельном daemon-потоке, чтобы не блокировать GUI
+        def _run_batch():
+            try:
+                futures = [self.executor.submit(self.process_row_wrapper, row) for row in rows]
+                for f in futures:
+                    f.result()
+            except Exception as e:
+                self.log(f"❌ Ошибка batch-обработки: {e}")
+                self.log(traceback.format_exc())
+            finally:
+                self._is_processing = False
+                self._single_row_processing = prev_single_mode
+                if self.ui_bridge:
+                    self.ui_bridge.refresh.emit()
+                else:
+                    self.display_callback()
+                self.log("✅ Обработка всех ТС завершена")
+
+        threading.Thread(target=_run_batch, daemon=True).start()
 
     def write_all_to_google(self):
         if self.updated_rows:

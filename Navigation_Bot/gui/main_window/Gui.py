@@ -3,7 +3,8 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from threading import Lock
 
-from PyQt6.QtWidgets import (QWidget)
+from PyQt6.QtCore import QTimer
+from PyQt6.QtWidgets import (QWidget,QApplication)
 
 from Navigation_Bot.core.paths import INPUT_FILEPATH
 from Navigation_Bot.core.paths import PIN_XLSX_FILEPATH, PIN_JSON_FILEPATH
@@ -12,6 +13,7 @@ from Navigation_Bot.gui.builders.mainUiBuilder import MainUiBuilder
 from Navigation_Bot.gui.controllers.appServices import AppServices
 from Navigation_Bot.gui.controllers.sheetTabsController import SheetTabsController
 from Navigation_Bot.gui.controllers.signalsBinder import SignalsBinder
+from Navigation_Bot.gui.controllers.uiBridge import UiBridge
 from Navigation_Bot.gui.controllers.windowLayoutManager import WindowLayoutManager
 from Navigation_Bot.gui.dialogs.iDManagerDialog import IDManagerDialog
 from Navigation_Bot.gui.dialogs.trackingIdEditor import TrackingIdEditor
@@ -38,6 +40,8 @@ class NavigationGUI(QWidget):
 
         self.ui_settings = UiSettingsManager(log_func=self.log)
         self.init_ui()
+
+        self.ui_bridge = UiBridge(self)
         self.ui_settings.apply_window(self)
         self.ui_settings.apply_table(self.table)
 
@@ -47,11 +51,82 @@ class NavigationGUI(QWidget):
         self.local_page()
         self.init_managers()
         SignalsBinder(self).bind()
-        # self.table_manager.display()
-        self.reload_and_show()
 
     def closeEvent(self, event):
-        self.ui_settings.save_window(self)
+        try:
+            if getattr(self, "services", None):
+                self.services.shutdown()
+        except Exception as e:
+            self.log(f"⚠️ Ошибка shutdown: {e}")
+
+        super().closeEvent(event)
+
+    def _startup_reload(self):
+        try:
+            if getattr(self, "sheet_tabs_controller", None):
+                self.sheet_tabs_controller.activate_saved_tab()
+        finally:
+            self.hide_loading()
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+
+    def show_loading(self, text="Загрузка…"):
+        if getattr(self, "loading_label", None):
+            self.loading_label.setText(text)
+
+        if getattr(self, "loading_overlay", None):
+            self.loading_overlay.setGeometry(self.table.geometry())
+            self.loading_overlay.show()
+            self.loading_overlay.raise_()
+
+
+    def hide_loading(self):
+        if getattr(self, "loading_overlay", None):
+            self.loading_overlay.hide()
+
+    # _____END
+    def closeEvent(self, event):
+        # 1) сохраняем геометрию/настройки
+        try:
+            self.ui_settings.save_window(self)
+        except Exception as e:
+            self.log(f"⚠️ Не удалось сохранить настройки окна: {e}")
+
+        # 2) останавливаем хоткеи (если включены)
+        try:
+            if getattr(self, "hotkeys", None):
+                self.hotkeys.stop()
+        except Exception as e:
+            self.log(f"⚠️ Не удалось остановить hotkeys: {e}")
+
+        # 3) останавливаем фоновые задачи
+        try:
+            if getattr(self, "executor", None):
+                self.executor.shutdown(wait=False, cancel_futures=True)
+        except Exception as e:
+            self.log(f"⚠️ Не удалось остановить executor: {e}")
+
+        # 4) закрываем Selenium (driver)
+        try:
+            wdm = getattr(self, "driver_manager", None)
+
+            if not wdm:
+                proc = getattr(self, "processor", None)
+                wdm = getattr(proc, "driver_manager", None) if proc else None
+
+            if wdm and hasattr(wdm, "stop_browser"):
+                wdm.stop_browser()
+            elif wdm and getattr(wdm, "driver", None):
+                # если stop_browser ещё не добавлен
+                try:
+                    wdm.driver.quit()
+                except Exception:
+                    pass
+                wdm.driver = None
+        except Exception as e:
+            self.log(f"⚠️ Не удалось закрыть браузер: {e}")
+
         super().closeEvent(event)
 
     def local_page(self):
@@ -62,7 +137,8 @@ class NavigationGUI(QWidget):
         self.pincodes_json_path = PIN_JSON_FILEPATH
 
     def init_managers(self):
-        AppServices(self).build()
+        self.services = AppServices(self)
+        self.services.build()
 
         self.sheet_tabs_controller = SheetTabsController(gui=self)
         self.sheet_tabs_controller.build()
@@ -80,6 +156,8 @@ class NavigationGUI(QWidget):
 
     def _load_from_google(self):
         """Загрузить задачи из текущего листа в свой json."""
+        self._reload_after_gsheet = True
+
         try:
             json_path = self._get_sheet_json_path()
             self.data_context.set_filepath(json_path)
@@ -88,7 +166,8 @@ class NavigationGUI(QWidget):
                 data_context=self.data_context,
                 input_filepath=json_path,
                 executor=self.executor)
-            self.reload_and_show()
+            # self.reload_and_show()
+
         except Exception as e:
             self.log(f'❌ Ошибка в NavigationGUI._load_from_google\n {e}')
 

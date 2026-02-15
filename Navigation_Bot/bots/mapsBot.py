@@ -218,13 +218,40 @@ class MapsBot:
             self.log(f"❌ Ошибка получения маршрутов: {msg}")
             return []
 
+    # def get_first_route(self):
+    #     try:
+    #         item = self.driver_manager.find_all(self._by("route_item"))
+    #
+    #         if "_type_auto" not in item.get_attribute("class"):
+    #             return None
+    #         return self._parse_route_item(item)
+    #     except Exception as e:
+    #         msg = str(e).splitlines()[0]
+    #         self.log(f"❌ Ошибка при получении первого маршрута: {msg}")
+    #         return None
+
     def get_first_route(self):
         try:
-            item = self.driver_manager.find_all(self._by("route_item"))
-
-            if "_type_auto" not in item.get_attribute("class"):
+            items = self.driver_manager.find_all(self._by("route_item"), timeout=10)
+            if not items:
                 return None
+
+            # Берём первый авто-маршрут, если он есть
+            first_auto = None
+            for el in items:
+                try:
+                    if "_type_auto" in (el.get_attribute("class") or ""):
+                        first_auto = el
+                        break
+                except Exception:
+                    continue
+
+            item = first_auto or items[0]  # fallback: первый вообще
+            if "_type_auto" not in (item.get_attribute("class") or ""):
+                return None
+
             return self._parse_route_item(item)
+
         except Exception as e:
             msg = str(e).splitlines()[0]
             self.log(f"❌ Ошибка при получении первого маршрута: {msg}")

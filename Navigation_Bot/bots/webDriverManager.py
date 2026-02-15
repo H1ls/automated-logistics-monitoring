@@ -19,6 +19,13 @@ class WebDriverManager:
         self.cookies_path = str(COOKIES_FILE)
         self.driver = None
 
+    def stop_browser(self):
+        try:
+            if self.driver:
+                self.driver.quit()
+        finally:
+            self.driver = None
+
     def web_driver_wait(self, xpath, timeout=10):
         return WebDriverWait(self.driver, timeout).until(
             EC.visibility_of_element_located((By.XPATH, xpath)))

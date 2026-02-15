@@ -319,7 +319,7 @@ class GoogleSheetsManager(QObject):
 
     def pull_to_context_async(self, data_context, input_filepath: str, executor):
         try:
-            self._log("📥 Загрузка данных из Google Sheets...")
+            # self._log("📥 Загрузка данных из Google Sheets...")
             self.started.emit()
 
             def task():

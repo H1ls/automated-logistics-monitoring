@@ -29,6 +29,61 @@ class TableManager:
         self.view_order = []
         self._real_to_visual = {}
         self.reload_callback = reload_callback
+        #
+        self._play_buttons = {}  # index_key -> QPushButton
+        self._spinners = {}  # index_key -> QTimer
+        self._spinner_frame = {}  # index_key -> int
+
+    def set_all_rows_busy(self, busy: bool):
+        for k, btn in list(self._play_buttons.items()):
+            if not btn:
+                continue
+            btn.setEnabled(not busy)
+
+    def set_row_busy(self, index_key: int, busy: bool):
+        btn = self._play_buttons.get(index_key)
+
+        if busy:
+            if not btn:
+                return
+            btn.setEnabled(False)
+            self._start_spinner(index_key, btn)
+        else:
+            #  даже если кнопки уже нет (перерисовка), спиннер всё равно надо остановить
+            self._stop_spinner(index_key)
+            if btn:
+                btn.setEnabled(True)
+                btn.setText("▶")
+
+    def _start_spinner(self, index_key: int, btn):
+        if index_key in self._spinners:
+            return
+
+        frames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
+        self._spinner_frame[index_key] = 0
+
+        t = QTimer(btn)
+        t.setInterval(120)
+
+        def tick():
+            i = self._spinner_frame.get(index_key, 0)
+            btn.setText(frames[i % len(frames)])
+            self._spinner_frame[index_key] = i + 1
+
+        t.timeout.connect(tick)
+        t.start()
+
+        self._spinners[index_key] = t
+
+    def _stop_spinner(self, index_key: int):
+        t = self._spinners.pop(index_key, None)
+        if t:
+            try:
+                t.stop()
+                t.deleteLater()
+            except Exception:
+                pass
+        self._spinner_frame.pop(index_key, None)
 
     def _set_editable_cell(self, row, col, text):
         item = QTableWidgetItem(text)
@@ -343,6 +398,18 @@ class TableManager:
         self._reload_context(reload_from_file)
         json_data = self.data_context.get() or []
 
+        # стопаем все спиннеры перед перерисовкой таблицы (иначе они "висят" между display)
+        for t in list(self._spinners.values()):
+            try:
+                t.stop()
+                t.deleteLater()
+            except Exception:
+                pass
+        self._spinners.clear()
+        self._spinner_frame.clear()
+        # и маппинг кнопок тоже очищаем перед новым рендером
+        self._play_buttons.clear()
+
         if view_order is None:
             view_order = list(range(len(json_data)))
         self.view_order = view_order or list(range(len(json_data)))
@@ -415,6 +482,11 @@ class TableManager:
     def _render_row_actions(self, row_idx: int, row: dict, real_idx: int):
         """Кнопка ▶ или 🛠 в первом столбце."""
         btn = QPushButton("▶" if row.get("id") else "🛠")
+
+        #  привязка кнопки к index (ключу строки из json)
+        index_key = row.get("index")
+        if index_key is not None:
+            self._play_buttons[index_key] = btn
 
         if not row.get("id"):
             btn.setStyleSheet("color: red;")

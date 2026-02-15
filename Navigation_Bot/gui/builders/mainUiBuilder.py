@@ -1,17 +1,14 @@
 from __future__ import annotations
 
+from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QTableWidget, QPushButton, QTextEdit,
-    QLabel, QHeaderView, QAbstractItemView, QTableWidgetItem, QToolButton, QMenu,
-    QStackedWidget
+    QLabel, QHeaderView, QAbstractItemView, QTableWidgetItem, QStackedWidget,QWidget, QVBoxLayout, QLabel, QProgressBar
 )
-from PyQt6.QtGui import QGuiApplication
 
-from PyQt6.QtCore import Qt
-
-from Navigation_Bot.gui.widgets.smooth_scroll import SmoothScrollController
-from Navigation_Bot.gui.widgets.globalSearchBar import GlobalSearchBar
 from Navigation_Bot.gui.controllers.logController import LogController
+from Navigation_Bot.gui.widgets.globalSearchBar import GlobalSearchBar
+from Navigation_Bot.gui.widgets.smooth_scroll import SmoothScrollController
 
 
 class MainUiBuilder:
@@ -70,14 +67,14 @@ class MainUiBuilder:
         gui.table.setWordWrap(True)
 
         gui.table.setColumnWidth(0, 40)
-        gui.table.setColumnWidth(1, 40)   # id
-        gui.table.setColumnWidth(2, 82)   # ТС
-        gui.table.setColumnWidth(3, 30)   # КА
+        gui.table.setColumnWidth(1, 40)  # id
+        gui.table.setColumnWidth(2, 82)  # ТС
+        gui.table.setColumnWidth(3, 30)  # КА
         gui.table.setColumnWidth(4, 270)  # Погрузка
         gui.table.setColumnWidth(5, 275)  # Выгрузка
         gui.table.setColumnWidth(6, 168)  # гео
-        gui.table.setColumnWidth(7, 65)   # Время прибытия
-        gui.table.setColumnWidth(8, 60)   # Запас
+        gui.table.setColumnWidth(7, 65)  # Время прибытия
+        gui.table.setColumnWidth(8, 60)  # Запас
 
         gui.table.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeMode.Interactive)
         gui.table.horizontalHeader().setSectionResizeMode(4, QHeaderView.ResizeMode.Interactive)
@@ -86,10 +83,6 @@ class MainUiBuilder:
         gui.table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         gui.table.setEditTriggers(QAbstractItemView.EditTrigger.DoubleClicked)
         gui.table.setColumnHidden(1, True)
-
-        # --- Панель глобального поиска ---
-        gui.search_bar = GlobalSearchBar(gui.table, gui.log, gui)
-        gui.search_bar.hide()
 
         # --- Лог ---
         gui.log_box = QTextEdit()
@@ -100,12 +93,18 @@ class MainUiBuilder:
         gui.logger = LogController(gui.log_box, enabled_getter=lambda: gui._log_enabled)
         gui.log = gui.logger.log
 
+        # --- Панель глобального поиска ---
+        gui.search_bar = GlobalSearchBar(gui.table, gui.log, gui)
+        gui.search_bar.hide()
         # --- Шапка лога (Лог + очистка) ---
         log_header = QHBoxLayout()
         log_label = QLabel("Лог:")
         gui.btn_clear_log = QPushButton("Очистить лог")
         gui.btn_clear_log.setFixedHeight(24)
         gui.btn_clear_log.setFixedWidth(120)
+
+        # gui.btn_clear_log.clicked.connect(gui.logger.clear)
+
         log_header.addWidget(log_label)
         log_header.addStretch()
         log_header.addWidget(gui.btn_clear_log)
@@ -118,6 +117,49 @@ class MainUiBuilder:
         page_layout.setContentsMargins(0, 0, 0, 0)
         page_layout.addWidget(gui.table)
 
+        gui.loading_overlay = QWidget(gui.page_gsheet)
+        gui.loading_overlay.setStyleSheet("""
+            QWidget {
+                background: transparent;
+            }
+        """)
+
+        # Главный layout оверлея
+        overlay_layout = QVBoxLayout(gui.loading_overlay)
+        overlay_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
+
+        # --- Центральная карточка ---
+        gui.loading_card = QWidget()
+        gui.loading_card.setFixedSize(320, 90)
+        gui.loading_card.setStyleSheet("""
+            QWidget {
+                background: #2c2c2c;
+                border-radius: 12px;
+            }
+            QLabel {
+                color: white;
+                font-size: 13px;
+            }
+        """)
+
+        card_layout = QVBoxLayout(gui.loading_card)
+        card_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        card_layout.setContentsMargins(20, 15, 20, 15)
+
+        gui.loading_label = QLabel("Загрузка…")
+        gui.loading_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+
+        gui.loading_bar = QProgressBar()
+        gui.loading_bar.setFixedWidth(240)
+        gui.loading_bar.setRange(0, 0)
+
+        card_layout.addWidget(gui.loading_label)
+        card_layout.addWidget(gui.loading_bar)
+
+        overlay_layout.addWidget(gui.loading_card)
+        gui.loading_overlay.hide()
+
+        #______
         gui.stack.addWidget(gui.page_gsheet)
 
         # --- Вкладки листов снизу ---

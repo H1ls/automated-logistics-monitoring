@@ -13,6 +13,33 @@ class SheetTabsController:
     def __init__(self, gui):
         self.gui = gui  # NavigationGUI
 
+    def activate_saved_tab(self):
+        """Активировать сохранённую вкладку (или первую видимую), как будто пользователь кликнул."""
+        gui = self.gui
+
+        k = getattr(gui, "_active_tab_key", None)
+        tabs_by_key = getattr(gui, "_tabs_by_key", {}) or {}
+        btns_by_key = getattr(gui, "_tab_buttons_by_key", {}) or {}
+
+        # 1) пробуем сохранённую
+        tab = tabs_by_key.get(k) if k else None
+        btn = btns_by_key.get(k) if k else None
+
+        if tab and btn and btn.isVisible():
+            self.on_tab_clicked(tab, btn)
+            return True
+
+        # 2) fallback: первая видимая таб-кнопка
+        for key, b in btns_by_key.items():
+            if b and b.isVisible():
+                t = tabs_by_key.get(key)
+                if t:
+                    gui._active_tab_key = key  # чтобы память обновилась на корректную вкладку
+                    self.on_tab_clicked(t, b)
+                    return True
+
+        return False
+
     def build(self):
         """Пересоздать кнопки вкладок и меню."""
         gui = self.gui
@@ -60,7 +87,15 @@ class SheetTabsController:
             gui._tab_buttons = []
             gui._tab_buttons_by_key = {}
 
-            # активная вкладка
+            # восстановить активную вкладку из ui_settings (если есть)
+            try:
+                tabs_cfg = (gui.ui_settings.data.get("tabs", {}) or {})
+                saved_active = tabs_cfg.get("active_key")
+                if saved_active:
+                    gui._active_tab_key = saved_active
+            except Exception:
+                pass
+
             active_key = getattr(gui, "_active_tab_key", None)
             if not active_key:
                 active_key = None
@@ -115,6 +150,8 @@ class SheetTabsController:
             gui.sheet_filter_button.setMenu(menu)
             gui.sheet_tabs_layout.addWidget(gui.sheet_filter_button)
 
+
+
         except Exception as e:
             gui.log(f"❌ SheetTabsController.build: {e}")
 
@@ -126,6 +163,14 @@ class SheetTabsController:
             btn.setChecked(btn is clicked_btn)
 
         gui._active_tab_key = tab["key"]
+        # сохранить активную вкладку
+        if getattr(gui, "ui_settings", None):
+            tabs_cfg = gui.ui_settings.data.setdefault("tabs", {})
+            tabs_cfg["active_key"] = gui._active_tab_key
+            try:
+                gui.ui_settings._schedule_save()
+            except Exception:
+                pass
 
         # локальная вкладка
         if tab.get("kind") == "local":

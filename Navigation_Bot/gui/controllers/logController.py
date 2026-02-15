@@ -1,21 +1,34 @@
 from __future__ import annotations
 
+from PyQt6.QtCore import QObject, pyqtSignal
 from PyQt6.QtGui import QTextCursor
 
 
-class LogController:
+class LogController(QObject):
+    message = pyqtSignal(str)
+    clear_requested = pyqtSignal()
+
     def __init__(self, log_box, enabled_getter=None):
-        """
-        log_box: QTextEdit
-        enabled_getter: callable -> bool (например lambda: gui._log_enabled)
-        """
+        super().__init__()
         self.log_box = log_box
         self.enabled_getter = enabled_getter or (lambda: True)
 
+        # все UI-операции — только через сигналы (GUI-thread)
+        self.message.connect(self._append_log)
+        self.clear_requested.connect(self._clear_log)
+
     def clear(self):
-        self.log_box.clear()
+        # можно вызывать из любого потока
+        self.clear_requested.emit()
 
     def log(self, message: str):
+        # можно вызывать из любого потока
+        self.message.emit(str(message))
+
+    def _clear_log(self):
+        self.log_box.clear()
+
+    def _append_log(self, message: str):
         if not self.enabled_getter():
             return
 
@@ -35,7 +48,6 @@ class LogController:
         else:
             self.log_box.append(text)
 
-        # автоскролл вниз
         cursor = self.log_box.textCursor()
         cursor.movePosition(QTextCursor.MoveOperation.End)
         self.log_box.setTextCursor(cursor)

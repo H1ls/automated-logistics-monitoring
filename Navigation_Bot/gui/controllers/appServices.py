@@ -20,6 +20,48 @@ class AppServices:
     def __init__(self, gui):
         self.gui = gui
 
+    def shutdown(self):
+        g = self.gui
+
+        # 1) сохранить настройки окна
+        try:
+            g.ui_settings.save_window(g)
+        except Exception as e:
+            g.log(f"⚠️ Не удалось сохранить настройки окна: {e}")
+
+        # 2) остановить hotkeys
+        try:
+            if getattr(g, "hotkeys", None):
+                g.hotkeys.stop()
+        except Exception as e:
+            g.log(f"⚠️ Не удалось остановить hotkeys: {e}")
+
+        # 3) остановить executor
+        try:
+            if getattr(g, "executor", None):
+                g.executor.shutdown(wait=False, cancel_futures=True)
+        except Exception as e:
+            g.log(f"⚠️ Не удалось остановить executor: {e}")
+
+        # 4) закрыть Selenium
+        try:
+            wdm = getattr(g, "driver_manager", None)
+
+            if not wdm:
+                proc = getattr(g, "processor", None)
+                wdm = getattr(proc, "driver_manager", None) if proc else None
+
+            if wdm and hasattr(wdm, "stop_browser"):
+                wdm.stop_browser()
+            elif wdm and getattr(wdm, "driver", None):
+                try:
+                    wdm.driver.quit()
+                except Exception:
+                    pass
+                wdm.driver = None
+        except Exception as e:
+            g.log(f"⚠️ Не удалось закрыть браузер: {e}")
+
     def build(self):
         g = self.gui
 
@@ -34,6 +76,10 @@ class AppServices:
 
         # --- GoogleSheets ---
         g.gsheet = GoogleSheetsManager(log_func=None)
+        g.gsheet.started.connect(lambda: g.show_loading("Загрузка из Google Sheets…"))
+        g.gsheet.finished.connect(lambda: g.hide_loading())
+        g.gsheet.error.connect(lambda err: (g.hide_loading(), g.log(f"❌ {err}")))
+
         g.gsheet.log_message.connect(g.log)
 
         # --- TableManager ---
@@ -52,18 +98,20 @@ class AppServices:
             data_context=g.data_context,
             log=g.log,
             hours_default=2)
-
+        busy_callback = g.table_manager.set_row_busy
         g.processor = NavigationProcessor(
             data_context=g.data_context,
             logger=g.log,
             gsheet=g.gsheet,
-            filepath=str(g.INPUT_FILEPATH),  # см. шаг 2, как прокинем
+            filepath=str(g.INPUT_FILEPATH),
             display_callback=g.reload_and_show,
             single_row=g._single_row_processing,
             updated_rows=g.updated_rows,
             executor=g.executor,
             highlight_callback=g.row_highlighter.highlight_for,
-            browser_rect=getattr(g, "browser_rect", None))
+            browser_rect=getattr(g, "browser_rect", None),
+            ui_bridge=g.ui_bridge,)
+
 
         g.sort_controller = TableSortController(data_context=g.data_context, log=g.log)
         g.hotkeys = HotkeyManager(log_func=g.log)
