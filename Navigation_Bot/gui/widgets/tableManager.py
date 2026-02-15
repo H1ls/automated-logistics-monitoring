@@ -1,16 +1,17 @@
-from functools import partial
 from datetime import datetime, timedelta
 
-from PyQt6.QtWidgets import (QTableWidgetItem, QPushButton, QWidget, QHBoxLayout, QLabel)
 from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtGui import QColor
+from PyQt6.QtWidgets import (QTableWidgetItem, QPushButton, QWidget, QHBoxLayout, QLabel)
 
 from Navigation_Bot.gui.dialogs.AddressEditDialog import AddressEditDialog
 from Navigation_Bot.gui.dialogs.combinedSettingsDialog import VerticalTextDelegate
 
 
 class TableManager:
-    def __init__(self, table_widget, data_context, log_func, on_row_click, on_edit_id_click, gsheet):
+    def __init__(self, table_widget, data_context, log_func, on_row_click, on_edit_id_click, gsheet,
+                 reload_callback=None):
+
         self.data_context = data_context
         self.table = table_widget
 
@@ -25,6 +26,9 @@ class TableManager:
         self.gsheet = gsheet
         self._editable_headers = {"Телефон", "ФИО", "КА", "id"}
         self.after_display = None
+        self.view_order = []
+        self._real_to_visual = {}
+        self.reload_callback = reload_callback
 
     def _set_editable_cell(self, row, col, text):
         item = QTableWidgetItem(text)
@@ -152,34 +156,14 @@ class TableManager:
 
             self.log(f"✅ Новая запись добавлена (index={index})")
             self._new_entry_buffer = {}  # сбрасываем буфер
-            self.display()
+            # self.display()
+            if callable(self.reload_callback):
+                self.reload_callback()
+            else:
+                self.display()
 
         except Exception as e:
             self.log(f"❌ Ошибка в handle_new_entry: {e}")
-
-    def _extract_row_data(self, row_idx):
-        """Собирает dict из ключевой строки таблицы"""
-        ts_phone = self.table.item(row_idx, 2).text().strip()
-        ka = self.table.item(row_idx, 3).text().strip()
-        load = self.table.item(row_idx, 4).text().strip()
-        unload = self.table.item(row_idx, 5).text().strip()
-        fio = ""
-
-        if not ts_phone:
-            return None
-
-        parts = ts_phone.split()
-        ts = " ".join(parts[:-1]) if len(parts) > 1 else ts_phone
-        phone = parts[-1] if len(parts) > 1 else ""
-
-        return {
-            "ТС": ts,
-            "Телефон": phone,
-            "ФИО": fio if fio else [],
-            "КА": ka,
-            "Погрузка": [{"Погрузка 1": load}] if load else [],
-            "Выгрузка": [{"Выгрузка 1": unload}] if unload else []
-        }
 
     @staticmethod
     def _get_field_with_datetime(row, key):
@@ -221,7 +205,6 @@ class TableManager:
         return ""
 
     def edit_cell_content(self, row, col):
-
         try:
             col_name = self.table.horizontalHeaderItem(col).text()
 
@@ -233,16 +216,20 @@ class TableManager:
                 return
 
             json_data = self.data_context.get()
-            # ключевая строка
-            if row >= len(json_data):
+
+            # ✅ ключевая строка (последняя) — работаем как раньше, без real_idx
+            # (т.к. это "виртуальная" строка, её нет в json_data и view_order)
+            if row >= len(self.view_order) or row >= self.table.rowCount() - 1:
                 temp_entry = {"Погрузка": [], "Выгрузка": []}
-                dialog = AddressEditDialog(row_data=temp_entry,
-                                           full_data=[],
-                                           prefix=prefix,
-                                           parent=self.table,
-                                           disable_save=True,
-                                           data_context=self.data_context,
-                                           log_func=self.log)
+                dialog = AddressEditDialog(
+                    row_data=temp_entry,
+                    full_data=[],
+                    prefix=prefix,
+                    parent=self.table,
+                    disable_save=True,
+                    data_context=self.data_context,
+                    log_func=self.log
+                )
 
                 if dialog.exec():
                     data_block, meta = dialog.get_result()
@@ -261,29 +248,42 @@ class TableManager:
                     self.table.blockSignals(False)
                 return
 
-            # обычные строки
-            dialog = AddressEditDialog(row_data=self.data_context.get()[row],
-                                       full_data=self.data_context.get(),
-                                       prefix=prefix,
-                                       parent=self.table,
-                                       data_context=self.data_context,
-                                       log_func=self.log)
+            # ✅ обычные строки: visual -> real
+            if row < 0 or row >= len(self.view_order):
+                return
+            real_idx = self.view_order[row]
+            if real_idx < 0 or real_idx >= len(json_data):
+                return
+
+            dialog = AddressEditDialog(
+                row_data=json_data[real_idx],
+                full_data=json_data,
+                prefix=prefix,
+                parent=self.table,
+                data_context=self.data_context,
+                log_func=self.log
+            )
+
             if dialog.exec():
                 data_block, meta = dialog.get_result()
                 if not data_block:
                     self.log(f"{prefix}: Пустое редактирование в строке {row + 1} — изменения отменены.")
                     return
 
-                json_data[row][prefix] = data_block
+                json_data[real_idx][prefix] = data_block
                 if meta.get("Время отправки"):
-                    json_data[row]["Время отправки"] = meta["Время отправки"]
+                    json_data[real_idx]["Время отправки"] = meta["Время отправки"]
                 if meta.get("Транзит"):
-                    json_data[row]["Транзит"] = meta["Транзит"]
+                    json_data[real_idx]["Транзит"] = meta["Транзит"]
 
                 self.data_context.save()
-                self.display()
-        except:
-            print("edit_cell_content")
+                # self.display(view_order=self.sort_controller.build_view_order())
+                if callable(self.reload_callback):
+                    self.reload_callback()
+                else:
+                    self.display()
+        except Exception as e:
+            self.log(f"❌ edit_cell_content: {e}")
 
     def save_to_json_on_edit(self, item):
         QTimer.singleShot(0, lambda: self._save_item(item))
@@ -319,44 +319,59 @@ class TableManager:
                 return
             value = int(value)
 
-        old_value = json_data[row].get(header)
+        visual_row = item.row()
+        if visual_row < 0 or visual_row >= len(self.view_order):
+            return
+
+        real_idx = self.view_order[visual_row]
+        if real_idx < 0 or real_idx >= len(json_data):
+            return
+
+        old_value = json_data[real_idx].get(header)
         if old_value == value:
             return
 
-        json_data[row][header] = value
+        json_data[real_idx][header] = value  # ✅ пишем в реальную строку
         self.data_context.save()
+
         # self.log(f"✏️ Изменено: строка {row + 1}, колонка '{header}' → {value}")
 
-    def display(self, reload_from_file=True):
-        # 1. Перечитать JSON при необходимости
+    def visual_row_by_index_key(self, key):
+        return self._index_to_visual.get(key, -1)
+
+    def display(self, reload_from_file=True, view_order=None):
         self._reload_context(reload_from_file)
+        json_data = self.data_context.get() or []
 
-        # 2. Забрать актуальные данные
-        json_data = self.data_context.get()
+        if view_order is None:
+            view_order = list(range(len(json_data)))
+        self.view_order = view_order or list(range(len(json_data)))
+        # index(key) -> visual_row
+        self._index_to_visual = {}
 
-        # 3. Сохранить положение скролла и выделенную строку
+        for visual_row, real_idx in enumerate(self.view_order):
+            try:
+                key = (json_data[real_idx] or {}).get("index")
+            except Exception:
+                key = None
+            if key is not None:
+                self._index_to_visual[key] = visual_row
+
         scroll_value, selected_row = self._capture_view_state()
 
         try:
-            # 4. Отключаем сигналы и очищаем таблицу
             self.table.blockSignals(True)
             self.table.setRowCount(0)
 
-            # 5. Рисуем все обычные строки
-            self._render_all_rows(json_data)
+            self._render_all_rows(json_data, view_order)
 
-            # 6. Подгоняем высоту строк
             self.table.resizeRowsToContents()
-
-            # 7. Добавляем ключевую строку (строка с ➕)
             self._add_new_entry_row()
 
         finally:
-            # 8. Включаем сигналы обратно и восстанавливаем скролл/выделение
             self.table.blockSignals(False)
             QTimer.singleShot(0, lambda: self._restore_scroll(scroll_value, selected_row))
 
-        # 9. Колбэк после отрисовки (RowHighlighter и т.п.)
         if callable(self.after_display):
             self.after_display()
 
@@ -376,31 +391,40 @@ class TableManager:
             scroll_value = self.table.verticalScrollBar().value()
             selected_row = self.table.currentRow()
         except Exception as e:
-            print(f"{e}")
+            self.log(f"{e}")
             scroll_value, selected_row = 0, -1
         return scroll_value, selected_row
 
-    def _render_all_rows(self, json_data: list[dict]):
+    def _render_all_rows(self, json_data: list[dict], view_order):
         """Отрисовывает все обычные строки таблицы"""
-        for row_idx, row in enumerate(json_data):
-            self.table.insertRow(row_idx)
-            self._render_row_actions(row_idx, row)
-            self._render_row_id_cell(row_idx, row)
-            self._render_row_main_cells(row_idx, row)
-            self._render_row_route_cells(row_idx, row)
-            self._highlight_future_load(row_idx, row)
+        for visual_row, real_idx in enumerate(view_order):
+            if not (0 <= real_idx < len(json_data)):
+                continue
 
-    def _render_row_actions(self, row_idx: int, row: dict):
+            row = json_data[real_idx]
+            self.table.insertRow(visual_row)
+
+            # визуальная строка = visual_row
+            # индекс данных (куда писать) = real_idx
+            self._render_row_actions(visual_row, row, real_idx)
+            self._render_row_id_cell(visual_row, row, real_idx)
+            self._render_row_main_cells(visual_row, row)
+            self._render_row_route_cells(visual_row, row)
+            self._highlight_future_load(visual_row, row)
+
+    def _render_row_actions(self, row_idx: int, row: dict, real_idx: int):
         """Кнопка ▶ или 🛠 в первом столбце."""
         btn = QPushButton("▶" if row.get("id") else "🛠")
+
         if not row.get("id"):
             btn.setStyleSheet("color: red;")
-            btn.clicked.connect(lambda _, idx=row_idx: self.on_edit_id_click(idx))
+            btn.clicked.connect(lambda _=False, idx=real_idx: self.on_edit_id_click(idx))
         else:
-            btn.clicked.connect(lambda _, idx=row_idx: self.on_row_click(idx))
+            btn.clicked.connect(lambda _=False, idx=real_idx: self.on_row_click(idx))
+
         self.table.setCellWidget(row_idx, 0, btn)
 
-    def _render_row_id_cell(self, row_idx: int, row: dict):
+    def _render_row_id_cell(self, row_idx: int, row: dict, real_idx: int):
         """Ячейка id с кнопкой 🛠 внутри"""
         id_value = str(row.get("id", ""))
         container = QWidget()
@@ -410,7 +434,7 @@ class TableManager:
         label = QLabel(id_value)
         btn_tool = QPushButton("🛠")
         btn_tool.setFixedWidth(30)
-        btn_tool.clicked.connect(partial(self.on_edit_id_click, row_idx))
+        btn_tool.clicked.connect(lambda _=False, idx=real_idx: self.on_edit_id_click(idx))
 
         layout.addWidget(label)
         layout.addWidget(btn_tool)

@@ -108,7 +108,7 @@ class DataCleaner:
 
         return results
 
-    def start_clean(self) -> None:
+    def start_clean(self, only_indexes: set[int] | None = None) -> None:
         """
         1) Один раз сохраняем сырые строки в raw_load / raw_unload (для ML)
         2) Преобразуем строки Погрузка/Выгрузка → список блоков
@@ -125,6 +125,8 @@ class DataCleaner:
         self.id_data = self.id_context.get() or []
 
         for item in self.json_data:
+            if only_indexes is not None and item.get("index") not in only_indexes:
+                continue
             #  RAW для ML
             if isinstance(item.get("Погрузка"), str) and not item.get("raw_load"):
                 item["raw_load"] = item["Погрузка"]

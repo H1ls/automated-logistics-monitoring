@@ -1,3 +1,0 @@
-Когда возникает
-❌ Ошибка в process_row: Message: stale element reference: stale element not found in the current frame
-Передается старые данные из json, нужно исправить

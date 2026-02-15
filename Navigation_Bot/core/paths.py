@@ -1,5 +1,5 @@
 from pathlib import Path
-
+import os
 ROOT_DIR = Path(__file__).resolve().parent.parent.parent
 CONFIG_DIR = ROOT_DIR / "config"
 
@@ -13,5 +13,10 @@ UI_SETTINGS_FILE = CONFIG_DIR / "ui_settings.json"
 
 DATASET_DIR = CONFIG_DIR / "datasets"
 DATASET_FILE = DATASET_DIR / "addresses.jsonl"
+
+# === Pin codes ===
+PIN_XLSX_FILEPATH = os.path.join(CONFIG_DIR,"Обновленный РЕЕСТР ПИН ТОПЛИВНЫЕ КАРТЫ.xlsx")
+PIN_JSON_FILEPATH = os.path.join(CONFIG_DIR,"pincodes_cache.json")
+
 
 VERSION = "0.45"

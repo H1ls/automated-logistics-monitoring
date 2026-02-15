@@ -3,7 +3,12 @@ import pyclip
 import keyboard
 from datetime import datetime
 from threading import Thread, Event
-from global_hotkeys import register_hotkeys, start_checking_hotkeys, stop_checking_hotkeys
+from global_hotkeys import (
+    clear_hotkeys,
+    register_hotkeys,
+    start_checking_hotkeys,
+    stop_checking_hotkeys,
+)
 
 
 class HotkeyManager:
@@ -77,8 +82,14 @@ class HotkeyManager:
             ["alt + 3", None, self._write_there, False],
             ["F1", None, self._toggle_mode, False],
         ]
-        register_hotkeys(bindings)
-        start_checking_hotkeys()
+        try:
+            clear_hotkeys()
+            register_hotkeys(bindings)
+            start_checking_hotkeys()
+        except Exception as exc:
+            self.log(f"[{self._get_time()}] HotkeyManager error: {exc}")
+            self._running.clear()
+            return
 
         while self._running.is_set():
             self._update_clipboard_history()

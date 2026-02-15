@@ -86,7 +86,8 @@ class CombinedSettingsDialog(QDialog):
             data_context.set([])
 
         if table_manager is not None:
-            table_manager.display()
+            # table_manager.display()
+            parent_gui.reload_and_show()
 
     def _on_save(self):
         ok, msg = self._validate_required()

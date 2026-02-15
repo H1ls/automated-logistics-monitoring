@@ -1,5 +1,7 @@
-import sys
+import os
 from PyQt6.QtWidgets import QApplication, QDialog, QMessageBox
+import faulthandler, sys
+faulthandler.enable(all_threads=True)
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)

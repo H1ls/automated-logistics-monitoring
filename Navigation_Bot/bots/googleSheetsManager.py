@@ -28,8 +28,6 @@ class GoogleSheetsManager(QObject):
         self.data_context = data_context or DataContext(str(INPUT_FILEPATH), log_func=log_func)
 
         # основные поля
-        # self.creds_path = None
-        # self.sheet_id = None
         self.worksheet_index = None
         self.auth_sheet_id = None
         self.column_index = None
@@ -303,7 +301,8 @@ class GoogleSheetsManager(QObject):
                 return False, msg
 
             self.data_context = data_context or self.data_context
-            self.refresh_name(rows)
+            self.refresh_name(rows, update_existing=False)
+
             cleaner = DataCleaner(data_context=data_context, log_func=self._log)
             cleaner.start_clean()
 
@@ -396,7 +395,9 @@ class GoogleSheetsManager(QObject):
             self._log(f"️❌ Ошибка загрузки данных с листа: {e}")
             return None
 
-    def refresh_name(self, rows, file_path=None):
+    def refresh_name(self, rows, file_path=None, update_existing: bool = False):
+        updated_count = 0
+
         try:
             if not rows:
                 self._log("↩️ Обновление отменено: нет данных (ошибка/пустой лист). Текущее состояние сохранено")
@@ -404,7 +405,8 @@ class GoogleSheetsManager(QObject):
 
             ctx = self.data_context
             existing_data = (ctx.get() or []) if ctx else (JSONManager().load_json(file_path or self.file_path) or [])
-            existing_indexes = {entry.get("index") for entry in existing_data}
+            existing_indexes = {entry.get("index") for entry in existing_data if isinstance(entry, dict)}
+            by_index = {entry.get("index"): entry for entry in existing_data if isinstance(entry, dict)}
             active_indexes, new_entries = set(), []
 
             # если rows пришёл как dict {row_index: [D,E,F,G,H]}
@@ -430,16 +432,32 @@ class GoogleSheetsManager(QObject):
                         continue
 
                     active_indexes.add(i)
-                    if i not in existing_indexes:
-                        new_entries.append({
-                            "index": i,
-                            "ТС": formatted_ts,
-                            "Телефон": phone,
-                            "ФИО": fio,
-                            "КА": f,
-                            "Погрузка": load,
-                            "Выгрузка": unload,
-                        })
+
+                    fresh = {
+                        "index": i,
+                        "ТС": formatted_ts,
+                        "Телефон": phone,
+                        "ФИО": fio,
+                        "КА": f,
+                        "Погрузка": load,
+                        "Выгрузка": unload,
+                    }
+
+                    if i in existing_indexes:
+                        if update_existing:
+                            old = by_index.get(i)
+                            updated_count += 1
+                            if old is not None:
+                                old.update(fresh)
+                                old["raw_load"] = load
+                                old["raw_unload"] = unload
+                                old["Погрузка"] = load
+                                old["Выгрузка"] = unload
+
+                    else:
+                        new_entries.append(fresh)
+
+
 
             # старый режим - если load_data ещё вернёт полный лист
             else:
@@ -459,23 +477,45 @@ class GoogleSheetsManager(QObject):
                         continue
 
                     active_indexes.add(i)
-                    if i not in existing_indexes:
-                        new_entries.append({
-                            "index": i,
-                            "ТС": formatted_ts,
-                            "Телефон": phone,
-                            "ФИО": row[4],
-                            "КА": row[5],
-                            "Погрузка": row[6],
-                            "Выгрузка": row[7],
-                        })
+
+                    fresh = {
+                        "index": i,
+                        "ТС": formatted_ts,
+                        "Телефон": phone,
+                        "ФИО": fio,
+                        "КА": row[5] if len(row) > 5 else "",
+                        "Погрузка": load,
+                        "Выгрузка": unload,
+                    }
+
+                    if i in existing_indexes:
+                        old = by_index.get(i)
+                        if old is not None:
+                            old.update(fresh)
+                            old["raw_load"] = load
+                            old["raw_unload"] = unload
+                            old["Погрузка"] = load
+                            old["Выгрузка"] = unload
+                        self._log(f"✅ Обновил существующую строку index={i}")
+
+                    else:
+                        new_entries.append(fresh)
 
             if not active_indexes and not new_entries:
                 self._log("↩️ В листе не найдено активных строк. Обновление пропущено, данные не изменены.")
                 return
 
-            filtered_data = [e for e in existing_data if e.get("index") in active_indexes]
-            result_data = filtered_data + new_entries
+            # update_existing=True означает "точечный overwrite", а не "синхронизация списка".
+            if update_existing:
+                # existing_data уже обновлён "на месте" через old.update(...)
+                # поэтому просто сохраняем весь массив + добавляем новые (если вдруг index не существовал)
+                result_data = existing_data + new_entries
+                deleted_count = 0
+            else:
+                # режим синхронизации (как раньше)
+                filtered_data = [e for e in existing_data if e.get("index") in active_indexes]
+                result_data = filtered_data + new_entries
+                deleted_count = len(existing_data) - len(filtered_data)
 
             if ctx:
                 ctx.set(result_data)
@@ -483,7 +523,9 @@ class GoogleSheetsManager(QObject):
                 JSONManager().save_in_json(result_data, file_path or self.file_path)
 
             self._log(
-                f"🔄 Обновление: добавлено {len(new_entries)}, удалено {len(existing_data) - len(filtered_data)} строк.")
+                f"🔄 Обновление: обновлено {updated_count}, добавлено {len(new_entries)}, удалено {deleted_count} строк."
+            )
+
         except Exception as e:
             self._log(f"❌ refresh_name error: {e}")
 

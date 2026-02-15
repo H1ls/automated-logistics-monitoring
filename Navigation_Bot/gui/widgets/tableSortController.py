@@ -2,46 +2,36 @@ from datetime import datetime
 
 
 class TableSortController:
-    def __init__(self, data_context, table_manager, log):
+    def __init__(self, data_context, log):
         self.data_context = data_context
-        self.table_manager = table_manager
         self.log = log
-        self.current = None
+        self.current = None  # None / "buffer" / "arrival"
 
-    def sort_default(self):
-        data = self.data_context.get()
-        data.sort(key=lambda x: x.get("index", 99999))
-        self.current = None
-        self.table_manager.display(reload_from_file=False)
-        self.log("↩️ Сортировка: по умолчанию (index)")
+    def build_view_order(self) -> list[int]:
+        data = self.data_context.get() or []
+        order = list(range(len(data)))
 
-    def sort_by_buffer(self):
-        data = self.data_context.get()
+        if self.current is None:
+            order.sort(key=lambda i: (data[i].get("index", 999999)))
+            return order
 
-        def buf(row):
-            try:
-                return int(row.get("Маршрут", {}).get("buffer_minutes", 999999))
-            except:
-                return 999999
+        if self.current == "buffer":
+            def buf(i):
+                try:
+                    return int(data[i].get("Маршрут", {}).get("buffer_minutes", 999999))
+                except:
+                    return 999999
+            order.sort(key=buf)
+            return order
 
-        data.sort(key=buf)
-        self.current = "buffer"
-        self.table_manager.display(reload_from_file=False)
+        if self.current == "arrival":
+            def arr(i):
+                try:
+                    val = data[i].get("Маршрут", {}).get("время прибытия")
+                    return datetime.strptime(val, "%d.%m.%Y %H:%M")
+                except:
+                    return datetime.max
+            order.sort(key=arr)
+            return order
 
-        self.log("⏳ Сортировка: по запасу времени")
-
-    def sort_by_arrival(self):
-
-        data = self.data_context.get()
-
-        def arr(row):
-            try:
-                val = row.get("Маршрут", {}).get("время прибытия")
-                return datetime.strptime(val, "%d.%m.%Y %H:%M")
-            except:
-                return datetime.max
-
-        data.sort(key=arr)
-        self.current = "arrival"
-        self.table_manager.display(reload_from_file=False)
-        self.log("🕒 Сортировка: по времени прибытия")
+        return order

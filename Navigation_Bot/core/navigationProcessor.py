@@ -60,10 +60,17 @@ class NavigationProcessor:
                 self.log(f"⚠️ Строка {row_idx} больше не существует. Пропуск.")
             return
 
-        # Подсветка строки, через переданный колбэк из GUI
+        # Подсветка строки (по ключу записи index)
         if self.highlight_cb:
             try:
-                self.highlight_cb(row_idx)
+                index_key = (data[row_idx] or {}).get("index")
+                if index_key is None:
+                    # запасной вариант: если вдруг нет index — можно подсветить по старому
+                    # но лучше залогировать, чтобы ты потом поправил данные
+                    if self.log:
+                        self.log(f"⚠️ Нет поля 'index' у строки {row_idx}. Подсветка пропущена.")
+                else:
+                    self.highlight_cb(index_key)
             except Exception as e:
                 if self.log:
                     self.log(f"⚠️ Ошибка подсветки строки {row_idx}: {e}")

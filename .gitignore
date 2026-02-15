@@ -1,0 +1,46 @@
+# ---- Python ----
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+
+#  Virtual environment
+.venv/
+venv/
+env/
+
+#  IDE (PyCharm / VSCode / etc.)
+.idea/
+.vscode/
+
+#  Logs / temp
+*.log
+*.tmp
+
+#  Project configs
+config/cookies.pkl
+config/Credentials_wialon.json
+config/selected_data.json
+/config/Id_car.json
+config/datasets/addresses.jsonl
+config/Обновленный РЕЕСТР ПИН ТОПЛИВНЫЕ КАРТЫ.xlsx
+config/pincodes_cache.json
+
+!Navigation_Bot/config/*.example.json
+
+#  System
+.DS_Store
+Thumbs.db
+
+
+
+Other/
+Mll/
+ollama_client/
+pdf/
+trash/
+config/
+
+/config/datasets/
+/main.spec
