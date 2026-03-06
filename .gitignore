@@ -1,5 +1,6 @@
 # ---- Python ----
 __pycache__/
+*.pyc
 *.py[cod]
 *.pyo
 *.pyd
@@ -8,6 +9,8 @@ __pycache__/
 #  Virtual environment
 .venv/
 venv/
+venv311/
+.venv311/
 env/
 
 #  IDE (PyCharm / VSCode / etc.)
@@ -26,7 +29,8 @@ config/selected_data.json
 config/datasets/addresses.jsonl
 config/Обновленный РЕЕСТР ПИН ТОПЛИВНЫЕ КАРТЫ.xlsx
 config/pincodes_cache.json
-
+LogistX/config/logistx_sample.json
+LogistX/config/sites_db.json
 !Navigation_Bot/config/*.example.json
 
 #  System
@@ -34,7 +38,8 @@ config/pincodes_cache.json
 Thumbs.db
 
 
-
+LogistX/assets/
+LogistX/tmp/
 Other/
 Mll/
 ollama_client/

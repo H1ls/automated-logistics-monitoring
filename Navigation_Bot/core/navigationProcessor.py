@@ -1,10 +1,18 @@
+# Navigation_Bot\core\navigationProcessor.py
 import threading
 import traceback
 from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime, timedelta
 
+from PyQt6.QtWidgets import QTableWidgetItem
+
+from LogistX.controllers.oneCRaceWriter import OneCRaceWriter
+from LogistX.controllers.twoCRaceWriter import TwoCRaceWriter
 from Navigation_Bot.bots.mapsBot import MapsBot
 from Navigation_Bot.bots.navigationBot import NavigationBot
 from Navigation_Bot.bots.webDriverManager import WebDriverManager
+from Navigation_Bot.bots.wialonReportsBot import WialonReportsBot
+
 
 
 class NavigationProcessor:
@@ -15,7 +23,7 @@ class NavigationProcessor:
         self.gsheet = gsheet
         self.filepath = filepath
         self.display_callback = display_callback
-
+        self.ui = ui_bridge
         self._single_row_processing = single_row
         self.updated_rows = updated_rows if updated_rows is not None else []
 
@@ -29,6 +37,93 @@ class NavigationProcessor:
         self.mapsbot = None
         self._is_processing = False
         self.ui_bridge = ui_bridge
+
+    def _geofence_from_cell_text(self, s: str) -> str:
+        s = (s or "").strip()
+        if s.startswith("🏷"):
+            first = s.splitlines()[0]
+            return first.replace("🏷", "").strip()
+        return ""
+
+    def fetch_fact_logistx_and_fill_1c(self, page, row: int):
+        self.ensure_driver_and_bots()
+
+        if not getattr(self, "reportsbot", None):
+            self.reportsbot = WialonReportsBot(self.driver_manager.driver, log_func=self.log)
+
+        if not getattr(self, "rdp_activator", None):
+            # заглушка: считаем что RDP активен
+            self.rdp_activator = lambda: True
+
+        if not getattr(self, "twoC", None):
+            self.twoC = TwoCRaceWriter(self.rdp_activator, log_func=self.log)
+
+        if not getattr(self, "oneC", None):
+            self.oneC = OneCRaceWriter(self.rdp_activator, log_func=self.log)
+
+        def fmt_wialon(dt: datetime) -> str:
+            # формат, который ты уже используешь: "18 Февраль 2026 00:01"
+            months = {
+                1: "Январь", 2: "Февраль", 3: "Март", 4: "Апрель",
+                5: "Май", 6: "Июнь", 7: "Июль", 8: "Август",
+                9: "Сентябрь", 10: "Октябрь", 11: "Ноябрь", 12: "Декабрь",
+            }
+            return f"{dt.day:02d} {months[dt.month]} {dt.year} {dt:%H:%M}"
+
+        def job():
+            obj = page.rows[row]
+            race_no = str(obj.get("Рейс", "") or "").strip()
+            unit = str(obj.get("ТС", "") or "").strip()
+            load_zone = self._geofence_from_cell_text(page.table.item(row, page.COL_FROM).text())
+            unload_zone = self._geofence_from_cell_text(page.table.item(row, page.COL_TO).text())
+            if not race_no:
+                raise ValueError("Пустой 'Рейс' в строке")
+            if not unit:
+                raise ValueError("Пустой 'ТС' в строке")
+
+            # 1) 1C -> fd
+            fd = self.twoC.open_race_and_read_departure_dt(race_no)
+            if not fd:
+                raise RuntimeError(f"1C не вернул дату отправления для рейса: {race_no}")
+
+
+            # 2) fd -> диапазон Wialon (для теста: -2дня .. +7дней)
+            date_from = fmt_wialon(fd - timedelta(days=0))
+            date_to = fmt_wialon(fd + timedelta(days=7))
+            payload = self.reportsbot.run_geo_report_for_trip(
+                unit=unit, date_from=date_from, date_to=date_to, load_zone=load_zone, unload_zone=unload_zone,
+                template="Пересечение гео")
+
+            print("end fd - wialon ", race_no, fd, payload)
+            return race_no, fd, payload
+
+        fut = self.executor.submit(job)
+
+        def apply_result():
+            try:
+                race_no, fd, payload = fut.result()
+
+                txt = (
+                    f"fd: {fd:%d.%m.%Y %H:%M}\n"
+                    f"Погр(въезд): {payload.get('load_in', '')}\n"
+                    f"Погр(выезд): {payload.get('load_out', '')}\n"
+                    f"Выгр(въезд): {payload.get('unload_in', '')}\n"
+                    f"Выгр(выезд): {payload.get('unload_out', '')}"
+                )
+                page.table.setItem(row, page.COL_FACT, QTableWidgetItem(txt))
+                page.table.resizeRowToContents(row)
+
+                # 3) Заполнение 1C временами
+                ok = self.oneC.fill_race(payload)
+                if ok:
+                    self.log(f"✅ 1C заполнено по рейсу: {race_no}")
+                else:
+                    self.log(f"❌ 1C не заполнилось по рейсу: {race_no}")
+
+            except Exception as e:
+                self.log(f"❌ pipeline(1C->Wialon->1C): {e}")
+
+        fut.add_done_callback(lambda _f: self.ui.call.emit(apply_result))
 
     def _merge_row(self, row: int, updated: dict) -> dict:
         """Обновляет строку в data_context, но НЕ сохраняет"""
@@ -154,7 +249,7 @@ class NavigationProcessor:
             self.driver_manager.login_wialon()  # один раз: Wialon + Мониторинг
             self.driver_manager.open_yandex_maps()  # один раз: Я.Карты
             self.browser_opened = True
-            self.log("✅ Драйвер и вкладки готовы.")
+            self._uilog("✅ Драйвер и вкладки готовы.")
 
         # Создаём ботов, если их ещё нет
         if not self.navibot:
@@ -297,3 +392,9 @@ class NavigationProcessor:
         if self.updated_rows:
             self.gsheet.write_all(self.updated_rows)
             self.updated_rows = []
+
+    def _uilog(self, msg: str):
+        if getattr(self, "ui_bridge", None):
+            self.ui_bridge.log.emit(msg)
+        else:
+            self.log(msg)

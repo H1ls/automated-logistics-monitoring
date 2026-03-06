@@ -7,7 +7,7 @@ from PyQt6.QtGui import QPainter
 
 import json
 
-from Navigation_Bot.core.settings_schema import SECTIONS
+from Navigation_Bot.core.settings.settings_schema import SECTIONS
 from Navigation_Bot.core.jSONManager import JSONManager as JM
 from Navigation_Bot.core.paths import CONFIG_JSON
 

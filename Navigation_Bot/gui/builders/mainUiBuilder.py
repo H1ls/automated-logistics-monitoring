@@ -29,15 +29,17 @@ class MainUiBuilder:
         gui.btn_load_google = QPushButton("Загрузить Задачи")
         gui.btn_process_all = QPushButton("▶ Пробежать все ТС")
         gui.btn_refresh_table = QPushButton("🔄 Обновить")
+        gui.btn_wialon = QPushButton("Wialon 🌐")
         gui.btn_settings = QPushButton("Настройки ⚙️")
 
-        for btn in [gui.btn_load_google, gui.btn_process_all, gui.btn_refresh_table, gui.btn_settings]:
+        for btn in [gui.btn_load_google, gui.btn_process_all, gui.btn_refresh_table,gui.btn_wialon, gui.btn_settings]:
             btn.setFixedHeight(28)
             btn.setFixedWidth(130)
 
         top.addWidget(gui.btn_load_google)
         top.addWidget(gui.btn_process_all)
         top.addWidget(gui.btn_refresh_table)
+        top.addWidget(gui.btn_wialon)
         top.addWidget(gui.btn_settings)
 
         # --- Таблица ---

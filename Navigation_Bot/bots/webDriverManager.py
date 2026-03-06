@@ -1,9 +1,12 @@
-import json, pickle, time
+import json
+import pickle
+import time
+
 from selenium import webdriver
+from selenium.common.exceptions import WebDriverException, InvalidSessionIdException, TimeoutException
 from selenium.webdriver.common.by import By
-from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
-from selenium.common.exceptions import TimeoutException, WebDriverException
+from selenium.webdriver.support.ui import WebDriverWait
 
 from Navigation_Bot.core.paths import CREDENTIALS_WIALON, COOKIES_FILE
 
@@ -30,13 +33,24 @@ class WebDriverManager:
         return WebDriverWait(self.driver, timeout).until(
             EC.visibility_of_element_located((By.XPATH, xpath)))
 
+    # def is_alive(self) -> bool:
+    #     """Проверяем, что драйвер жив и у него есть открытые окна"""
+    #     if self.driver is None:
+    #         return False
+    #     try:
+    #         return len(self.driver.window_handles) > 0
+    #     except WebDriverException:
+    #         return False
+
     def is_alive(self) -> bool:
-        """Проверяем, что драйвер жив и у него есть открытые окна"""
-        if self.driver is None:
+        d = getattr(self, "driver", None)
+        if not d:
             return False
         try:
-            return len(self.driver.window_handles) > 0
-        except WebDriverException:
+            _ = d.current_url
+            _ = d.window_handles
+            return True
+        except (InvalidSessionIdException, WebDriverException):
             return False
 
     def start_browser(self, rect=None):

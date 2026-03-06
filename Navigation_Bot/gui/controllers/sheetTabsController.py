@@ -1,7 +1,11 @@
+# Navigation_Bot\gui\controllers\sheetTabsController.py
 from __future__ import annotations
 
-from PyQt6.QtWidgets import QPushButton, QToolButton, QMenu
 from PyQt6.QtGui import QAction
+from PyQt6.QtWidgets import QPushButton, QToolButton, QMenu, QTableWidget
+
+from LogistX.gui.logistxPage import LogistXPage
+from Navigation_Bot.gui.main_window.PinCodesPage import PinCodesPage
 
 
 class SheetTabsController:
@@ -179,7 +183,7 @@ class SheetTabsController:
             # создать страницу при первом открытии
             if key not in gui._local_pages_by_key:
                 if key == "local:pincodes":
-                    from Navigation_Bot.gui.main_window.PinCodesPage import PinCodesPage
+
                     page = PinCodesPage(
                         xlsx_path=gui.pincodes_xlsx_path,
                         json_path=gui.pincodes_json_path,
@@ -189,13 +193,42 @@ class SheetTabsController:
                     gui.stack.addWidget(page)
                     gui._local_pages_by_key[key] = page
 
+                elif key == "local:logistx":
+
+                    page = LogistXPage(log_func=gui.log, parent=gui.stack)
+                    # page.fact_clicked.connect(lambda row: gui.processor.fetch_fact_logistx(page, row))
+                    page.fact_clicked.connect(lambda row: gui.processor.fetch_fact_logistx_and_fill_1c(page, row))
+                    gui.stack.addWidget(page)
+                    gui._local_pages_by_key[key] = page
             page = gui._local_pages_by_key.get(key)
+
             if page:
                 gui.stack.setCurrentWidget(page)
+                # ✅ если у страницы нет table или это не QTableWidget — просто отключаем привязку поиска
+                tbl = getattr(page, "table", None)
+                if isinstance(tbl, QTableWidget):
+                    gui.search_bar.set_table(tbl)
+                    # LogistX ищем по 1..4
+                    if key == "local:logistx":
+                        gui.search_bar.set_cols([1, 2, 3, 4])
+                    else:
+                        # на других таблицах — по всем колонкам
+                        gui.search_bar.set_cols(None)
+                else:
+                    # Важно: чтобы поиск не пытался подсвечивать в "старой" таблице
+                    gui.search_bar.set_table(gui.table)  # или None, но тогда нужен guard везде
+                    gui.search_bar.set_cols([2, 3, 4, 5])  # дефолт для Google
+                    gui.search_bar.hide()  # и спрятать, чтобы не мешал
             return
 
         # Google вкладка
         gui.stack.setCurrentWidget(gui.page_gsheet)
+        # вернуть таблицу Google
+        gui.search_bar.table = gui.table
+        # колонки Google: обычно ТС/КА/Погрузка/Выгрузка = 2..5
+        gui.search_bar.cols_to_check = [2, 3, 4, 5]
+        if getattr(gui.search_bar, "table", None):
+            gui.search_bar._rebuild_hits()
 
         ws_index = tab.get("ws_index", 0)
         gui.gsheet.set_active_worksheet(ws_index)

@@ -5,6 +5,8 @@ class SignalsBinder:
     def __init__(self, gui):
         self.gui = gui
 
+
+
     def bind(self):
         g = self.gui
 
@@ -16,6 +18,7 @@ class SignalsBinder:
         g.btn_settings.clicked.connect(lambda: g.settings_ui.exec())
         g.btn_process_all.clicked.connect(g.processor.process_all)
         g.btn_refresh_table.clicked.connect(g.reload_and_show)
+        g.btn_wialon.clicked.connect(g._open_wialon)
         g.btn_load_google.clicked.connect(g._load_from_google)
 
         # лог

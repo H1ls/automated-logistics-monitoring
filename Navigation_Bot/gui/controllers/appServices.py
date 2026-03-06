@@ -1,15 +1,15 @@
 from __future__ import annotations
 
-from Navigation_Bot.core.SettingsController import SettingsController
+from Navigation_Bot.bots.googleSheetsManager import GoogleSheetsManager
+from Navigation_Bot.core.settings.SettingsController import SettingsController
 from Navigation_Bot.core.dataContext import DataContext
+from Navigation_Bot.core.hotkeyManager import HotkeyManager
 from Navigation_Bot.core.navigationProcessor import NavigationProcessor
-from Navigation_Bot.gui.dialogs.combinedSettingsDialog import CombinedSettingsDialog
 from Navigation_Bot.gui.controllers.tableContextMenuController import TableContextMenuController
+from Navigation_Bot.gui.dialogs.combinedSettingsDialog import CombinedSettingsDialog
 from Navigation_Bot.gui.widgets.rowHighlighter import RowHighlighter
 from Navigation_Bot.gui.widgets.tableManager import TableManager
 from Navigation_Bot.gui.widgets.tableSortController import TableSortController
-from Navigation_Bot.bots.googleSheetsManager import GoogleSheetsManager
-from Navigation_Bot.core.hotkeyManager import HotkeyManager
 
 
 class AppServices:
@@ -19,48 +19,6 @@ class AppServices:
 
     def __init__(self, gui):
         self.gui = gui
-
-    def shutdown(self):
-        g = self.gui
-
-        # 1) сохранить настройки окна
-        try:
-            g.ui_settings.save_window(g)
-        except Exception as e:
-            g.log(f"⚠️ Не удалось сохранить настройки окна: {e}")
-
-        # 2) остановить hotkeys
-        try:
-            if getattr(g, "hotkeys", None):
-                g.hotkeys.stop()
-        except Exception as e:
-            g.log(f"⚠️ Не удалось остановить hotkeys: {e}")
-
-        # 3) остановить executor
-        try:
-            if getattr(g, "executor", None):
-                g.executor.shutdown(wait=False, cancel_futures=True)
-        except Exception as e:
-            g.log(f"⚠️ Не удалось остановить executor: {e}")
-
-        # 4) закрыть Selenium
-        try:
-            wdm = getattr(g, "driver_manager", None)
-
-            if not wdm:
-                proc = getattr(g, "processor", None)
-                wdm = getattr(proc, "driver_manager", None) if proc else None
-
-            if wdm and hasattr(wdm, "stop_browser"):
-                wdm.stop_browser()
-            elif wdm and getattr(wdm, "driver", None):
-                try:
-                    wdm.driver.quit()
-                except Exception:
-                    pass
-                wdm.driver = None
-        except Exception as e:
-            g.log(f"⚠️ Не удалось закрыть браузер: {e}")
 
     def build(self):
         g = self.gui
@@ -110,8 +68,7 @@ class AppServices:
             executor=g.executor,
             highlight_callback=g.row_highlighter.highlight_for,
             browser_rect=getattr(g, "browser_rect", None),
-            ui_bridge=g.ui_bridge,)
-
+            ui_bridge=g.ui_bridge, )
 
         g.sort_controller = TableSortController(data_context=g.data_context, log=g.log)
         g.hotkeys = HotkeyManager(log_func=g.log)
@@ -128,3 +85,45 @@ class AppServices:
             g.row_highlighter.highlight_expired_unloads()
 
         g.table_manager.after_display = _after_display
+
+    def shutdown(self):
+        g = self.gui
+
+        # 1) сохранить настройки окна
+        try:
+            g.ui_settings.save_window(g)
+        except Exception as e:
+            g.log(f"⚠️ Не удалось сохранить настройки окна: {e}")
+
+        # 2) остановить hotkeys
+        try:
+            if getattr(g, "hotkeys", None):
+                g.hotkeys.stop()
+        except Exception as e:
+            g.log(f"⚠️ Не удалось остановить hotkeys: {e}")
+
+        # 3) остановить executor
+        try:
+            if getattr(g, "executor", None):
+                g.executor.shutdown(wait=False, cancel_futures=True)
+        except Exception as e:
+            g.log(f"⚠️ Не удалось остановить executor: {e}")
+
+        # 4) закрыть Selenium
+        try:
+            wdm = getattr(g, "driver_manager", None)
+
+            if not wdm:
+                proc = getattr(g, "processor", None)
+                wdm = getattr(proc, "driver_manager", None) if proc else None
+
+            if wdm and hasattr(wdm, "stop_browser"):
+                wdm.stop_browser()
+            elif wdm and getattr(wdm, "driver", None):
+                try:
+                    wdm.driver.quit()
+                except Exception:
+                    pass
+                wdm.driver = None
+        except Exception as e:
+            g.log(f"⚠️ Не удалось закрыть браузер: {e}")

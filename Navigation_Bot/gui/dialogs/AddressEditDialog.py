@@ -1,11 +1,16 @@
+import json
+import re
+from datetime import datetime, timedelta
+from pathlib import Path
+
 from PyQt6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel, QSpinBox,
     QLineEdit, QPushButton, QScrollArea, QWidget, QTextEdit
 )
-from datetime import datetime, timedelta
 
 from Navigation_Bot.core.datasetArchive import DatasetArchive
 from Navigation_Bot.core.processedFlags import StatusEditorWidget, init_processed_flags
+from Navigation_Bot.gui.dialogs.sitesDbEditorDialog import SitesDbEditorDialog
 
 
 class AddressEditDialog(QDialog):
@@ -22,7 +27,7 @@ class AddressEditDialog(QDialog):
         self.disable_save = disable_save
         self.data_context = data_context
         self.log = log_func or print
-
+        self.sites_db = self._load_sites_db()
         self.entries = []  # список кортежей (container, address_edit, arr_date_edit, arr_time_edit)
 
         #  ключ для raw_*
@@ -113,7 +118,66 @@ class AddressEditDialog(QDialog):
         btns.addWidget(self.btn_save)
         self.layout.addLayout(btns)
 
+    def open_sites_editor(self, prefill_address: str = "") -> None:
+        dlg = SitesDbEditorDialog(parent=self, prefill_address=prefill_address, log_func=self.log)
+        dlg.exec()
+        self.sites_db = self._load_sites_db()
+
     # Helpers
+    def _load_sites_db(self) -> list[dict]:
+        path = Path("LogistX/config") / "sites_db.json"
+        try:
+            if not path.exists():
+                return []
+            data = json.loads(path.read_text(encoding="utf-8") or "[]")
+            return data if isinstance(data, list) else []
+        except Exception as e:
+            self.log(f"❌ Ошибка чтения sites_db.json: {e}")
+            return []
+
+    def _norm(self, s: str) -> str:
+        s = (s or "").lower().replace("ё", "е")
+        s = re.sub(r"[^\w\s]", " ", s)  # убрать пунктуацию
+        s = re.sub(r"\s+", " ", s).strip()
+        return s
+
+    def _resolve_site_by_aliases(self, address: str) -> dict | None:
+        """
+        Возвращает лучший match:
+        {"site_id": "...", "geofence": "...", "score": int}
+        либо None
+        """
+        addr_n = self._norm(address)
+        if not addr_n or not self.sites_db:
+            return None
+
+        best = None
+        best_score = 0
+
+        for obj in self.sites_db:
+            aliases = obj.get("aliases") or []
+            if not isinstance(aliases, list):
+                continue
+
+            score = 0
+            for a in aliases:
+                a_n = self._norm(str(a))
+                if a_n and a_n in addr_n:
+                    score += 1
+
+            if score > best_score:
+                best_score = score
+                best = obj
+
+        if best and best_score > 0:
+            return {
+                "site_id": str(best.get("site_id", "") or ""),
+                "geofence": str(best.get("geofence", "") or ""),
+                "score": best_score
+            }
+
+        return None
+
     @staticmethod
     def _normalize_date(line_edit: QLineEdit) -> None:
         """Если введён только день - подставляем текущий месяц и год."""
@@ -193,9 +257,11 @@ class AddressEditDialog(QDialog):
         top_row = QHBoxLayout()
         top_row.setSpacing(6)
 
-        # Лейбл "Погрузка" / "Выгрузка" слева
         prefix_label = QLabel(self.prefix)
+        tags_label = QLabel("")
+        tags_label.setStyleSheet("color: #666;")  # можно убрать/изменить
 
+        # Лейбл "Погрузка" / "Выгрузка" слева
         dep_date = QLineEdit()
         dep_date.setInputMask("00.00.0000")
         dep_date.setPlaceholderText("дд.мм.гггг")
@@ -213,8 +279,19 @@ class AddressEditDialog(QDialog):
         btn_calc = QPushButton("🧮")
         btn_calc.setFixedWidth(30)
 
+        btn_geo = QPushButton("🏷")
+        btn_geo.setFixedWidth(30)
+        btn_geo.setToolTip("Редактор геозон/складов")
+        btn_geo.clicked.connect(lambda: self.open_sites_editor(
+            prefill_address=address_input.toPlainText().strip() if 'address_input' in locals() else address.strip()
+        ))
+        # ред.гео
+        top_row.addWidget(btn_geo)
+
         # слева текст "Погрузка"
         top_row.addWidget(prefix_label)
+        top_row.addWidget(tags_label)  # <-- теги сразу рядом
+
         top_row.addStretch()  # растяжка, чтобы увести дату/время вправо
         top_row.addWidget(QLabel("Дата выезда:"))
         top_row.addWidget(dep_date)
@@ -228,6 +305,28 @@ class AddressEditDialog(QDialog):
         bottom_row.setSpacing(6)
 
         address_input = QTextEdit(address)
+
+        def _update_tags_from_address():
+            addr = address_input.toPlainText().strip()
+            hit = self._resolve_site_by_aliases(addr)
+
+            if hit and hit["geofence"]:
+                container._site_id = hit["site_id"]
+                container._geo_tags = [hit["geofence"]]
+                tags_label.setText(f"  🏷 {hit['geofence']}")
+                tags_label.show()
+            else:
+                container._site_id = ""
+                container._geo_tags = []
+                tags_label.setText("")
+                tags_label.hide()
+
+        tags_label.hide()
+        # первичное заполнение (если address уже пришёл)
+        _update_tags_from_address()
+
+        # обновление на каждое изменение текста
+        address_input.textChanged.connect(_update_tags_from_address)
         address_input.setPlaceholderText("Адрес")
         address_input.setFixedHeight(24)
 
@@ -261,6 +360,7 @@ class AddressEditDialog(QDialog):
 
         # сборка блока точки
         wrapper.addLayout(top_row)
+
         wrapper.addLayout(bottom_row)
         wrapper.addStretch(1)
 

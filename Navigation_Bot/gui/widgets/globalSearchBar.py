@@ -1,7 +1,10 @@
 from PyQt6.QtCore import Qt
-from PyQt6.QtWidgets import (QWidget, QHBoxLayout, QPushButton, QLabel, QAbstractItemView, QLineEdit)
 from PyQt6.QtGui import QColor
-
+from PyQt6.QtWidgets import (QWidget, QHBoxLayout, QPushButton, QLabel, QAbstractItemView, QLineEdit)
+try:
+    from PyQt6 import sip
+except Exception:
+    import sip  # fallback (на всякий)
 
 class GlobalSearchBar(QWidget):
     """Плавающая строка поиска по таблице."""
@@ -45,6 +48,13 @@ class GlobalSearchBar(QWidget):
         self.btn_prev.clicked.connect(lambda: self._step(-1))
         self.btn_close.clicked.connect(self._close_bar)
 
+    def set_table(self, table):
+        # если была подсветка в старой таблице — снимаем
+        self._clear_highlight()
+        self.table = table
+        # пересоберём попадания под новую таблицу
+        self._rebuild_hits()
+
     def _close_bar(self):
         """Закрыть строку поиска и убрать подсветку"""
         self._clear_highlight()
@@ -53,6 +63,10 @@ class GlobalSearchBar(QWidget):
     def _clear_highlight(self):
         """Снять подсветку с текущей ячейки"""
         if not self._highlight_pos:
+            return
+        if not getattr(self, "table", None) or sip.isdeleted(self.table):
+            self._highlight_pos = None
+            self._highlight_prev_brush = None
             return
 
         row, col = self._highlight_pos
@@ -74,32 +88,55 @@ class GlobalSearchBar(QWidget):
         self.edit.selectAll()
         self._rebuild_hits()
 
+    def set_cols(self, cols: list[int] | None):
+        """Задать колонки, по которым ищем. None/[] => искать по всем."""
+        if cols:
+            self.cols_to_check = list(cols)
+        else:
+            self.cols_to_check = None
+        self._rebuild_hits()
+
     #  внутренняя логика поиска
+    from PyQt6 import sip
+
     def _rebuild_hits(self):
-        term = self.edit.text().strip().lower()
-        self._hits = []
-        self._idx = -1
+        try:
+            # ✅ защита: table может быть None или sip-deleted
+            if not getattr(self, "table", None) or sip.isdeleted(self.table):
+                self._hits = []
+                self._idx = -1
+                self.counter.setText("0 из 0")
+                return
 
-        if not term:
-            self._clear_highlight()
-            self.counter.setText("0 из 0")
-            return
+            term = self.edit.text().strip().lower()
+            self._hits = []
+            self._idx = -1
 
-        rows = self.table.rowCount()
-        cols_to_check = [2, 3, 4, 5]  # ТС, КА, Погрузка, Выгрузка
+            if not term:
+                self._clear_highlight()
+                self.counter.setText("0 из 0")
+                return
 
-        for r in range(rows):
-            for c in cols_to_check:
-                item = self.table.item(r, c)
-                if item and term in item.text().lower():
-                    self._hits.append((r, c))
-                    break
+            rows = self.table.rowCount()
 
-        if self._hits:
-            self._idx = 0
-            self._select_current()
+            # ✅ локальная переменная, не self.*
+            cols_to_check = getattr(self, "cols_to_check", None) or list(range(self.table.columnCount()))
+            
+            for r in range(rows):
+                for c in cols_to_check:
+                    item = self.table.item(r, c)
+                    if item and term in item.text().lower():
+                        self._hits.append((r, c))
+                        break
 
-        self._update_counter()
+            if self._hits:
+                self._idx = 0
+                self._select_current()
+
+            self._update_counter()
+
+        except Exception as e:
+            self.log(f"Упадал GlobalSearchBar._rebuild_hits {e}")
 
     def _update_counter(self):
         if not self._hits:

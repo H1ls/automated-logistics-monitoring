@@ -4,7 +4,7 @@ from pathlib import Path
 from threading import Lock
 
 from PyQt6.QtCore import QTimer
-from PyQt6.QtWidgets import (QWidget,QApplication)
+from PyQt6.QtWidgets import (QWidget)
 
 from Navigation_Bot.core.paths import INPUT_FILEPATH
 from Navigation_Bot.core.paths import PIN_XLSX_FILEPATH, PIN_JSON_FILEPATH
@@ -52,6 +52,25 @@ class NavigationGUI(QWidget):
         self.init_managers()
         SignalsBinder(self).bind()
 
+    def _open_wialon(self):
+        self.show_loading("Запуск Wialon…")
+
+        def job():
+            try:
+                self.processor.ensure_driver_and_bots()
+                # ЛОГ будет через UiBridge внутри processor (после шага 1)
+            except Exception as e:
+                # тоже через мост
+                if getattr(self, "ui_bridge", None):
+                    self.ui_bridge.log.emit(f"❌ Ошибка запуска Wialon: {e}")
+                else:
+                    self.log(f"❌ Ошибка запуска Wialon: {e}")
+            finally:
+
+                QTimer.singleShot(0, self.hide_loading)
+
+        self.executor.submit(job)
+
     def closeEvent(self, event):
         try:
             if getattr(self, "services", None):
@@ -80,57 +99,17 @@ class NavigationGUI(QWidget):
             self.loading_overlay.show()
             self.loading_overlay.raise_()
 
-
     def hide_loading(self):
         if getattr(self, "loading_overlay", None):
             self.loading_overlay.hide()
 
     # _____END
-    def closeEvent(self, event):
-        # 1) сохраняем геометрию/настройки
-        try:
-            self.ui_settings.save_window(self)
-        except Exception as e:
-            self.log(f"⚠️ Не удалось сохранить настройки окна: {e}")
-
-        # 2) останавливаем хоткеи (если включены)
-        try:
-            if getattr(self, "hotkeys", None):
-                self.hotkeys.stop()
-        except Exception as e:
-            self.log(f"⚠️ Не удалось остановить hotkeys: {e}")
-
-        # 3) останавливаем фоновые задачи
-        try:
-            if getattr(self, "executor", None):
-                self.executor.shutdown(wait=False, cancel_futures=True)
-        except Exception as e:
-            self.log(f"⚠️ Не удалось остановить executor: {e}")
-
-        # 4) закрываем Selenium (driver)
-        try:
-            wdm = getattr(self, "driver_manager", None)
-
-            if not wdm:
-                proc = getattr(self, "processor", None)
-                wdm = getattr(proc, "driver_manager", None) if proc else None
-
-            if wdm and hasattr(wdm, "stop_browser"):
-                wdm.stop_browser()
-            elif wdm and getattr(wdm, "driver", None):
-                # если stop_browser ещё не добавлен
-                try:
-                    wdm.driver.quit()
-                except Exception:
-                    pass
-                wdm.driver = None
-        except Exception as e:
-            self.log(f"⚠️ Не удалось закрыть браузер: {e}")
-
-        super().closeEvent(event)
 
     def local_page(self):
-        self.local_tabs = [{"kind": "local", "key": "local:pincodes", "title": "Пин коды"}, ]
+        self.local_tabs = [
+            {"kind": "local", "key": "local:pincodes", "title": "Пин коды"},
+            {"kind": "local", "key": "local:logistx", "title": "LogistX"},
+        ]
         self._local_pages_by_key = {}
 
         self.pincodes_xlsx_path = PIN_XLSX_FILEPATH
@@ -206,8 +185,8 @@ class NavigationGUI(QWidget):
 
         view_order = self.sort_controller.build_view_order()
         self.table_manager.display(view_order=view_order)
-        self.row_highlighter.set_view_order(view_order)  # если ты оставляешь real_to_visual
-        self.row_highlighter.highlight_expired_unloads()  # ← вызов красной подсветки
+        self.row_highlighter.set_view_order(view_order)  #   real_to_visual
+        self.row_highlighter.highlight_expired_unloads()  #  вызов красной подсветки
 
     def _on_header_clicked(self, logicalIndex: int):
         if logicalIndex == 0:  # 🔍 — открыть справочник ID
