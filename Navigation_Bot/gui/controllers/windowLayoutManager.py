@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 from PyQt6.QtGui import QGuiApplication
 
 
@@ -28,16 +29,12 @@ class WindowLayoutManager:
         half_h = geom.height() // 2
         off = self.titlebar_offset
 
-        widget.setGeometry(
-            geom.x(),
-            geom.y() + off,
-            geom.width(),
-            half_h - off
-        )
+        widget.setGeometry(geom.x(),
+                           geom.y() + off,
+                           geom.width(),
+                           half_h - off)
 
-        return {
-            "x": geom.x(),
-            "y": geom.y() + half_h,
-            "width": geom.width(),
-            "height": geom.height() - half_h,
-        }
+        return {"x": geom.x(),
+                "y": geom.y() + half_h,
+                "width": geom.width(),
+                "height": geom.height() - half_h,}

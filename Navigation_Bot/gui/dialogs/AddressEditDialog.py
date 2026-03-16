@@ -64,11 +64,9 @@ class AddressEditDialog(QDialog):
         proc = self.row_data.get("processed", []) or []
         proc = (proc + [False] * len(points))[:len(points)]
 
-        self.status_editor = StatusEditorWidget(
-            processed=proc,
-            loads=loads,
-            distance=row_data.get("distance", float("inf"))
-        )
+        self.status_editor = StatusEditorWidget(processed=proc,
+                                                loads=loads,
+                                                distance=row_data.get("distance", float("inf")))
 
         # --- raw_* строка ---
         raw_value = (self.row_data.get(self.raw_key) or "").strip()
@@ -236,10 +234,9 @@ class AddressEditDialog(QDialog):
                 arr_date.setText(arrival_dt.strftime("%d.%m.%Y"))
                 arr_time.setText(arrival_dt.strftime("%H:%M"))
 
-                container._meta = {
-                    "Время отправки": full_dt.strftime("%d.%m.%Y %H:%M"),
-                    "Транзит": f"{transit.value()} ч",
-                }
+                container._meta = {"Время отправки": full_dt.strftime("%d.%m.%Y %H:%M"),
+                                   "Транзит": f"{transit.value()} ч", }
+
             except Exception as e:
                 print(f"[DEBUG] ❌ Ошибка расчёта: {e}")
 
@@ -283,8 +280,8 @@ class AddressEditDialog(QDialog):
         btn_geo.setFixedWidth(30)
         btn_geo.setToolTip("Редактор геозон/складов")
         btn_geo.clicked.connect(lambda: self.open_sites_editor(
-            prefill_address=address_input.toPlainText().strip() if 'address_input' in locals() else address.strip()
-        ))
+            prefill_address=address_input.toPlainText().strip() if 'address_input' in locals() else address.strip()))
+
         # ред.гео
         top_row.addWidget(btn_geo)
 
@@ -414,11 +411,10 @@ class AddressEditDialog(QDialog):
             time = time_input.text().strip()
             if not address:
                 continue
-            row = {
-                f"{self.prefix} {idx}": address,
-                f"Дата {idx}": date or "Не указано",
-                f"Время {idx}": time or "Не указано"
-            }
+            row = {f"{self.prefix} {idx}": address,
+                   f"Дата {idx}": date or "Не указано",
+                   f"Время {idx}": time or "Не указано"
+                   }
             result.append(row)
 
             if hasattr(container, "_meta"):
@@ -440,10 +436,9 @@ class AddressEditDialog(QDialog):
         Архивируем :{"input": "<raw>",
                      "output": [{"Адрес":".", "Дата":".", "Время":"."}, ...]}"""
         try:
-            raw_input = (
-                self.raw_edit.toPlainText().strip()
-                if hasattr(self, "raw_edit")
-                else (self.row_data.get(self.raw_key, "") or "").strip())
+            raw_input = (self.raw_edit.toPlainText().strip()
+                         if hasattr(self, "raw_edit")
+                         else (self.row_data.get(self.raw_key, "") or "").strip())
 
             output = []
             for idx, (container, address_input, date_input, time_input) in enumerate(self.entries, 1):
@@ -452,11 +447,10 @@ class AddressEditDialog(QDialog):
                 time = (time_input.text() if hasattr(time_input, "text") else "").strip()
                 if not addr:
                     continue
-                output.append({
-                    "Адрес": addr,
-                    "Дата": date,
-                    "Время": time,
-                })
+                output.append({"Адрес": addr,
+                               "Дата": date,
+                               "Время": time,
+                               })
             comment_val = (self.comment_edit.toPlainText() if hasattr(self, "comment_edit") else "").strip()
             if comment_val:
                 if output:
@@ -469,10 +463,9 @@ class AddressEditDialog(QDialog):
                     # точек нет — коммент отдельной записью
                     output.append({"Адрес": "", "Дата": "", "Время": "", "Комментарий": comment_val})
 
-            sample = {
-                "input": raw_input,
-                "output": output
-            }
+            sample = {"input": raw_input,
+                      "output": output
+                      }
 
             self.log(f"📦 В архив добавлено: {raw_input[:60]}...")
             DatasetArchive(log_func=self.log).append(sample)

@@ -38,11 +38,9 @@ class LogistXPage(QWidget):
         lay.addLayout(top)
 
         self.table = QTableWidget(0, 8)
-        self.table.setHorizontalHeaderLabels([
-            "▶", "ТС", "Рейс", "Отправление",
-            "Назначение", "План",
-            "Факт Wialon", "Статус"
-        ])
+        self.table.setHorizontalHeaderLabels(["▶", "ТС", "Рейс", "Отправление",
+                                              "Назначение", "План",
+                                              "Факт Wialon", "Статус"])
         self.table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         header = self.table.horizontalHeader()
         header.setSectionResizeMode(header.ResizeMode.Fixed)
@@ -123,9 +121,10 @@ class LogistXPage(QWidget):
     def load_sample(self):
         try:
             p = self.sample_path.resolve()
-            self.log(f"📄 LogistX читаю JSON: {p}")
+            # self.log(f"📄 LogistX читаю JSON: {p}")
             if p.exists():
-                self.log(f"   mtime={p.stat().st_mtime} size={p.stat().st_size}")
+                pass
+                # self.log(f"   mtime={p.stat().st_mtime} size={p.stat().st_size}")
             if not self.sample_path.exists():
                 self.log(f"❌ Нет файла: {self.sample_path}")
                 return
@@ -152,16 +151,14 @@ class LogistXPage(QWidget):
                 btn.clicked.connect(lambda _, row=r: self.fact_clicked.emit(row))
                 self.table.setCellWidget(r, self.COL_PLAY, btn)
 
-                addr_from = (
-                        obj.get("Рейс.Пункт отправления")
-                        or obj.get("Пункт отправления")
-                        or obj.get("Отправление")
-                        or "")
-                addr_to = (
-                        obj.get("Рейс.Пункт назначения")
-                        or obj.get("Пункт назначения")
-                        or obj.get("Назначение")
-                        or "")
+                addr_from = (obj.get("Рейс.Пункт отправления")
+                             or obj.get("Пункт отправления")
+                             or obj.get("Отправление")
+                             or "")
+                addr_to = (obj.get("Рейс.Пункт назначения")
+                           or obj.get("Пункт назначения")
+                           or obj.get("Назначение")
+                           or "")
 
                 addr_from = str(addr_from)
                 addr_to = str(addr_to)
@@ -172,14 +169,13 @@ class LogistXPage(QWidget):
                 from_cell = self._format_tag_address(gf_from, addr_from)
                 to_cell = self._format_tag_address(gf_to, addr_to)
 
-                values = [
-                    obj.get("ТС", ""),
-                    obj.get("Рейс", ""),
-                    from_cell,
-                    to_cell,
-                    obj.get("Плановая дата освобождения разгрузка", ""),
-                    "",
-                    ""]
+                values = [obj.get("ТС", ""),
+                          obj.get("Рейс", ""),
+                          from_cell,
+                          to_cell,
+                          obj.get("Плановая дата освобождения разгрузка", ""),
+                          "",
+                          ""]
 
                 for i, v in enumerate(values):
                     self.table.setItem(r, i + 1, QTableWidgetItem(str(v)))
@@ -204,7 +200,6 @@ class LogistXPage(QWidget):
             return []
 
     # Helpers
-
     def _highlight_missing_tags(self):
         pale_red = QColor(255, 220, 220)  # бледно-красный
         transparent = QColor(0, 0, 0, 0)
@@ -271,7 +266,6 @@ class LogistXPage(QWidget):
         return best if best_score > 0 else ""
 
     # --- 1C (RDP) import ---
-
     def import_from_1c_rdp(self):
         importer = OneCReportImporter(log_func=self.log)
         count = importer.run()

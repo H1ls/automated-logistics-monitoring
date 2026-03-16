@@ -1,15 +1,14 @@
+import json
+
+from PyQt6.QtCore import pyqtSignal, QRect, Qt
+from PyQt6.QtGui import QPainter
 from PyQt6.QtWidgets import (QDialog, QTabWidget, QWidget, QVBoxLayout, QFormLayout, QStyledItemDelegate,
                              QLineEdit, QSpinBox, QCheckBox, QPushButton, QHBoxLayout, QMessageBox,
                              QStyle, QStyleOptionViewItem, QApplication)
 
-from PyQt6.QtCore import pyqtSignal, QRect, Qt
-from PyQt6.QtGui import QPainter
-
-import json
-
-from Navigation_Bot.core.settings.settings_schema import SECTIONS
 from Navigation_Bot.core.jSONManager import JSONManager as JM
 from Navigation_Bot.core.paths import CONFIG_JSON
+from Navigation_Bot.core.settings.settings_schema import SECTIONS
 
 
 class CombinedSettingsDialog(QDialog):
@@ -69,12 +68,11 @@ class CombinedSettingsDialog(QDialog):
             QMessageBox.warning(self, "Ошибка", "Родительское окно не найдено.")
             return
 
-        reply = QMessageBox.question(
-            self,
-            "Подтверждение очистки",
-            "Вы действительно хотите очистить все данные из JSON?\nЭто действие необратимо.",
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
-        )
+        reply = QMessageBox.question(self,
+                                     "Подтверждение очистки",
+                                     "Вы действительно хотите очистить все данные из JSON?\nЭто действие необратимо.",
+                                     QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+                                     )
 
         if reply != QMessageBox.StandardButton.Yes:
             return
@@ -232,11 +230,7 @@ class VerticalTextDelegate(QStyledItemDelegate):
         painter.translate(rect.x(), rect.y() + rect.height())
         painter.rotate(-90)
 
-        painter.drawText(
-            QRect(0, 0, rect.height(), rect.width()),
-            Qt.AlignmentFlag.AlignCenter,
-            text
-        )
+        painter.drawText(QRect(0, 0, rect.height(), rect.width()), Qt.AlignmentFlag.AlignCenter, text)
 
         painter.restore()
 

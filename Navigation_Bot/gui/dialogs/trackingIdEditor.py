@@ -1,7 +1,7 @@
 from PyQt6.QtWidgets import QDialog, QLabel, QLineEdit, QPushButton, QVBoxLayout
 
-from Navigation_Bot.core.paths import ID_FILEPATH
 from Navigation_Bot.core.jSONManager import JSONManager
+from Navigation_Bot.core.paths import ID_FILEPATH
 
 """TODO 1.Логика self.car_data["id"] = int(new_id) 
         2.Проверка дубликатов
@@ -44,12 +44,11 @@ class TrackingIdEditor(QDialog):
             self.log("⚠️ Введите корректные данные.")
             return
 
-        new_entry = {
-            "ИДОбъекта в центре мониторинга": int(new_id),
-            "Центр мониторинга": "Виалон",
-            "ТС": ts,
-            "Наименование": ts.replace(" ", "")
-        }
+        new_entry = {"ИДОбъекта в центре мониторинга": int(new_id),
+                     "Центр мониторинга": "Виалон",
+                     "ТС": ts,
+                     "Наименование": ts.replace(" ", "")
+                     }
 
         try:
             data = self.json_manager.load_json()

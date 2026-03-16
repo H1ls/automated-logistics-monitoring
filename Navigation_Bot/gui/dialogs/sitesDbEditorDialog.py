@@ -3,7 +3,7 @@ from pathlib import Path
 
 from PyQt6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QPushButton, QTableWidget, QTableWidgetItem,
                              QMessageBox)
-from PyQt6.QtWidgets import QHeaderView, QAbstractItemView
+from PyQt6.QtWidgets import QHeaderView
 
 from Navigation_Bot.gui.dialogs.aliasesEditorDialog import AliasesEditorDialog
 
@@ -76,11 +76,11 @@ class SitesDbEditorDialog(QDialog):
         return s
 
     def _sort_key(self, obj: dict):
-        return (
-            self._norm(obj.get("address", "")),
-            self._norm(obj.get("geofence", "")),
-            self._norm(obj.get("site_id", "")),
-        )
+        return (self._norm(obj.get("address", "")),
+                self._norm(obj.get("geofence", "")),
+                self._norm(obj.get("site_id", "")),
+                )
+
     def edit_aliases(self, row: int):
         cur = self._aliases_by_row.get(row, [])
         dlg = AliasesEditorDialog(self, cur)
@@ -191,13 +191,12 @@ class SitesDbEditorDialog(QDialog):
                 if not any([address, site_id, geofence, typ, aliases]):
                     continue
 
-                data.append({
-                    "address": address,
-                    "site_id": site_id,
-                    "geofence": geofence,
-                    "type": typ,
-                    "aliases": aliases
-                })
+                data.append({"address": address,
+                             "site_id": site_id,
+                             "geofence": geofence,
+                             "type": typ,
+                             "aliases": aliases
+                             })
             data.sort(key=self._sort_key)
             SITES_DB_PATH.parent.mkdir(parents=True, exist_ok=True)
             SITES_DB_PATH.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")

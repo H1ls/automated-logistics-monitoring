@@ -184,19 +184,16 @@ class SheetTabsController:
             if key not in gui._local_pages_by_key:
                 if key == "local:pincodes":
 
-                    page = PinCodesPage(
-                        xlsx_path=gui.pincodes_xlsx_path,
-                        json_path=gui.pincodes_json_path,
-                        log_func=gui.log,
-                        parent=gui.stack,
-                    )
+                    page = PinCodesPage(xlsx_path=gui.pincodes_xlsx_path,
+                                        json_path=gui.pincodes_json_path,
+                                        log_func=gui.log,
+                                        parent=gui.stack,)
                     gui.stack.addWidget(page)
                     gui._local_pages_by_key[key] = page
 
                 elif key == "local:logistx":
 
                     page = LogistXPage(log_func=gui.log, parent=gui.stack)
-                    # page.fact_clicked.connect(lambda row: gui.processor.fetch_fact_logistx(page, row))
                     page.fact_clicked.connect(lambda row: gui.processor.fetch_fact_logistx_and_fill_1c(page, row))
                     gui.stack.addWidget(page)
                     gui._local_pages_by_key[key] = page

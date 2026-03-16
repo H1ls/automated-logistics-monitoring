@@ -2,17 +2,15 @@
 import threading
 import traceback
 from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime, timedelta
 
 from PyQt6.QtWidgets import QTableWidgetItem
 
-from LogistX.controllers.oneCRaceWriter import OneCRaceWriter
-from LogistX.controllers.twoCRaceWriter import TwoCRaceWriter
+from LogistX.onec.bot import OneCBot
+from LogistX.onec.context import RaceContext
 from Navigation_Bot.bots.mapsBot import MapsBot
 from Navigation_Bot.bots.navigationBot import NavigationBot
 from Navigation_Bot.bots.webDriverManager import WebDriverManager
 from Navigation_Bot.bots.wialonReportsBot import WialonReportsBot
-
 
 
 class NavigationProcessor:
@@ -37,93 +35,6 @@ class NavigationProcessor:
         self.mapsbot = None
         self._is_processing = False
         self.ui_bridge = ui_bridge
-
-    def _geofence_from_cell_text(self, s: str) -> str:
-        s = (s or "").strip()
-        if s.startswith("🏷"):
-            first = s.splitlines()[0]
-            return first.replace("🏷", "").strip()
-        return ""
-
-    def fetch_fact_logistx_and_fill_1c(self, page, row: int):
-        self.ensure_driver_and_bots()
-
-        if not getattr(self, "reportsbot", None):
-            self.reportsbot = WialonReportsBot(self.driver_manager.driver, log_func=self.log)
-
-        if not getattr(self, "rdp_activator", None):
-            # заглушка: считаем что RDP активен
-            self.rdp_activator = lambda: True
-
-        if not getattr(self, "twoC", None):
-            self.twoC = TwoCRaceWriter(self.rdp_activator, log_func=self.log)
-
-        if not getattr(self, "oneC", None):
-            self.oneC = OneCRaceWriter(self.rdp_activator, log_func=self.log)
-
-        def fmt_wialon(dt: datetime) -> str:
-            # формат, который ты уже используешь: "18 Февраль 2026 00:01"
-            months = {
-                1: "Январь", 2: "Февраль", 3: "Март", 4: "Апрель",
-                5: "Май", 6: "Июнь", 7: "Июль", 8: "Август",
-                9: "Сентябрь", 10: "Октябрь", 11: "Ноябрь", 12: "Декабрь",
-            }
-            return f"{dt.day:02d} {months[dt.month]} {dt.year} {dt:%H:%M}"
-
-        def job():
-            obj = page.rows[row]
-            race_no = str(obj.get("Рейс", "") or "").strip()
-            unit = str(obj.get("ТС", "") or "").strip()
-            load_zone = self._geofence_from_cell_text(page.table.item(row, page.COL_FROM).text())
-            unload_zone = self._geofence_from_cell_text(page.table.item(row, page.COL_TO).text())
-            if not race_no:
-                raise ValueError("Пустой 'Рейс' в строке")
-            if not unit:
-                raise ValueError("Пустой 'ТС' в строке")
-
-            # 1) 1C -> fd
-            fd = self.twoC.open_race_and_read_departure_dt(race_no)
-            if not fd:
-                raise RuntimeError(f"1C не вернул дату отправления для рейса: {race_no}")
-
-
-            # 2) fd -> диапазон Wialon (для теста: -2дня .. +7дней)
-            date_from = fmt_wialon(fd - timedelta(days=0))
-            date_to = fmt_wialon(fd + timedelta(days=7))
-            payload = self.reportsbot.run_geo_report_for_trip(
-                unit=unit, date_from=date_from, date_to=date_to, load_zone=load_zone, unload_zone=unload_zone,
-                template="Пересечение гео")
-
-            print("end fd - wialon ", race_no, fd, payload)
-            return race_no, fd, payload
-
-        fut = self.executor.submit(job)
-
-        def apply_result():
-            try:
-                race_no, fd, payload = fut.result()
-
-                txt = (
-                    f"fd: {fd:%d.%m.%Y %H:%M}\n"
-                    f"Погр(въезд): {payload.get('load_in', '')}\n"
-                    f"Погр(выезд): {payload.get('load_out', '')}\n"
-                    f"Выгр(въезд): {payload.get('unload_in', '')}\n"
-                    f"Выгр(выезд): {payload.get('unload_out', '')}"
-                )
-                page.table.setItem(row, page.COL_FACT, QTableWidgetItem(txt))
-                page.table.resizeRowToContents(row)
-
-                # 3) Заполнение 1C временами
-                ok = self.oneC.fill_race(payload)
-                if ok:
-                    self.log(f"✅ 1C заполнено по рейсу: {race_no}")
-                else:
-                    self.log(f"❌ 1C не заполнилось по рейсу: {race_no}")
-
-            except Exception as e:
-                self.log(f"❌ pipeline(1C->Wialon->1C): {e}")
-
-        fut.add_done_callback(lambda _f: self.ui.call.emit(apply_result))
 
     def _merge_row(self, row: int, updated: dict) -> dict:
         """Обновляет строку в data_context, но НЕ сохраняет"""
@@ -214,8 +125,10 @@ class NavigationProcessor:
 
             merged = self._merge_row(row, updated)
 
-            should_maps = bool(merged.get("_новые_координаты")) and bool(merged.get("коор")) and (
-                    "," in str(merged["коор"]))
+            should_maps = (bool(merged.get("_новые_координаты"))
+                           and bool(merged.get("коор"))
+                           and ("," in str(merged["коор"])))
+
             if should_maps:
                 merged = self._process_maps(row, merged)
 
@@ -352,10 +265,8 @@ class NavigationProcessor:
         self.log("▶ Обработка всех ТС...")
 
         data = self.data_context.get() or []
-        rows = [
-            i for i, car in enumerate(data)
-            if isinstance(car, dict) and car.get("id") and car.get("ТС")
-        ]
+        rows = [i for i, car in enumerate(data)
+                if isinstance(car, dict) and car.get("id") and car.get("ТС")]
 
         # Нечего обрабатывать
         if not rows:
@@ -398,3 +309,72 @@ class NavigationProcessor:
             self.ui_bridge.log.emit(msg)
         else:
             self.log(msg)
+
+    def _geofence_from_cell_text(self, s: str) -> str:
+        s = (s or "").strip()
+        if s.startswith("🏷"):
+            first = s.splitlines()[0]
+            return first.replace("🏷", "").strip()
+        return ""
+
+    def fetch_fact_logistx_and_fill_1c(self, page, row: int):
+        self.ensure_driver_and_bots()
+
+        if not getattr(self, "reportsbot", None):
+            self.reportsbot = WialonReportsBot(self.driver_manager.driver, log_func=self.log)
+
+        if not getattr(self, "rdp_activator", None):
+            self.rdp_activator = lambda: True
+
+        if not getattr(self, "onec_bot", None):
+            self.onec_bot = OneCBot(rdp_activator=self.rdp_activator, reportsbot=self.reportsbot, log_func=self.log, )
+
+        def job():
+            obj = page.rows[row]
+
+            race_no = str(obj.get("Рейс", "") or "").strip()
+            unit = str(obj.get("ТС", "") or "").strip()
+            load_zone = self._geofence_from_cell_text(page.table.item(row, page.COL_FROM).text())
+            unload_zone = self._geofence_from_cell_text(page.table.item(row, page.COL_TO).text())
+
+            if not race_no:
+                raise ValueError("Пустой 'Рейс' в строке")
+            if not unit:
+                raise ValueError("Пустой 'ТС' в строке")
+            if not load_zone:
+                raise ValueError("Не определена geofence погрузки")
+            if not unload_zone:
+                raise ValueError("Не определена geofence выгрузки")
+
+            ctx = RaceContext(race_name=race_no, race_search_text=race_no, meta={"row": row,
+                                                                                 "unit": unit,
+                                                                                 "load_zone": load_zone,
+                                                                                 "unload_zone": unload_zone, }, )
+
+            result = self.onec_bot.close_race(ctx)
+            return ctx, result
+
+        fut = self.executor.submit(job)
+
+        def apply_result():
+            try:
+                ctx, result = fut.result()
+                race_no = ctx.race_name
+
+                if result.get("ok"):
+                    txt = (f"Отправление: {ctx.departure_dt or ''}\n"
+                           f"Погр(въезд): {ctx.load_in or ''}\n"
+                           f"Погр(выезд): {ctx.load_out or ''}\n"
+                           f"Выгр(въезд): {ctx.unload_in or ''}\n"
+                           f"Выгр(выезд): {ctx.unload_out or ''}")
+                    page.table.setItem(row, page.COL_FACT, QTableWidgetItem(txt))
+                    page.table.resizeRowToContents(row)
+                    self._uilog(f"✅ {race_no}: {result.get('message')}")
+                else:
+                    self._uilog(f"❌ {race_no}: {result.get('message')}")
+
+            except Exception as e:
+                self._uilog(f"❌ Ошибка fetch_fact_logistx_and_fill_1c: {e}")
+
+        # fut.add_done_callback(lambda _f: self.ui.call.emit(apply_result))
+        fut.add_done_callback(lambda _f: self.ui_bridge.call.emit(apply_result))

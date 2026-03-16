@@ -1,14 +1,15 @@
-import re
 import os
-import gspread
+import re
 from datetime import datetime, date
-from oauth2client.service_account import ServiceAccountCredentials
-from PyQt6.QtCore import QObject, pyqtSignal
 
+import gspread
+from PyQt6.QtCore import QObject, pyqtSignal
+from oauth2client.service_account import ServiceAccountCredentials
+
+from Navigation_Bot.bots.dataCleaner import DataCleaner
 from Navigation_Bot.core.dataContext import DataContext
 from Navigation_Bot.core.jSONManager import JSONManager
 from Navigation_Bot.core.paths import INPUT_FILEPATH, CONFIG_JSON
-from Navigation_Bot.bots.dataCleaner import DataCleaner
 from Navigation_Bot.core.processedFlags import init_processed_flags
 
 
@@ -63,12 +64,9 @@ class GoogleSheetsManager(QObject):
 
             creds = ServiceAccountCredentials.from_json_keyfile_dict(
                 creds_data,
-                scopes=[
-                    "https://spreadsheets.google.com/feeds",
-                    "https://www.googleapis.com/auth/spreadsheets",
-                    "https://www.googleapis.com/auth/drive"
-                ]
-            )
+                scopes=["https://spreadsheets.google.com/feeds",
+                        "https://www.googleapis.com/auth/spreadsheets",
+                        "https://www.googleapis.com/auth/drive"])
             return gspread.authorize(creds)
         except Exception as e:
             self._log(f"❌ Ошибка создания клиента Google: {e}")
@@ -115,9 +113,7 @@ class GoogleSheetsManager(QObject):
             self._log(f"❌ Ошибка подключения к Google Sheets: {e}")
             self.sheet = None
 
-    def _get_account_sheet(self,
-                           title: str = "Account",
-                           sheet_id: str | None = None):
+    def _get_account_sheet(self, title: str = "Account", sheet_id: str | None = None):
         """
         Ищет лист с аккаунтами по названию в отдельной таблице.
         sheet_id:
@@ -433,15 +429,13 @@ class GoogleSheetsManager(QObject):
 
                     active_indexes.add(i)
 
-                    fresh = {
-                        "index": i,
-                        "ТС": formatted_ts,
-                        "Телефон": phone,
-                        "ФИО": fio,
-                        "КА": f,
-                        "Погрузка": load,
-                        "Выгрузка": unload,
-                    }
+                    fresh = {"index": i,
+                             "ТС": formatted_ts,
+                             "Телефон": phone,
+                             "ФИО": fio,
+                             "КА": f,
+                             "Погрузка": load,
+                             "Выгрузка": unload, }
 
                     if i in existing_indexes:
                         if update_existing:
@@ -478,15 +472,13 @@ class GoogleSheetsManager(QObject):
 
                     active_indexes.add(i)
 
-                    fresh = {
-                        "index": i,
-                        "ТС": formatted_ts,
-                        "Телефон": phone,
-                        "ФИО": fio,
-                        "КА": row[5] if len(row) > 5 else "",
-                        "Погрузка": load,
-                        "Выгрузка": unload,
-                    }
+                    fresh = {"index": i,
+                             "ТС": formatted_ts,
+                             "Телефон": phone,
+                             "ФИО": fio,
+                             "КА": row[5] if len(row) > 5 else "",
+                             "Погрузка": load,
+                             "Выгрузка": unload, }
 
                     if i in existing_indexes:
                         old = by_index.get(i)
@@ -523,8 +515,7 @@ class GoogleSheetsManager(QObject):
                 JSONManager().save_in_json(result_data, file_path or self.file_path)
 
             self._log(
-                f"🔄 Обновление: обновлено {updated_count}, добавлено {len(new_entries)}, удалено {deleted_count} строк."
-            )
+                f"🔄 Обновление: обновлено {updated_count}, добавлено {len(new_entries)}, удалено {deleted_count} строк.")
 
         except Exception as e:
             self._log(f"❌ refresh_name error: {e}")
@@ -591,21 +582,17 @@ class GoogleSheetsManager(QObject):
             row_index = entry["index"]
             ts_with_phone = f"{entry.get('ТС', '')} {entry.get('Телефон', '')}".strip()
 
-            load_str = "; ".join(
-                f"{blk.get(f'Время {i + 1}', '')} {blk.get(f'Погрузка {i + 1}', '')}".strip()
-                for i, blk in enumerate(entry.get("Погрузка", []))
-            )
-            unload_str = "; ".join(
-                f"{blk.get(f'Время {i + 1}', '')} {blk.get(f'Выгрузка {i + 1}', '')}".strip()
-                for i, blk in enumerate(entry.get("Выгрузка", [])))
+            load_str = "; ".join(f"{blk.get(f'Время {i + 1}', '')} {blk.get(f'Погрузка {i + 1}', '')}".strip()
+                                 for i, blk in enumerate(entry.get("Погрузка", [])))
 
-            row_data = [
-                ts_with_phone,  # col D (ТС + телефон)
-                entry.get("ФИО", ""),  # col E (ФИО)
-                entry.get("КА", ""),  # col F (КА)
-                load_str,  # col G (Погрузка)
-                unload_str  # col H (Выгрузка)
-            ]
+            unload_str = "; ".join(f"{blk.get(f'Время {i + 1}', '')} {blk.get(f'Выгрузка {i + 1}', '')}".strip()
+                                   for i, blk in enumerate(entry.get("Выгрузка", [])))
+
+            row_data = [ts_with_phone,       # col D (ТС + телефон)
+                        entry.get("ФИО", ""),# col E (ФИО)
+                        entry.get("КА", ""), # col F (КА)
+                        load_str,            # col G (Погрузка)
+                        unload_str]          # col H (Выгрузка)
 
             self.sheet.update(f"D{row_index}:H{row_index}", [row_data])
             self._log(f"📤 Новая запись отправлена в Google Sheets (row={row_index})")

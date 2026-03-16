@@ -1,8 +1,8 @@
+from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLineEdit,
     QTableWidget, QTableWidgetItem, QPushButton
 )
-from PyQt6.QtCore import Qt
 
 from Navigation_Bot.core.dataContext import DataContext
 from Navigation_Bot.core.paths import ID_FILEPATH
@@ -47,12 +47,11 @@ class IDManagerDialog(QDialog):
 
         # Таблица
         self.table = QTableWidget(0, 4)
-        self.table.setHorizontalHeaderLabels([
-            "ИД-Объекта",
-            "Наименование",
-            "ТС",
-            "Центр мониторинга"
-        ])
+        self.table.setHorizontalHeaderLabels(["ИД-Объекта",
+                                              "Наименование",
+                                              "ТС",
+                                              "Центр мониторинга"
+                                              ])
         self.table.horizontalHeader().setStretchLastSection(True)
         vbox.addWidget(self.table)
 
@@ -146,12 +145,11 @@ class IDManagerDialog(QDialog):
         center_text = "Виалон"
 
         # Добавляем в оригинальный список
-        new_entry = {
-            "ИДОбъекта в центре мониторинга": obj_id,
-            "Наименование": name_text,
-            "ТС": ts_text,
-            "Центр мониторинга": center_text,
-        }
+        new_entry = {"ИДОбъекта в центре мониторинга": obj_id,
+                     "Наименование": name_text,
+                     "ТС": ts_text,
+                     "Центр мониторинга": center_text,
+                     }
 
         self.original_entries.append(new_entry)
 

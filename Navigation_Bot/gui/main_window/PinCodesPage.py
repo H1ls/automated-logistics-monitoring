@@ -4,14 +4,13 @@ import json
 import os
 import time
 from dataclasses import dataclass
-from typing import List, Dict, Optional
+from typing import List, Optional
 
 from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtWidgets import (
     QWidget, QGridLayout, QLabel, QLineEdit, QListWidget, QListWidgetItem,
     QFrame, QPushButton, QHBoxLayout, QVBoxLayout
 )
-
 from openpyxl import load_workbook
 
 
@@ -61,9 +60,6 @@ class PinCodesPage(QWidget):
                 self._mtime = float(data.get("meta", {}).get("xlsx_mtime", 0.0) or 0.0)
             except Exception:
                 self.rows = []
-
-        # if not self.rows:
-        #     self._rebuild_from_xlsx(force=True)
 
         # автопоиск
         self.in_ts.textChanged.connect(self._on_ts_changed)
@@ -216,7 +212,6 @@ class PinCodesPage(QWidget):
 
     # ---------------- Helpers ----------------
 
-
     @staticmethod
     def norm(s: str) -> str:
         return (s or "").strip().upper().replace(" ", "")
@@ -298,7 +293,7 @@ class PinCodesPage(QWidget):
             # it = QListWidgetItem(r.card)
             it = QListWidgetItem(self._card_display(r))
 
-            it.setData(Qt.ItemDataRole.UserRole, idx)  #  храним только int
+            it.setData(Qt.ItemDataRole.UserRole, idx)  # храним только int
             self.card_list.addItem(it)
 
     def _on_ts_suggestion_clicked(self, item: QListWidgetItem):
@@ -319,7 +314,7 @@ class PinCodesPage(QWidget):
         #  обновить список карт для этого ТС
         self._fill_cards_for_exact_ts(r.n_ts)
 
-        # (по желанию) очистить поле карты, чтобы не мешало
+        # очистить поле карты, чтобы не мешало
         # self.in_card.clear()
 
         # результат можно либо не показывать, либо показать первый попавшийся
@@ -384,7 +379,6 @@ class PinCodesPage(QWidget):
         return None
 
     # ---------------- XLSX / JSON cache ----------------
-
     def _refresh_if_needed(self):
         try:
             if not os.path.exists(self.xlsx_path):
@@ -409,14 +403,12 @@ class PinCodesPage(QWidget):
             os.makedirs(os.path.dirname(self.json_path), exist_ok=True)
         except Exception:
             pass
-        data = {
-            "meta": {
-                "updated_at": time.time(),
-                "xlsx_path": self.xlsx_path,
-                "xlsx_mtime": self._mtime,
-            },
-            "rows": [r.__dict__ for r in self.rows],
-        }
+        data = {"meta": {"updated_at": time.time(),
+                         "xlsx_path": self.xlsx_path,
+                         "xlsx_mtime": self._mtime,
+                         },
+                "rows": [r.__dict__ for r in self.rows],
+                }
         try:
             with open(self.json_path, "w", encoding="utf-8") as f:
                 json.dump(data, f, ensure_ascii=False, indent=2)

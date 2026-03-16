@@ -81,7 +81,6 @@ class RowHighlighter:
         # поставить таймер на авто-снятие (если к тому моменту истечёт)
         QTimer.singleShot(hours * 60 * 60 * 1000, lambda: self._clear_if_expired(index_key))
 
-    from datetime import datetime
 
     def reapply_from_json(self):
         """
@@ -194,7 +193,7 @@ class RowHighlighter:
             if not unloads_all or not isinstance(unloads_all, list):
                 continue
 
-            # ✅ как в TableManager: берём только точки (без Комментарий / "Выгрузка другое")
+            # как в TableManager: берём только точки (без Комментарий / "Выгрузка другое")
             points = []
             for d in unloads_all:
                 if not isinstance(d, dict):

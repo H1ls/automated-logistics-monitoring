@@ -1,10 +1,10 @@
 from __future__ import annotations
 
 from Navigation_Bot.bots.googleSheetsManager import GoogleSheetsManager
-from Navigation_Bot.core.settings.SettingsController import SettingsController
 from Navigation_Bot.core.dataContext import DataContext
 from Navigation_Bot.core.hotkeyManager import HotkeyManager
 from Navigation_Bot.core.navigationProcessor import NavigationProcessor
+from Navigation_Bot.core.settings.SettingsController import SettingsController
 from Navigation_Bot.gui.controllers.tableContextMenuController import TableContextMenuController
 from Navigation_Bot.gui.dialogs.combinedSettingsDialog import CombinedSettingsDialog
 from Navigation_Bot.gui.widgets.rowHighlighter import RowHighlighter
@@ -41,34 +41,32 @@ class AppServices:
         g.gsheet.log_message.connect(g.log)
 
         # --- TableManager ---
-        g.table_manager = TableManager(
-            table_widget=g.table,
-            data_context=g.data_context,
-            log_func=g.log,
-            on_row_click=None,
-            on_edit_id_click=g.open_id_editor,
-            gsheet=g.gsheet,
-            reload_callback=g.reload_and_show)
+        g.table_manager = TableManager(table_widget=g.table,
+                                       data_context=g.data_context,
+                                       log_func=g.log,
+                                       on_row_click=None,
+                                       on_edit_id_click=g.open_id_editor,
+                                       gsheet=g.gsheet,
+                                       reload_callback=g.reload_and_show)
 
         # --- Highlighter / Processor / Sort ---
-        g.row_highlighter = RowHighlighter(
-            table=g.table,
-            data_context=g.data_context,
-            log=g.log,
-            hours_default=2)
+        g.row_highlighter = RowHighlighter(table=g.table,
+                                           data_context=g.data_context,
+                                           log=g.log,
+                                           hours_default=2)
         busy_callback = g.table_manager.set_row_busy
-        g.processor = NavigationProcessor(
-            data_context=g.data_context,
-            logger=g.log,
-            gsheet=g.gsheet,
-            filepath=str(g.INPUT_FILEPATH),
-            display_callback=g.reload_and_show,
-            single_row=g._single_row_processing,
-            updated_rows=g.updated_rows,
-            executor=g.executor,
-            highlight_callback=g.row_highlighter.highlight_for,
-            browser_rect=getattr(g, "browser_rect", None),
-            ui_bridge=g.ui_bridge, )
+
+        g.processor = NavigationProcessor(data_context=g.data_context,
+                                          logger=g.log,
+                                          gsheet=g.gsheet,
+                                          filepath=str(g.INPUT_FILEPATH),
+                                          display_callback=g.reload_and_show,
+                                          single_row=g._single_row_processing,
+                                          updated_rows=g.updated_rows,
+                                          executor=g.executor,
+                                          highlight_callback=g.row_highlighter.highlight_for,
+                                          browser_rect=getattr(g, "browser_rect", None),
+                                          ui_bridge=g.ui_bridge, )
 
         g.sort_controller = TableSortController(data_context=g.data_context, log=g.log)
         g.hotkeys = HotkeyManager(log_func=g.log)

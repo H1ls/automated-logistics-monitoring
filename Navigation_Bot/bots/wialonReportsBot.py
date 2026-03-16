@@ -18,20 +18,19 @@ from LogistX.config.paths import REPORTS_SELECTORS  # путь на wialon_repor
 
 
 class WialonReportsBot:
-    REQUIRED_KEYS = [
-        "reports_tab_xpath",
-        "template_input_xpath",
-        "unit_input_xpath",
-        "date_from_xpath",
-        "date_to_xpath",
-        "run_button_xpath",
-        "spinner_waiting_css",
-        "spinner_loading_css",
-        "expand_details_xpath",
-        "results_table_css",
-        "result_rows_css",
-    ]
-
+    REQUIRED_KEYS = ["reports_tab_xpath",
+                     "template_input_xpath",
+                     "unit_input_xpath",
+                     "date_from_xpath",
+                     "date_to_xpath",
+                     "run_button_xpath",
+                     "spinner_waiting_css",
+                     "spinner_loading_css",
+                     "expand_details_xpath",
+                     "results_table_css",
+                     "result_rows_css", ]
+    MIN_STAY_SECONDS = 120  # всё что меньше 2 минут — шум
+    MERGE_GAP_SECONDS = 900  # разрыв до 15 минут — считаем одним пребыванием
     DEFAULT_TIMEOUT = 10
 
     def __init__(self, driver, log_func=print):
@@ -137,37 +136,30 @@ class WialonReportsBot:
 
         #  расфокусировка, чтобы список закрылся
         inp.send_keys(Keys.TAB)
-
+        sleep(0.5)
         # если всё равно висит -> ESC:
         # inp.send_keys(Keys.ESCAPE)
-
-    @staticmethod
-    def _format_license_plate(text: str) -> str:
-        # Пример: "Р 211 УР 790" -> "Р211УР790"
-        pattern = r'([А-ЯA-Z])\s*(\d{3})\s*([А-ЯA-Z]{2})\s*(\d{2,3})\b'
-        m = re.search(pattern, text or "")
-        return "".join(m.groups()) if m else (text or "")
 
     @staticmethod
     def _format_vehicle_line(s: str) -> str:
         """
         'К 774 ТМ 790 SITRAK ZZ4186V391HE' -> 'SITRAK К774ТМ 790'
+        'Е 193 УА 790 Mercedes-Benz Actros 1848' -> 'MERCEDES Е193УА 790'
         """
-        PLATE_RE = re.compile(r'^\s*([А-ЯЁ])\s*(\d{3})\s*([А-ЯЁ]{2})\s*(\d{2,3})\b\s*(.+)\s*$', re.IGNORECASE)
-
+        PLATE_RE = re.compile(
+            r'^\s*([А-ЯЁ])\s*(\d{3})\s*([А-ЯЁ]{2})\s*(\d{2,3})\b\s*(.+)\s*$', re.IGNORECASE)
         m = PLATE_RE.match(s)
         if not m:
             raise ValueError(f"Не распознал формат строки: {s!r}")
-
         letter1, digits, letters2, region, tail = m.groups()
-
-        # tail начинается с марки, дальше может быть модель и т.п.
-        brand = tail.strip().split()[0].upper()
-
+        brand_raw = tail.strip().split()[0]
+        # убираем всё после дефиса (Mercedes-Benz -> Mercedes)
+        brand = brand_raw.split("-")[0].upper()
         plate = f"{letter1.upper()}{digits}{letters2.upper()}"
         return f"{brand} {plate} {region}"
 
     def select_unit_by_typing(self, unit: str):
+        """Ввод (марки и номера) машины"""
         try:  # сначала пробуем как input по xpath
             el = self._wait_present_xpath(self.sel["unit_input_xpath"], timeout=10)
         except Exception:
@@ -177,7 +169,6 @@ class WialonReportsBot:
         except Exception:
             inp = el
 
-        # unit = self._format_license_plate(unit)
         unit = self._format_vehicle_line(unit)
         inp.click()
         inp.send_keys(Keys.CONTROL, "a")
@@ -187,9 +178,10 @@ class WialonReportsBot:
         sleep(0.5)
         inp.send_keys(Keys.ENTER)
         inp.send_keys(Keys.TAB)
-        sleep(0.05)
+        sleep(0.5)
 
     def set_interval(self, date_from: str, date_to: str):
+        """Ввод даты начала рейса, и конца текущего дня"""
         data = self._wait_present_xpath(self.sel["date_from_xpath"], timeout=10)
         data_to = self._wait_present_xpath(self.sel["date_to_xpath"], timeout=10)
 
@@ -203,7 +195,7 @@ class WialonReportsBot:
         data_to.send_keys(Keys.CONTROL, "a")
         data_to.send_keys(date_to)
         data_to.send_keys(Keys.ENTER)
-        sleep(0.2)
+        sleep(0.7)
 
     def run_and_wait(self, timeout=45):
         """Ожидание выполнения (spinner / loading icon)"""
@@ -236,7 +228,7 @@ class WialonReportsBot:
                 return
 
     def extract_times(self, load_zone: str, unload_zone: str) -> dict:
-        """Извлечение времен по геозонам"""
+        """Извлечение времен по геозонам с защитой от дребезга навигации."""
         table = self._wait_present_css(self.sel["results_table_css"], timeout=10)
         rows = table.find_elements(By.CSS_SELECTOR, self.sel["result_rows_css"])
 
@@ -247,21 +239,24 @@ class WialonReportsBot:
 
         dt_re = re.compile(r"\b\d{2}\.\d{2}\.\d{4}\s+\d{2}:\d{2}:\d{2}\b")
 
+        MIN_STAY_SECONDS = 120  # менее 2 минут считаем шумом
+        MERGE_GAP_SECONDS = 900  # разрыв до 15 минут склеиваем
+
         def to_dt(s: str):
             try:
                 return datetime.strptime(s, "%d.%m.%Y %H:%M:%S")
             except Exception:
                 return None
 
-        load_anchor_dt = None
+        visits = []
 
+        # 1. Собираем все посещения
         for tr in rows:
             tds = tr.find_elements(By.CSS_SELECTOR, self.sel.get("row_cells_css", "td"))
             if len(tds) < 4:
                 continue
 
             texts = [(td.text or "").strip() for td in tds]
-
             time_idxs = [i for i, tx in enumerate(texts) if dt_re.search(tx)]
             if len(time_idxs) < 2:
                 continue
@@ -276,26 +271,86 @@ class WialonReportsBot:
             time_in = texts[in_i]
             time_out = texts[out_i]
 
-            # 1) Погрузка: фиксируем якорь
-            if want_load and gf == want_load and not res["load_in"]:
-                res["load_in"] = time_in
-                res["load_out"] = time_out
-                load_anchor_dt = to_dt(time_in)
+            in_dt = to_dt(time_in)
+            out_dt = to_dt(time_out)
+            if not in_dt or not out_dt:
+                continue
 
-            # 2) Выгрузку начинаем искать ТОЛЬКО после погрузки
-            if want_unload and gf == want_unload and not res["unload_in"]:
-                if not load_anchor_dt:
-                    continue  # ⛔️ рано: выгрузка встретилась до погрузки
+            stay_sec = int((out_dt - in_dt).total_seconds())
+            if stay_sec < 0:
+                continue
 
-                out_dt = to_dt(time_out)
-                if out_dt and out_dt < load_anchor_dt:
-                    continue  # ⛔️ всё ещё "ранняя" выгрузка (на всякий)
+            visits.append({"gf": gf,
+                           "in": time_in,
+                           "out": time_out,
+                           "in_dt": in_dt,
+                           "out_dt": out_dt,
+                           "stay_sec": stay_sec, })
 
-                res["unload_in"] = time_in
-                res["unload_out"] = time_out
+        if not visits:
+            return res
 
-            if res["load_in"] and res["unload_in"]:
-                break
+        # 2. Фильтруем короткий шум
+        filtered = []
+        for v in visits:
+            if v["stay_sec"] < MIN_STAY_SECONDS:
+                self.log(f"⚠️ Игнорирую короткое посещение как шум: {v['gf']} {v['in']} -> {v['out']}")
+                continue
+            filtered.append(v)
+
+        if not filtered:
+            return res
+
+        # 3. Склеиваем соседние посещения одной геозоны, если разрыв маленький
+        merged = []
+        for v in filtered:
+            if not merged:
+                merged.append(v.copy())
+                continue
+
+            prev = merged[-1]
+
+            same_zone = prev["gf"] == v["gf"]
+            gap_sec = int((v["in_dt"] - prev["out_dt"]).total_seconds())
+
+            if same_zone and 0 <= gap_sec <= MERGE_GAP_SECONDS:
+                prev["out"] = v["out"]
+                prev["out_dt"] = v["out_dt"]
+                prev["stay_sec"] = int((prev["out_dt"] - prev["in_dt"]).total_seconds())
+                self.log(f"🔗 Склеил дребезг геозоны: {prev['gf']} до {prev['out']}")
+            else:
+                merged.append(v.copy())
+
+        # 4. Особый случай: погрузка и выгрузка в одной геозоне
+        if want_load and want_unload and want_load == want_unload:
+            same_zone_visits = [v for v in merged if v["gf"] == want_load]
+            if same_zone_visits:
+                first_visit = same_zone_visits[0]
+                res["load_in"] = first_visit["in"]
+                res["load_out"] = first_visit["out"]
+
+                if len(same_zone_visits) >= 2:
+                    last_visit = same_zone_visits[-1]
+                    res["unload_in"] = last_visit["in"]
+                    res["unload_out"] = last_visit["out"]
+
+            return res
+
+        # 5. Обычный случай: разные геозоны
+        load_visit = None
+
+        for v in merged:
+            if not load_visit and want_load and v["gf"] == want_load:
+                load_visit = v
+                res["load_in"] = v["in"]
+                res["load_out"] = v["out"]
+                continue
+
+            if load_visit and want_unload and v["gf"] == want_unload:
+                if v["out_dt"] >= load_visit["in_dt"]:
+                    res["unload_in"] = v["in"]
+                    res["unload_out"] = v["out"]
+                    break
 
         return res
 
@@ -304,30 +359,19 @@ class WialonReportsBot:
                                 load_zone: str, unload_zone: str,
                                 template: str = "Crossing geozones") -> dict:
         """Главный метод"""
-
         self._ensure_on_wialon_tab()
-        # print("Проверка на открытие браузера self._ensure_on_wialon_tab()")
 
         self._wait_clickable_xpath(self.sel["reports_tab_xpath"], timeout=10).click()
-        # print("Переключение на вкладку отчет self._wait_clickable_xpath()")
 
         self._wait_present_xpath(self.sel["run_button_xpath"], timeout=10)
-        # print("self._wait_present_xpath()")
 
         self.select_template_by_typing(template)
-        # print("Ввод Шаблона self._select_template_by_typing()")
-        sleep(2)
 
         self.select_unit_by_typing(unit)
-        # print("Ввод ТС self._select_unit_by_typing()")
-        sleep(2)
 
         self.set_interval(date_from, date_to)
-        # print("Ввод даты self._set_interval()")
-        sleep(2)
 
         self.run_and_wait(timeout=75)
-        # print("Нажатие на Выполнить self.run_and_wait")
         self.expand_all_details()
 
         return self.extract_times(load_zone, unload_zone)

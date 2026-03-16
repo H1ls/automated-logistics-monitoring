@@ -12,7 +12,8 @@ from Navigation_Bot.core.paths import CREDENTIALS_WIALON, COOKIES_FILE
 
 """6. Настройка WebDriver"""
 
-"""TO DO: 1. чтение json -> JSONManager"""
+
+# TODO: 1. чтение json -> JSONManager
 
 
 class WebDriverManager:
@@ -32,15 +33,6 @@ class WebDriverManager:
     def web_driver_wait(self, xpath, timeout=10):
         return WebDriverWait(self.driver, timeout).until(
             EC.visibility_of_element_located((By.XPATH, xpath)))
-
-    # def is_alive(self) -> bool:
-    #     """Проверяем, что драйвер жив и у него есть открытые окна"""
-    #     if self.driver is None:
-    #         return False
-    #     try:
-    #         return len(self.driver.window_handles) > 0
-    #     except WebDriverException:
-    #         return False
 
     def is_alive(self) -> bool:
         d = getattr(self, "driver", None)
@@ -63,11 +55,10 @@ class WebDriverManager:
             self.driver = webdriver.Chrome()
             if rect:
                 try:
-                    self.driver.set_window_rect(
-                        rect.get("x", 0),
-                        rect.get("y", 0),
-                        rect.get("width", 1024),
-                        rect.get("height", 768))
+                    self.driver.set_window_rect(rect.get("x", 0),
+                                                rect.get("y", 0),
+                                                rect.get("width", 1024),
+                                                rect.get("height", 768))
                 except Exception as e:
                     self.log(f"⚠️ Не удалось установить позицию окна браузера: {e}")
                     self.driver.maximize_window()
@@ -167,8 +158,7 @@ class WebDriverManager:
             self.driver.switch_to.window(self.driver.window_handles[-1])
 
             WebDriverWait(self.driver, 10).until(
-                EC.presence_of_element_located((By.TAG_NAME, "body"))
-            )
+                EC.presence_of_element_located((By.TAG_NAME, "body")))
             self.log("🗺️ Новая вкладка Я.Карт открыта")
 
         except Exception as e:
@@ -210,18 +200,17 @@ class WebDriverManager:
             return False
 
     def find(self, locator, timeout=10, condition="presence"):
-        conditions = {
-            "presence": EC.presence_of_element_located,
-            "visible": EC.visibility_of_element_located,
-            "clickable": EC.element_to_be_clickable
-        }
+        conditions = {"presence": EC.presence_of_element_located,
+                      "visible": EC.visibility_of_element_located,
+                      "clickable": EC.element_to_be_clickable}
+
         cond = conditions.get(condition, EC.presence_of_element_located)
         return WebDriverWait(self.driver, timeout).until(cond(locator))
 
     def find_all(self, locator, timeout=10):
         WebDriverWait(self.driver, timeout).until(
-            EC.presence_of_all_elements_located(locator)
-        )
+            EC.presence_of_all_elements_located(locator))
+
         return self.driver.find_elements(*locator)
 
     def click(self, locator, timeout=10):

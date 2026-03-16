@@ -4,7 +4,7 @@ from PyQt6.QtWidgets import (QWidget, QHBoxLayout, QPushButton, QLabel, QAbstrac
 try:
     from PyQt6 import sip
 except Exception:
-    import sip  # fallback (на всякий)
+    import sip  # fallback
 
 class GlobalSearchBar(QWidget):
     """Плавающая строка поиска по таблице."""

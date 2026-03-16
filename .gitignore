@@ -25,7 +25,7 @@ env/
 config/cookies.pkl
 config/Credentials_wialon.json
 config/selected_data.json
-/config/Id_car.json
+config/Id_car.json
 config/datasets/addresses.jsonl
 config/Обновленный РЕЕСТР ПИН ТОПЛИВНЫЕ КАРТЫ.xlsx
 config/pincodes_cache.json

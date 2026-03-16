@@ -1,0 +1,103 @@
+{
+  "window": {
+    "title_hint": "176.57.78.6:2025 — Подключение к удаленному рабочему столу"
+  },
+  "anchors": {
+    "race_list_focus": [
+      500,
+      500
+    ],
+    "start_page_tab": [
+      88,
+      241
+    ],
+    "race_params_tab": [
+      235,
+      547
+    ],
+    "driver_rating_tab": [
+      511,
+      546
+    ],
+    "cargo_tab": [
+      183,
+      241
+    ],
+    "departure_label": [
+      235,
+      584
+    ],
+    "departure_date_field": [
+      308,
+      584
+    ],
+    "departure_time_field": [
+      437,
+      584
+    ]
+  },
+  "regions": {
+    "error_header_region": [
+      510,
+      450,
+      430,
+      40
+    ],
+    "error_search_region": [
+      530,
+      450,
+      860,
+      140
+    ],
+    "error_buttons_region": [
+      810,
+      530,
+      310,
+      40
+    ],
+    "error_text_region": [
+      530,
+      450,
+      860,
+      140
+    ],
+    "cargo_search_region": [
+      650,
+      260,
+      1100,
+      620
+    ]
+  },
+  "templates": {
+    "error_title_1c": "error_title_1c.png",
+    "error_ok_button": "error_ok_button.png",
+    "error_dialog": "error_ok_button.png",
+    "date_conflict_dialog": "date_conflict_text.png",
+    "race_form_header": "race_form_header.png",
+    "start_page_tab": "start_page_tab.png",
+    "race_params_tab": "race_params_tab.png",
+    "driver_rating_tab": "driver_rating_tab.png",
+    "cargo_tab": "cargo_tab.png",
+    "departure_label": "lbl_departure.png",
+    "hdr_arrival_fact": "hdr_arrival_fact.png",
+    "hdr_depart_fact": "hdr_depart_fact.png",
+    "op_load": "op_load.png",
+    "op_unload": "op_unload.png"
+  },
+  "offsets": {
+    "cargo_tab_from_start_page_tab": [
+      95,
+      0
+    ],
+    "departure_date_field_from_departure_label": [
+      73,
+      0
+    ],
+    "departure_time_field_from_departure_label": [
+      202,
+      0
+    ],
+    "cargo_fact_row_y": -22,
+    "cargo_plan_row_dy": 22
+  }
+}

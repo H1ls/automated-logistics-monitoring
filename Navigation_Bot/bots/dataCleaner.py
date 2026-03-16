@@ -1,10 +1,10 @@
-import re
 import os
+import re
 from pathlib import Path
 from typing import List, Dict, Any
 
-from Navigation_Bot.core.paths import INPUT_FILEPATH, ID_FILEPATH
 from Navigation_Bot.core.dataContext import DataContext
+from Navigation_Bot.core.paths import INPUT_FILEPATH, ID_FILEPATH
 
 """2. Очистка данных"""
 
@@ -22,28 +22,25 @@ class DataCleaner:
         self.json_data: List[Dict[str, Any]] = self.data_context.get() or []
         self.id_data: List[Dict[str, Any]] = self.id_context.get() or []
 
-        self.unload_re = re.compile(
-            r"(\d+\))?\s*"
-            r"(\d{1,2}\.\d{2}\.\d{4})\s*,?\s*"  # дата
-            r"(\d{1,2}[:\-]\d{2}(?::\d{2})?)?\s*,?\s*"  # время (опц.)
-            r"(.*?)(?=\d+\)|$)",  # адрес до следующего блока или конца
-            re.DOTALL
-        )
+        self.unload_re = re.compile(r"(\d+\))?\s*"
+                                    r"(\d{1,2}\.\d{2}\.\d{4})\s*,?\s*"  # дата
+                                    r"(\d{1,2}[:\-]\d{2}(?::\d{2})?)?\s*,?\s*"  # время (опц.)
+                                    r"(.*?)(?=\d+\)|$)",  # адрес до следующего блока или конца
+                                    re.DOTALL)
+
         self.time_re = re.compile(r"\b(\d{1,2}[:\-]\d{2}(?::\d{2})?)\b")
 
-        self.end_patterns = [
-            r"тел\s*\d[\d\s\-]{8,}",
-            r"Контакт:?\s*\d[\d\s\-]{8,}",
-            r"\sГП\s",
-            r"\sООО\s",
-            r"\(Согласт\s",
-            r"ТТН\s",
-            r"\ГО\s",
-            r"\тел\s",
-            r"\ООО\s",
-            r"\Контрагент\s",
-            r"\bпо\s+ттн\b",
-        ]
+        self.end_patterns = [r"тел\s*\d[\d\s\-]{8,}",
+                             r"Контакт:?\s*\d[\d\s\-]{8,}",
+                             r"\sГП\s",
+                             r"\sООО\s",
+                             r"\(Согласт\s",
+                             r"ТТН\s",
+                             r"\ГО\s",
+                             r"\тел\s",
+                             r"\ООО\s",
+                             r"\Контрагент\s",
+                             r"\bпо\s+ттн\b", ]
 
     def _file_exists(self, filepath):
         if not os.path.exists(filepath):
@@ -84,11 +81,10 @@ class DataCleaner:
                     addr = addr[: end.start()].strip()
                     break
 
-            results.append({
-                f"{prefix} {i}": addr,
-                f"Дата {i}": date,
-                f"Время {i}": time
-            })
+            results.append({f"{prefix} {i}": addr,
+                            f"Дата {i}": date,
+                            f"Время {i}": time})
+
             consumed.append(m.span())
 
         # другое/комментарий - всё, что не попало в матчи

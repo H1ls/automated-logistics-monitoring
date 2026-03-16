@@ -179,14 +179,13 @@ class TableManager:
             ts = " ".join(parts[:-1]) if len(parts) > 1 else ts_phone
             phone = parts[-1] if len(parts) > 1 else ""
 
-            new_entry = {
-                "ТС": ts,
-                "Телефон": phone,
-                "ФИО": fio,
-                "КА": ka,
-                "Погрузка": self._new_entry_buffer.get("Погрузка", []),
-                "Выгрузка": self._new_entry_buffer.get("Выгрузка", [])
-            }
+            new_entry = {"ТС": ts,
+                         "Телефон": phone,
+                         "ФИО": fio,
+                         "КА": ka,
+                         "Погрузка": self._new_entry_buffer.get("Погрузка", []),
+                         "Выгрузка": self._new_entry_buffer.get("Выгрузка", [])
+                         }
             if "Время отправки" in self._new_entry_buffer:
                 new_entry["Время отправки"] = self._new_entry_buffer["Время отправки"]
             if "Транзит" in self._new_entry_buffer:
@@ -272,19 +271,17 @@ class TableManager:
 
             json_data = self.data_context.get()
 
-            # ✅ ключевая строка (последняя) — работаем как раньше, без real_idx
+            # ключевая строка (последняя) — работаем как раньше, без real_idx
             # (т.к. это "виртуальная" строка, её нет в json_data и view_order)
             if row >= len(self.view_order) or row >= self.table.rowCount() - 1:
                 temp_entry = {"Погрузка": [], "Выгрузка": []}
-                dialog = AddressEditDialog(
-                    row_data=temp_entry,
-                    full_data=[],
-                    prefix=prefix,
-                    parent=self.table,
-                    disable_save=True,
-                    data_context=self.data_context,
-                    log_func=self.log
-                )
+                dialog = AddressEditDialog(row_data=temp_entry,
+                                           full_data=[],
+                                           prefix=prefix,
+                                           parent=self.table,
+                                           disable_save=True,
+                                           data_context=self.data_context,
+                                           log_func=self.log)
 
                 if dialog.exec():
                     data_block, meta = dialog.get_result()
@@ -303,21 +300,19 @@ class TableManager:
                     self.table.blockSignals(False)
                 return
 
-            # ✅ обычные строки: visual -> real
+            #  обычные строки: visual -> real
             if row < 0 or row >= len(self.view_order):
                 return
             real_idx = self.view_order[row]
             if real_idx < 0 or real_idx >= len(json_data):
                 return
 
-            dialog = AddressEditDialog(
-                row_data=json_data[real_idx],
-                full_data=json_data,
-                prefix=prefix,
-                parent=self.table,
-                data_context=self.data_context,
-                log_func=self.log
-            )
+            dialog = AddressEditDialog(row_data=json_data[real_idx],
+                                       full_data=json_data,
+                                       prefix=prefix,
+                                       parent=self.table,
+                                       data_context=self.data_context,
+                                       log_func=self.log)
 
             if dialog.exec():
                 data_block, meta = dialog.get_result()
@@ -386,9 +381,8 @@ class TableManager:
         if old_value == value:
             return
 
-        json_data[real_idx][header] = value  # ✅ пишем в реальную строку
+        json_data[real_idx][header] = value  # пишем в реальную строку
         self.data_context.save()
-
         # self.log(f"✏️ Изменено: строка {row + 1}, колонка '{header}' → {value}")
 
     def visual_row_by_index_key(self, key):
@@ -413,7 +407,6 @@ class TableManager:
         if view_order is None:
             view_order = list(range(len(json_data)))
         self.view_order = view_order or list(range(len(json_data)))
-        # index(key) -> visual_row
         self._index_to_visual = {}
 
         for visual_row, real_idx in enumerate(self.view_order):
@@ -429,9 +422,7 @@ class TableManager:
         try:
             self.table.blockSignals(True)
             self.table.setRowCount(0)
-
             self._render_all_rows(json_data, view_order)
-
             self.table.resizeRowsToContents()
             self._add_new_entry_row()
 
@@ -561,9 +552,7 @@ class TableManager:
                         item.setBackground(QColor(210, 235, 255))
         except Exception:
             ts = row.get("ТС", "—")
-            self.log(
-                f"[DEBUG] ❗️ Ошибка при анализе ДАТЫ/ВРЕМЕНИ у ТС: {ts} (строка {row_idx + 1}):"
-            )
+            self.log(f"[DEBUG] ❗️ Ошибка при анализе ДАТЫ/ВРЕМЕНИ у ТС: {ts} (строка {row_idx + 1}):")
 
     def _add_new_entry_row(self):
         """Добавляет в конец таблицы ключевую строку с ➕."""

@@ -1,0 +1,27 @@
+{
+  "reports_tab_xpath": "//*[@id='hb_mi_reports_ctl']",
+
+  "template_input_xpath": "//*[@id='report_templates_filter_reports']",
+
+  "unit_input_xpath": "//*[@id='report_templates_filter_units']",
+  "unit_input_fallback_xpath": "//*[@id='report_templates_filter_units']//input | //*[@id='report_templates_filter_units']",
+
+  "date_from_xpath": "//*[@id='time_from_report_templates_filter_time']",
+  "date_to_xpath": "//*[@id='time_to_report_templates_filter_time']",
+
+  "run_button_xpath": "//*[@id='report_templates_filter_params_execute']",
+
+  "spinner_waiting_css": "div.waiting-text[data-translate-phrase='execution']",
+  "spinner_loading_css": ".x-svg-icon.loading",
+
+  "expand_details_xpath": "//*[contains(@class,'report-result-body-clickable') and contains(@class,'icon-plus-square')]",
+
+  "results_table_css": "table.report-result-body-table",
+  "result_rows_css": "tr[class*='report-result-body-subrow']",
+
+  "row_cells_css": "td",
+
+  "col_geofence_td_index": 3,
+  "col_time_in_td_index": 4,
+  "col_time_out_td_index": 5
+}

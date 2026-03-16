@@ -1,11 +1,12 @@
 import re
 import time
 from datetime import datetime, timedelta
-from selenium.webdriver.common.keys import Keys
-from selenium.webdriver.common.by import By
 
-from Navigation_Bot.core.paths import CONFIG_JSON
+from selenium.webdriver.common.by import By
+from selenium.webdriver.common.keys import Keys
+
 from Navigation_Bot.core.jSONManager import JSONManager
+from Navigation_Bot.core.paths import CONFIG_JSON
 
 """TODO 1.MapsBot - запускает вспомогательные классы 
         2.Вынести ввод и клики в MapsUIHelper
@@ -41,7 +42,7 @@ class MapsBot:
             self.driver_manager.click(locator, timeout=timeout)
             # if label:
             #     pass
-                # self.log(f"✅ Нажата кнопка '{label}'")
+            # self.log(f"✅ Нажата кнопка '{label}'")
 
             time.sleep(0.3)
             return True
@@ -107,13 +108,11 @@ class MapsBot:
         car["коор"] = ""
         car["скорость"] = 0
         arrival = datetime.now().strftime("%d.%m.%Y %H:%M")
-        car["Маршрут"] = {
-            "расстояние": "0.0 км",
-            "длительность": "0 мин",
-            "время прибытия": arrival,
-            "успеет": True,
-            "time_buffer": "—"
-        }
+        car["Маршрут"] = {"расстояние": "0.0 км",
+                          "длительность": "0 мин",
+                          "время прибытия": arrival,
+                          "успеет": True,
+                          "time_buffer": "—"}
 
     def _build_route_and_get_distance(self, from_coords: str, to_address: str) -> tuple[float, float]:
         """работа с Я.Картами"""
@@ -136,14 +135,12 @@ class MapsBot:
         except Exception:
             pass
 
-        car["Маршрут"] = {
-            "расстояние": f"{avg_distance} км",
-            "длительность": f"{avg_minutes} мин",
-            "время прибытия": result["время прибытия"],
-            "успеет": result["on_time"],
-            "time_buffer": result["time_buffer"],
-            "buffer_minutes": result["buffer_minutes"]
-        }
+        car["Маршрут"] = {"расстояние": f"{avg_distance} км",
+                          "длительность": f"{avg_minutes} мин",
+                          "время прибытия": result["время прибытия"],
+                          "успеет": result["on_time"],
+                          "time_buffer": result["time_buffer"],
+                          "buffer_minutes": result["buffer_minutes"]}
 
     def _enter_to_address(self, address):
         self.log(f"📥 Ввод точки назначения: {address}")
@@ -158,6 +155,7 @@ class MapsBot:
             scroll_el = self.driver_manager.driver.find_element(By.CSS_SELECTOR, "div.scroll._width_narrow")
             class_value = scroll_el.get_attribute("class")
 
+            time.sleep(0.25)
             if "_disabled" in class_value:
                 # открылся список подсказок
                 # self.log("🟡 Обнаружен список подсказок - выбираю первый элемент.")
@@ -218,18 +216,6 @@ class MapsBot:
             self.log(f"❌ Ошибка получения маршрутов: {msg}")
             return []
 
-    # def get_first_route(self):
-    #     try:
-    #         item = self.driver_manager.find_all(self._by("route_item"))
-    #
-    #         if "_type_auto" not in item.get_attribute("class"):
-    #             return None
-    #         return self._parse_route_item(item)
-    #     except Exception as e:
-    #         msg = str(e).splitlines()[0]
-    #         self.log(f"❌ Ошибка при получении первого маршрута: {msg}")
-    #         return None
-
     def get_first_route(self):
         try:
             items = self.driver_manager.find_all(self._by("route_item"), timeout=10)
@@ -271,14 +257,12 @@ class MapsBot:
                 # Пробуем отфильтровать метры: "800м", "0м" и т.п.
                 if "м" in dist_text:
                     self.log(f"📏 Короткий маршрут (< 1 км): {dist_text}")
+
                     return {"duration": "0",
                             "distance": 0.0}
                 raise
 
-            return {
-                "duration": duration,
-                "distance": distance
-            }
+            return {"duration": duration, "distance": distance}
 
         except Exception as e:
             msg = str(e).splitlines()[0]
@@ -337,10 +321,8 @@ class MapsBot:
         buf_hours = total_minutes // 60
         buf_minutes = total_minutes % 60
 
-        return {
-            "время прибытия": arrival_time.strftime("%d.%m.%Y %H:%M"),
-            "время разгрузки": unload_dt.strftime("%d.%m.%Y %H:%M") if unload_dt else "Не указано",
-            "on_time": bool(unload_dt and arrival_time <= unload_dt),
-            "time_buffer": f"{buf_hours}ч {buf_minutes}м",
-            "buffer_minutes": total_minutes
-        }
+        return {"время прибытия": arrival_time.strftime("%d.%m.%Y %H:%M"),
+                "время разгрузки": unload_dt.strftime("%d.%m.%Y %H:%M") if unload_dt else "Не указано",
+                "on_time": bool(unload_dt and arrival_time <= unload_dt),
+                "time_buffer": f"{buf_hours}ч {buf_minutes}м",
+                "buffer_minutes": total_minutes}

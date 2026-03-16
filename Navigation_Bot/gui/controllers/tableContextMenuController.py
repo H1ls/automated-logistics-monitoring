@@ -1,6 +1,8 @@
 from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import QMenu
+
 from Navigation_Bot.bots.dataCleaner import DataCleaner
+
 
 class TableContextMenuController:
     def __init__(self, gui):
@@ -19,7 +21,7 @@ class TableContextMenuController:
 
         menu = QMenu(self.table)
         act_refresh = menu.addAction("🔄 Перезаписать из Google (по index)")
-        act_delete  = menu.addAction("🗑 Удалить строку")
+        act_delete = menu.addAction("🗑 Удалить строку")
         menu.addSeparator()
         act_stub2 = menu.addAction("2) заглушка")
         act_stub3 = menu.addAction("3) заглушка")
@@ -85,16 +87,10 @@ class TableContextMenuController:
                 dh.append("")
 
             # 1 обновляем JSON
-            self.gui.gsheet.refresh_name(
-                {index_key: dh},
-                update_existing=True
-            )
+            self.gui.gsheet.refresh_name({index_key: dh}, update_existing=True)
 
             # 2 чистим ТОЛЬКО эту строку
-            DataCleaner(
-                data_context=self.gui.data_context,
-                log_func=self.gui.log
-            ).start_clean(only_indexes={index_key})
+            DataCleaner(data_context=self.gui.data_context, log_func=self.gui.log).start_clean(only_indexes={index_key})
 
             # 3 ОДИН раз обновляем UI
             self.gui.reload_and_show()

@@ -20,15 +20,13 @@ class NavigationBot:
     ADDRESS_READY_TIMEOUT = 12
     CLIPBOARD_TIMEOUT = 2.5
 
-    REQUIRED_KEYS = [
-        "search_input_xpath",
-        "unit_block_xpath",
-        "address_selector",
-        "copy_button_selector",
-        "speed_selector",
-        "gps_sats_xpath",
-        "monitoring",
-    ]
+    REQUIRED_KEYS = ["search_input_xpath",
+                     "unit_block_xpath",
+                     "address_selector",
+                     "copy_button_selector",
+                     "speed_selector",
+                     "gps_sats_xpath",
+                     "monitoring", ]
 
     def __init__(self, driver, log_func=None):
         self.driver = driver
