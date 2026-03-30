@@ -65,6 +65,9 @@ class OneCErrorHandler:
         # fallback как в старом twoCRaceWriter
         regions.append((960, 450, 400, 130))
 
+        best_text = ""
+        best_score = -1
+
         for i, region in enumerate(regions, start=1):
             path = self.session.tmp_dir / f"error_text_{i}.png"
             img = pyautogui.screenshot(region=region)
@@ -72,57 +75,124 @@ class OneCErrorHandler:
 
             try:
                 with Image.open(path) as pil:
-                    text = pytesseract.image_to_string(pil, lang="rus+eng")
-                    text = " ".join((text or "").split())
-                    if text:
-                        self.log(f"📖 OCR error text[{i}]: {text}")
-                        return text
+                    variants = []
+
+                    # 1. оригинал
+                    variants.append(("orig", pil.copy()))
+
+                    # 2. grayscale x2
+                    gray = pil.convert("L")
+                    gray = gray.resize((gray.width * 2, gray.height * 2))
+                    variants.append(("gray_x2", gray))
+
+                    # 3. threshold x2
+                    bw = gray.point(lambda p: 255 if p > 185 else 0)
+                    variants.append(("bw_x2", bw))
+
+                    # 4. threshold x3
+                    gray3 = pil.convert("L").resize((pil.width * 3, pil.height * 3))
+                    bw3 = gray3.point(lambda p: 255 if p > 170 else 0)
+                    variants.append(("bw_x3", bw3))
+
+                    for name, var_img in variants:
+                        cfg = r'--oem 3 --psm 6'
+                        text = pytesseract.image_to_string(var_img, lang="rus+eng", config=cfg)
+                        text = " ".join((text or "").split())
+                        if not text:
+                            continue
+
+                        score = 0
+                        low = text.lower()
+
+                        if "выполнен" in low:
+                            score += 5
+                        if "пересекается" in low:
+                            score += 2
+                        if re.search(r"\d{2}\.\d{2}\.\d{4}", text):
+                            score += 2
+                        if re.search(r"\d{1,2}[:\-.; ]\d{2}[:\-.; ]\d{2}", text):
+                            score += 3
+
+                        # self.log(f"📖 OCR error text[{i}:{name}]: {text}")
+
+                        if score > best_score:
+                            best_score = score
+                            best_text = text
+
             except Exception as e:
                 self.log(f"❌ OCR error_text failed: {e}")
 
-        return ""
+        return best_text
+
+    def _normalize_ocr_datetime_text(self, text: str) -> str:
+        if not text:
+            return ""
+
+        s = " ".join(text.split())
+
+        # 4-40:00 -> 4:40:00
+        s = re.sub(r"(?<!\d)(\d{1,2})-(\d{2}:\d{2})(?!\d)", r"\1:\2", s)
+        # 4;40:00 -> 4:40:00
+        s = re.sub(r"(?<!\d)(\d{1,2});(\d{2}:\d{2})(?!\d)", r"\1:\2", s)
+        # 4 40:00 -> 4:40:00
+        s = re.sub(r"(?<![\d.])(\d{1,2})\s+(\d{2}:\d{2})(?!\d)", r"\1:\2", s)
+        # 0:47.00 -> 0:47:00
+        s = re.sub(r"(?<!\d)(\d{1,2}):(\d{2})\.(\d{2})(?!\d)", r"\1:\2:\3", s)
+        # 0.47:00 -> 0:47:00
+        s = re.sub(r"(?<!\d)(\d{1,2})\.(\d{2}):(\d{2})(?!\d)", r"\1:\2:\3", s)
+        # 0-47.00 -> 0:47:00
+        s = re.sub(r"(?<!\d)(\d{1,2})-(\d{2})\.(\d{2})(?!\d)", r"\1:\2:\3", s)
+        # 9:00:00 -> 9:00:00 (не меняем, но чистим странные пробелы)
+        s = re.sub(r"(?<!\d)(\d{1,2})\s*:\s*(\d{2})\s*:\s*(\d{2})(?!\d)", r"\1:\2:\3", s)
+        return s
 
     def _extract_finish_dt(self, text: str) -> datetime | None:
         if not text:
             return None
 
-        norm = " ".join(text.split())
+        norm = self._normalize_ocr_datetime_text(text)
         low = norm.lower()
-        dt_re = r"\d{2}\.\d{2}\.\d{4}\s+\d{1,2}:\d{2}:\d{2}"
 
-        m = re.search(r"выполнен\s+(.*?)(?:ответственн|$)", low, flags=re.IGNORECASE)
+        m = re.search(r"выполнен\s+(.+?)(?:ответственн|$)", low, flags=re.IGNORECASE)
         if m:
             tail = m.group(1)
-            found = re.findall(dt_re, tail)
-            dts = []
-            for s in found:
+
+            date_m = re.search(r"(\d{2}\.\d{2}\.\d{4})", tail)
+            time_m = re.search(r"(?<!\d)(\d{1,2})[:\-.; ](\d{2})[:\-.; ](\d{2})(?!\d)", tail)
+
+            if date_m and time_m:
+                date_part = date_m.group(1)
+                hh = int(time_m.group(1))
+                mm = int(time_m.group(2))
+                ss = int(time_m.group(3))
                 try:
-                    dts.append(datetime.strptime(s, "%d.%m.%Y %H:%M:%S"))
+                    best = datetime.strptime(f"{date_part} {hh:02d}:{mm:02d}:{ss:02d}",
+                                             "%d.%m.%Y %H:%M:%S",)
+
+                    self.log(f"🧠 'выполнен': {best:%d.%m.%Y %H:%M:%S}")
+                    return best
                 except Exception:
                     pass
-            if dts:
-                return max(dts)
 
-        m = re.search(r"выполнен\s+(" + dt_re + r")", low, flags=re.IGNORECASE)
-        if m:
-            s = m.group(1)
-            try:
-                return datetime.strptime(s, "%d.%m.%Y %H:%M:%S")
-            except Exception:
-                pass
+            self.log(f"⚠️ Не удалось распарсить дату после слова 'выполнен'. tail={tail!r}")
+            return None
 
-        matches = []
-        matches += re.findall(r"выполнен\s+(" + dt_re + r")", low, flags=re.IGNORECASE)
-        matches += re.findall(r"(" + dt_re + r")\s+выполнен", low, flags=re.IGNORECASE)
-
+        dt_re = r"\d{2}\.\d{2}\.\d{4}\s+\d{1,2}[:\-.; ]\d{2}[:\-.; ]\d{2}"
+        matches = re.findall(dt_re, low)
         dts = []
         for s in matches:
             try:
-                dts.append(datetime.strptime(s, "%d.%m.%Y %H:%M:%S"))
+                s_norm = re.sub(r"[:\-.; ]", ":", s, count=2)
+                dts.append(datetime.strptime(s_norm, "%d.%m.%Y %H:%M:%S"))
             except Exception:
                 pass
 
-        return max(dts) if dts else None
+        if dts:
+            best = max(dts)
+            # self.log(f"🧠 finish_dt fallback(max dt in text): {best:%d.%m.%Y %H:%M:%S}")
+            return best
+
+        return None
 
     def detect(self) -> ErrorInfo | None:
         if not self.is_error_dialog_present():
@@ -132,7 +202,9 @@ class OneCErrorHandler:
         low = text.lower()
 
         if "выполнен" in low or "пересекается" in low or "дата отправления" in low or "дата выполнения" in low:
-            return ErrorInfo(kind="date_conflict", text=text, finish_dt=self._extract_finish_dt(text), )
+            finish_dt = self._extract_finish_dt(text)
+            # self.log(f"🧠 detect(): parsed finish_dt={finish_dt}")
+            return ErrorInfo(kind="date_conflict", text=text, finish_dt=finish_dt)
 
         if "недостаточно прав" in low or "прав доступа" in low:
             return ErrorInfo(kind="access_denied", text=text)

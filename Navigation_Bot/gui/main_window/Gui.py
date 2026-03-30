@@ -139,12 +139,10 @@ class NavigationGUI(QWidget):
         try:
             json_path = self._get_sheet_json_path()
             self.data_context.set_filepath(json_path)
-
-            self.gsheet.pull_to_context_async(
-                data_context=self.data_context,
-                input_filepath=json_path,
-                executor=self.executor)
-            # self.reload_and_show()
+            self.gsheet.pull_to_context_async(data_context=self.data_context,
+                                              input_filepath=json_path,
+                                              executor=self.executor)
+            self.reload_and_show()
 
         except Exception as e:
             self.log(f'❌ Ошибка в NavigationGUI._load_from_google\n {e}')
@@ -206,12 +204,10 @@ class NavigationGUI(QWidget):
         dialog = TrackingIdEditor(car, log_func=self.log, parent=self)
         if dialog.exec():
             self.data_context.set(self.json_data)
-            # self.table_manager.display()
             self.reload_and_show()
 
     def open_id_manager(self):
         dlg = IDManagerDialog(self)
         if dlg.exec():
-            # self.table_manager.display()
             self.reload_and_show()
             self.log("✅ Id_car.json перезаписан")

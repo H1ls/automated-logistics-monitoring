@@ -1,75 +1,35 @@
+# Navigation_Bot\bots\scenarios\NavigationBot.py
 import re
 import time
 
 import pyperclip
 from selenium.common.exceptions import StaleElementReferenceException
-from selenium.webdriver.common.action_chains import ActionChains
 from selenium.webdriver.common.by import By
 from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import WebDriverWait
 
-from Navigation_Bot.core.jSONManager import JSONManager
-from Navigation_Bot.core.paths import CONFIG_JSON
+from Navigation_Bot.bots.navi_bot_base import NaviBase
 
 
-class NavigationBot:
+class NavigationBot(NaviBase):
     # --- настройки поведения ---
+    SELECTOR_SECTION = "wialon_selectors"
+
     STALE_GPS_SECONDS = 3600  # 1 час
-    DEFAULT_TIMEOUT = 15
     ADDRESS_READY_TIMEOUT = 12
     CLIPBOARD_TIMEOUT = 2.5
 
-    REQUIRED_KEYS = ["search_input_xpath",
+    REQUIRED_KEYS = ("search_input_xpath",
                      "unit_block_xpath",
                      "address_selector",
                      "copy_button_selector",
                      "speed_selector",
                      "gps_sats_xpath",
-                     "monitoring", ]
+                     "monitoring",)
 
     def __init__(self, driver, log_func=None):
-        self.driver = driver
-        self.log = log_func or print
-        self.json_manager = JSONManager(CONFIG_JSON)
-
-        self.selectors = self.load_selectors()
-        self.validate_selectors()
-
-    # --- A. Init / config
-    def load_selectors(self) -> dict:
-        try:
-            return JSONManager.get_selectors("wialon_selectors", CONFIG_JSON)
-        except Exception as e:
-            self.log(f"❌ Ошибка загрузки селекторов: {self._short_err(e)}")
-            raise
-
-    def validate_selectors(self) -> None:
-        for key in self.REQUIRED_KEYS:
-            if key not in self.selectors or not self.selectors[key]:
-                raise ValueError(f"⛔ Отсутствует селектор '{key}' в конфиге")
-
-    # --- B. Selenium helpers
-    def _wait_visible_xpath(self, xpath: str, timeout: int = None):
-        t = timeout or self.DEFAULT_TIMEOUT
-        return WebDriverWait(self.driver, t).until(EC.visibility_of_element_located((By.XPATH, xpath)))
-
-    def _wait_present_css(self, css: str, timeout: int = None):
-        t = timeout or self.DEFAULT_TIMEOUT
-        return WebDriverWait(self.driver, t).until(EC.presence_of_element_located((By.CSS_SELECTOR, css)))
-
-    def _safe_find_css(self, css: str):
-        try:
-            return self.driver.find_element(By.CSS_SELECTOR, css)
-        except Exception:
-            return None
-
-    def _hover(self, element) -> None:
-        ActionChains(self.driver).move_to_element(element).perform()
-
-    def _short_err(self, e: Exception) -> str:
-        # return str(e).splitlines()[0] if e else "unknow error"
-        return str(e) if e else "unknow error"
+        super().__init__(driver, log_func)
 
     # --- C. Page actions
     def _focus_search_input(self):
@@ -95,6 +55,7 @@ class NavigationBot:
         try:
             search_input = self._focus_search_input()
             search_input.click()
+            self._clear_search()  # Удалить перед вводом
             search_input.send_keys(text)
             # el = self.selectors["move_to_element"]
             # ActionChains(self.driver).move_to_element(el).perform()
@@ -125,27 +86,6 @@ class NavigationBot:
             self.log("📡 Открыт 'Мониторинг'.")
         except Exception:
             pass
-
-    def _ensure_on_wialon_tab(self) -> bool:
-        try:
-            url = (self.driver.current_url or "").lower()
-            title = (self.driver.title or "").lower()
-            if ("wialon" in url) or ("rtmglonass" in url) or ("wialon" in title):
-                return True
-
-            # если сейчас не Wialon — попробуем найти вкладку среди всех
-            for h in self.driver.window_handles:
-                self.driver.switch_to.window(h)
-                url = (self.driver.current_url or "").lower()
-                title = (self.driver.title or "").lower()
-                if ("wialon" in url) or ("rtmglonass" in url) or ("wialon" in title):
-                    return True
-
-            self.log("⛔ Не нашёл вкладку Wialon среди открытых вкладок.")
-            return False
-        except Exception as e:
-            self.log(f"⛔ Ошибка _ensure_on_wialon_tab: {e}")
-            return False
 
     # --- D. Readers:
     def _wait_address_ready(self) -> str | None:
@@ -372,7 +312,7 @@ class NavigationBot:
         self.log(f"✅ Обработка завершена: {car_number}")
         return car_data
 
-    def process_row(self, car_data: dict, switch_to_wialon: bool = True) -> dict | None:
+    def process_row(self, car_data: dict) -> dict | None:
         try:
 
             self._ensure_monitoring_open()

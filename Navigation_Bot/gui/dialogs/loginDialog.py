@@ -1,13 +1,14 @@
 from PyQt6.QtWidgets import (
-    QDialog, QVBoxLayout, QHBoxLayout,
-    QLabel, QLineEdit, QPushButton, QMessageBox
+    QDialog,
+    QVBoxLayout,
+    QHBoxLayout,
+    QLabel,
+    QLineEdit,
+    QPushButton,
+    QMessageBox,
 )
-import json
-import gspread
-from oauth2client.service_account import ServiceAccountCredentials
 
-from Navigation_Bot.core.paths import CONFIG_JSON
-from Navigation_Bot.core.jSONManager import JSONManager
+from Navigation_Bot.gui.dialogs.dialog_helpers import button_row_trailing
 
 
 class LoginDialog(QDialog):
@@ -39,16 +40,11 @@ class LoginDialog(QDialog):
         row_pass.addWidget(self.edit_password)
         layout.addLayout(row_pass)
 
-        # Кнопки
-        btns = QHBoxLayout()
         btn_ok = QPushButton("Войти")
         btn_cancel = QPushButton("Отмена")
         btn_ok.clicked.connect(self._on_login)
         btn_cancel.clicked.connect(self.reject)
-        btns.addStretch(1)
-        btns.addWidget(btn_ok)
-        btns.addWidget(btn_cancel)
-        layout.addLayout(btns)
+        layout.addLayout(button_row_trailing(btn_ok, btn_cancel))
 
         # По Enter сразу логин
         self.edit_password.returnPressed.connect(self._on_login)

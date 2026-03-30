@@ -87,13 +87,15 @@ class WebDriverManager:
             self.log("⚠️ Файл cookies.pkl не найден, потребуется авторизация")
             return False
         except Exception as e:
-            self.log(f"❌ Ошибка загрузки cookies:\n {e}")
+            self.log(f"❌ Ошибка загрузки cookies ")
+            # self.log(f"❌ Ошибка загрузки cookies:\n {e}")
             return False
 
     def login_wialon(self):
         """Открывает/логинит Wialon и переключает на мониторинг"""
 
-        self.driver.get("https://wialon.rtmglonass.ru/?lang=ru")
+        # self.driver.get("https://wialon.rtmglonass.ru/?lang=ru")
+        self.driver.get("https://gps.skyglonass.ru/")
 
         if self.load_cookies(): self.driver.refresh()
 

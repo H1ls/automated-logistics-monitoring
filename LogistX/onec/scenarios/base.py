@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 from LogistX.onec.results import BotResult
+from PIL import Image, ImageDraw
+from pathlib import Path
 
 
 class ScenarioError(Exception):

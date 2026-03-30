@@ -38,14 +38,10 @@ class CaptureRaceUiStep:
         ctx.state["ui_points"][point.name] = {"x": point.x,
                                               "y": point.y,
                                               "score": point.score,
-                                              "source": point.source,}
+                                              "source": point.source, }
 
     def _store_anchor(self, point: UiPoint):
         self.session.ui_map.set_anchor(point.name, point.x, point.y)
-
-    def _log_point(self, point: UiPoint):
-        score_part = f", score={point.score:.3f}" if point.score is not None else ""
-        self.log(f"📍 {point.name}: ({point.x}, {point.y}), source={point.source}{score_part}")
 
     def _load_from_uimap_to_ctx(self, ctx):
         self.log("♻️ UI уже откалиброван — беру координаты из onec_ui_map.json")
@@ -111,32 +107,22 @@ class CaptureRaceUiStep:
                 return False
         return True
 
-    def _save_debug_overlay(self, shot_path: Path, points: list[UiPoint]):
-        try:
-            debug_path = self.session.tmp_dir / "race_form_calibration_debug.png"
-            with Image.open(shot_path).convert("RGB") as img:
-                draw = ImageDraw.Draw(img)
-                r = 8
-                for p in points:
-                    draw.ellipse((p.x - r, p.y - r, p.x + r, p.y + r), outline="red", width=3)
-                    draw.text((p.x + 10, p.y - 10), p.name, fill="red")
-                img.save(debug_path)
-            self.log(f"🖼 debug overlay сохранён: {debug_path}")
-        except Exception as e:
-            self.log(f"⚠️ Не удалось сохранить debug overlay: {e}")
-
     def run(self, ctx):
         if self.session.ui_calibrated:
             self._load_from_uimap_to_ctx(ctx)
             return
 
         self.log("🧭 Первый рейс после запуска — one-shot калибровка по одному скрину")
-
         shot_path = self.session.capture_current_race_form("race_form_calibration.png")
-        self.log(f"📸 Снимок формы: {shot_path}")
+
+        # self.log(f"📸 Снимок формы: {shot_path}")
+        # screen = self.session.screenshot_full("race_ui_calibration.png")
+        # self._draw_debug_regions(screen, ["cargo_search_region",
+        #                                   "error_header_region",
+        #                                   "error_search_region",
+        #                                   "error_buttons_region"])
 
         found: list[UiPoint] = []
-
         stable_templates = [("start_page_tab", "start_page_tab"),
                             ("race_params_tab", "race_params_tab"),
                             ("driver_rating_tab", "driver_rating_tab"), ]
@@ -174,9 +160,8 @@ class CaptureRaceUiStep:
 
         for point in found:
             self._put_ctx(ctx, point)
-            self._log_point(point)
-
-        self._save_debug_overlay(Path(shot_path), found)
+            # self._log_point(point)
+        # self._save_debug_overlay(Path(shot_path), found)
 
         template_points = [p for p in found if p.source.startswith("template:")]
         if template_points and self._points_are_confident(template_points):
@@ -188,3 +173,40 @@ class CaptureRaceUiStep:
             self.log("ℹ️ Не все точки найдены достаточно уверенно — сохраняю только в ctx.state")
 
         self.session.ui_calibrated = True
+
+    def _log_point(self, point: UiPoint):
+        score_part = f", score={point.score:.3f}" if point.score is not None else ""
+        self.log(f"📍 {point.name}: ({point.x}, {point.y}), source={point.source}{score_part}")
+
+    def _save_debug_overlay(self, shot_path: Path, points: list[UiPoint]):
+        try:
+            debug_path = self.session.tmp_dir / "race_form_calibration_debug.png"
+            with Image.open(shot_path).convert("RGB") as img:
+                draw = ImageDraw.Draw(img)
+                r = 8
+                for p in points:
+                    draw.ellipse((p.x - r, p.y - r, p.x + r, p.y + r), outline="red", width=3)
+                    draw.text((p.x + 10, p.y - 10), p.name, fill="red")
+                img.save(debug_path)
+            self.log(f"🖼 debug overlay сохранён: {debug_path}")
+        except Exception as e:
+            self.log(f"⚠️ Не удалось сохранить debug overlay: {e}")
+
+    def _draw_debug_regions(self, shot_path, region_names):
+        dbg_path = Path(shot_path).with_name(Path(shot_path).stem + "_regions.png")
+
+        with Image.open(shot_path).convert("RGB") as img:
+            draw = ImageDraw.Draw(img)
+
+            for name in region_names:
+                left, top, w, h = self.session.ui_map.get_region(name)
+
+                draw.rectangle((left, top, left + w, top + h),
+                               outline="yellow",
+                               width=3)
+
+                draw.text((left + 6, top + 6), name, fill="yellow")
+
+            img.save(dbg_path)
+
+        self.log(f"🧭 debug regions screenshot: {dbg_path}")

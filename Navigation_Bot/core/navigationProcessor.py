@@ -8,9 +8,9 @@ from PyQt6.QtWidgets import QTableWidgetItem
 from LogistX.onec.bot import OneCBot
 from LogistX.onec.context import RaceContext
 from Navigation_Bot.bots.mapsBot import MapsBot
-from Navigation_Bot.bots.navigationBot import NavigationBot
+from Navigation_Bot.bots.scenarios.NavigationBot import NavigationBot
 from Navigation_Bot.bots.webDriverManager import WebDriverManager
-from Navigation_Bot.bots.wialonReportsBot import WialonReportsBot
+from Navigation_Bot.bots.scenarios.ReportsBot import WialonReportsBot
 
 
 class NavigationProcessor:
@@ -52,7 +52,7 @@ class NavigationProcessor:
             return True
 
         # запасной вариант: если в navibot есть страховка — пробуем
-        if name == "wialon" and self.navibot and hasattr(self.navibot, "_ensure_on_wialon_tab"):
+        if name == "gps.skyglonass" and self.navibot and hasattr(self.navibot, "_ensure_on_wialon_tab"):
             try:
                 if self.navibot._ensure_on_wialon_tab():
                     return True
@@ -69,16 +69,14 @@ class NavigationProcessor:
             return
 
         data = self.data_context.get() or []
-
-        # ✅ сначала проверка границ
+        #  сначала проверка границ
         if not (0 <= row_idx < len(data)):
             if self.log:
                 self.log(f"⚠️ Строка {row_idx} больше не существует. Пропуск.")
             return
 
         car = data[row_idx] or {}
-
-        # ✅ теперь можно включать блокировку
+        #  теперь можно включать блокировку
         self._is_processing = True
 
         index_key = car.get("index")
@@ -197,10 +195,11 @@ class NavigationProcessor:
 
     def _process_wialon_row(self, car: dict) -> dict | None:
         try:
-            if not self._switch_tab_or_log("wialon"):
+            # if not self._switch_tab_or_log("wialon"):
+            if not self._switch_tab_or_log("gps.skyglonass"):
                 return None
 
-            result = self.navibot.process_row(car, switch_to_wialon=False)
+            result = self.navibot.process_row(car)
             if not result:
                 return None
 
@@ -310,16 +309,34 @@ class NavigationProcessor:
         else:
             self.log(msg)
 
-    def _geofence_from_cell_text(self, s: str) -> str:
-        s = (s or "").strip()
-        if s.startswith("🏷"):
-            first = s.splitlines()[0]
-            return first.replace("🏷", "").strip()
-        return ""
-
     def fetch_fact_logistx_and_fill_1c(self, page, row: int):
+        """Главный метод для close_race из LogistX"""
         self.ensure_driver_and_bots()
+        self._ensure_onec_dependencies()
 
+        # Всё, что связано с Qt, читаем ТОЛЬКО в GUI-потоке
+        obj = page.rows[row]
+
+        from_item = page.table.item(row, page.COL_FROM)
+        to_item = page.table.item(row, page.COL_TO)
+
+        from_text = from_item.text() if from_item else ""
+        to_text = to_item.text() if to_item else ""
+
+        job_data = {"row": row,
+                    "obj": obj,
+                    "race_no": str(obj.get("Рейс", "") or "").strip(),
+                    "unit": str(obj.get("ТС", "") or "").strip(),
+                    "load_zone": self._geofence_from_cell_text(from_text),
+                    "unload_zone": self._geofence_from_cell_text(to_text), }
+
+        fut = self.executor.submit(self._job_close_race, job_data)
+        fut.add_done_callback(
+            lambda _f: self.ui_bridge.call.emit(
+                lambda: self._apply_close_race_result(page, row, fut)))
+
+    def _ensure_onec_dependencies(self):
+        """Подготовка зависимостей удалёнки и отчёта в навигации"""
         if not getattr(self, "reportsbot", None):
             self.reportsbot = WialonReportsBot(self.driver_manager.driver, log_func=self.log)
 
@@ -327,54 +344,133 @@ class NavigationProcessor:
             self.rdp_activator = lambda: True
 
         if not getattr(self, "onec_bot", None):
-            self.onec_bot = OneCBot(rdp_activator=self.rdp_activator, reportsbot=self.reportsbot, log_func=self.log, )
+            self.onec_bot = OneCBot(rdp_activator=self.rdp_activator,
+                                    reportsbot=self.reportsbot,
+                                    log_func=self.log,)
 
-        def job():
+    def _job_close_race(self, job_data: dict):
+        obj = job_data["obj"]
+        row = int(job_data["row"])
+
+        race_no = job_data["race_no"]
+        unit = job_data["unit"]
+        load_zone = job_data["load_zone"]
+        unload_zone = job_data["unload_zone"]
+
+        if not race_no:
+            raise ValueError("Пустой 'Рейс' в строке")
+        if not unit:
+            raise ValueError("Пустой 'ТС' в строке")
+        if not load_zone:
+            raise ValueError("Не определена geofence погрузки")
+        if not unload_zone:
+            raise ValueError("Не определена geofence выгрузки")
+
+        ctx = RaceContext(
+            race_name=race_no,
+            race_search_text=race_no,
+            meta={"row": row,
+                  "unit": unit,
+                  "load_zone": load_zone,
+                  "unload_zone": unload_zone,
+                  "saved_status_1c": obj.get("status_1c", ""),
+                  "saved_status_text": obj.get("status_text", ""),
+                  "saved_departure_dt_1c": obj.get("departure_dt_1c", ""),
+                  "saved_onec_progress": obj.get("onec_progress", {}) or {},
+                  "saved_wialon_payload": obj.get("wialon_payload", {}) or {}, }, )
+
+        result = self.onec_bot.close_race(ctx)
+        return ctx, result
+
+    def _geofence_from_cell_text(self, s: str) -> str:
+        s = (s or "").strip()
+        if s.startswith("🏷"):
+            first = s.splitlines()[0]
+            return first.replace("🏷", "").strip()
+        return ""
+
+    def _apply_close_race_result(self, page, row: int, fut):
+        try:
             obj = page.rows[row]
+            ctx, result = fut.result()
+            race_no = ctx.race_name
 
-            race_no = str(obj.get("Рейс", "") or "").strip()
-            unit = str(obj.get("ТС", "") or "").strip()
-            load_zone = self._geofence_from_cell_text(page.table.item(row, page.COL_FROM).text())
-            unload_zone = self._geofence_from_cell_text(page.table.item(row, page.COL_TO).text())
+            self._update_row_from_ctx(obj, ctx, result)
+            self._update_fact_column(page, row, ctx, result)
+            self._update_status_column(page, row, ctx, result)
 
-            if not race_no:
-                raise ValueError("Пустой 'Рейс' в строке")
-            if not unit:
-                raise ValueError("Пустой 'ТС' в строке")
-            if not load_zone:
-                raise ValueError("Не определена geofence погрузки")
-            if not unload_zone:
-                raise ValueError("Не определена geofence выгрузки")
+            page.table.resizeRowToContents(row)
 
-            ctx = RaceContext(race_name=race_no, race_search_text=race_no, meta={"row": row,
-                                                                                 "unit": unit,
-                                                                                 "load_zone": load_zone,
-                                                                                 "unload_zone": unload_zone, }, )
+            if hasattr(page, "save_rows"):
+                page.save_rows()
 
-            result = self.onec_bot.close_race(ctx)
-            return ctx, result
+            if result.get("ok"):
+                self._uilog(f"✅ {race_no}: {result.get('message')}")
+            else:
+                self._uilog(f"❌ {race_no}: {result.get('message')}")
 
-        fut = self.executor.submit(job)
+        except Exception as e:
+            self._uilog(f"❌ Ошибка fetch_fact_logistx_and_fill_1c: {e}")
 
-        def apply_result():
-            try:
-                ctx, result = fut.result()
-                race_no = ctx.race_name
+    def _update_row_from_ctx(self, obj: dict, ctx, result: dict):
+        state = getattr(ctx, "state", {}) or {}
+        precheck = state.get("mini_wialon_precheck") or {}
+        progress = state.get("onec_progress") or {}
 
-                if result.get("ok"):
-                    txt = (f"Отправление: {ctx.departure_dt or ''}\n"
-                           f"Погр(въезд): {ctx.load_in or ''}\n"
-                           f"Погр(выезд): {ctx.load_out or ''}\n"
-                           f"Выгр(въезд): {ctx.unload_in or ''}\n"
-                           f"Выгр(выезд): {ctx.unload_out or ''}")
-                    page.table.setItem(row, page.COL_FACT, QTableWidgetItem(txt))
-                    page.table.resizeRowToContents(row)
-                    self._uilog(f"✅ {race_no}: {result.get('message')}")
-                else:
-                    self._uilog(f"❌ {race_no}: {result.get('message')}")
+        status_1c = str(state.get("close_status", "") or "")
+        status_text = str(precheck.get("status_text", "") or "")
+        precheck_payload = precheck.get("payload") or {}
 
-            except Exception as e:
-                self._uilog(f"❌ Ошибка fetch_fact_logistx_and_fill_1c: {e}")
+        final_payload = {"load_in": ctx.load_in or "",
+                         "load_out": ctx.load_out or "",
+                         "unload_in": ctx.unload_in or "",
+                         "unload_out": ctx.unload_out or "", }
 
-        # fut.add_done_callback(lambda _f: self.ui.call.emit(apply_result))
-        fut.add_done_callback(lambda _f: self.ui_bridge.call.emit(apply_result))
+        if not any(final_payload.values()):
+            final_payload = {"load_in": str(precheck_payload.get("load_in", "") or ""),
+                             "load_out": str(precheck_payload.get("load_out", "") or ""),
+                             "unload_in": str(precheck_payload.get("unload_in", "") or ""),
+                             "unload_out": str(precheck_payload.get("unload_out", "") or ""),
+                             }
+
+        obj["status_1c"] = status_1c
+        obj["status_text"] = status_text
+        obj["departure_dt_1c"] = ctx.departure_dt or ""
+        obj["wialon_payload"] = final_payload
+        obj["onec_progress"] = progress
+        obj["last_result"] = {"ok": bool(result.get("ok")),
+                              "stage": str(result.get("stage", "") or ""),
+                              "message": str(result.get("message", "") or ""),
+                              }
+
+    def _update_fact_column(self, page, row: int, ctx, result: dict):
+        if result.get("ok"):
+            txt = (f"Отправление: {ctx.departure_dt or ''}\n"
+                   f"Погр(въезд): {ctx.load_in or ''}\n"
+                   f"Погр(выезд): {ctx.load_out or ''}\n"
+                   f"Выгр(въезд): {ctx.unload_in or ''}\n"
+                   f"Выгр(выезд): {ctx.unload_out or ''}")
+
+            page.table.setItem(row, page.COL_FACT, QTableWidgetItem(txt))
+        else:
+            old_fact_item = page.table.item(row, page.COL_FACT)
+            if old_fact_item is None:
+                page.table.setItem(row, page.COL_FACT, QTableWidgetItem(""))
+
+    def _update_status_column(self, page, row: int, ctx, result: dict):
+        state = getattr(ctx, "state", {}) or {}
+        precheck = state.get("mini_wialon_precheck") or {}
+
+        status_1c = str(state.get("close_status", "") or "")
+        precheck_text = str(precheck.get("status_text", "") or "")
+        result_message = str(result.get("message", "") or "")
+
+        status_map = {"in_transit": "Ещё в пути",
+                      "on_unload": "Ещё на выгрузке",
+                      "ready_to_close": "Можно закрывать",
+                      "closed": "Закрыт",
+                      "error": "Ошибка",
+                      }
+
+        base = status_map.get(status_1c, "") or precheck_text or result_message
+        page.table.setItem(row, page.COL_STATUS, QTableWidgetItem(base or "—"))

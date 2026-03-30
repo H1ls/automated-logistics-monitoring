@@ -101,7 +101,7 @@ class OneCSession:
 
     def click_anchor(self, name: str):
         x, y = self.ui_map.get_anchor(name)
-        self.log(f"→ click anchor: {name} @ ({x}, {y})")
+        # self.log(f"→ click anchor: {name} @ ({x}, {y})")
         self.click(x, y)
 
     def move_and_click_anchor(self, name: str):
@@ -205,8 +205,7 @@ class OneCSession:
         return path
 
     def capture_current_race_form(self, filename: str = "race_form.png"):
-        # Пока берём полный экран.
-        # Позже можно заменить на region "race_form_region", если добавишь его в json.
+        # Пока берём полный экран, можно заменить на region "race_form_region", если добавишь его в json.
         return self.capture_full(filename)
 
     def find_template_on_shot(self, shot_path, template_name: str):
@@ -234,3 +233,9 @@ class OneCSession:
         self.press("f2")
         self.sleep(0.08)
         self.replace_current_field(value, submit=submit)
+
+    def screenshot_full(self, name: str):
+        path = self.tmp_dir / name
+        img = pyautogui.screenshot()
+        img.save(path)
+        return str(path)

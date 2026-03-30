@@ -71,7 +71,7 @@ class OpenRaceStep:
         self.session.press("down")
         self.session.sleep(0.35)
         self.session.press("enter")
-        self.session.sleep(0.25)
+        self.session.sleep(0.55)
 
     def _process_detected_error(self, ctx, err):
         self.log(f"⚠️ Обнаружено состояние ошибки: {err.kind}; text={err.text}")

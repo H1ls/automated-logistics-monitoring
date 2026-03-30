@@ -117,7 +117,13 @@ class LogistXPage(QWidget):
         item.setText(text)
 
         self.table.resizeRowToContents(row)
-
+    def save_rows(self):
+        try:
+            self.sample_path.parent.mkdir(parents=True, exist_ok=True)
+            self.sample_path.write_text(json.dumps(self.rows, ensure_ascii=False, indent=2),encoding="utf-8",)
+            self.log(f"💾 LogistX: сохранено строк: {len(self.rows)}")
+        except Exception as e:
+            self.log(f"❌ Ошибка сохранения LogistX JSON: {e}")
     def load_sample(self):
         try:
             p = self.sample_path.resolve()

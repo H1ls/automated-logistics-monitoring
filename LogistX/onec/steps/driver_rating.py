@@ -7,15 +7,21 @@ from datetime import datetime
 class DriverRatingStep:
     stage = "driver_rating"
 
-    def __init__(self, session, errors, log_func=print):
+    def __init__(self, session, errors, log_func=print, debug_mode: bool = True):
         self.session = session
         self.errors = errors
         self.log = log_func
+        self.debug_mode = debug_mode
+
+    def _get_rating_items(self, ctx) -> list[dict]:
+        state = getattr(ctx, "state", {}) or {}
+        calc = state.get("calc") or {}
+        items = calc.get("driver_rating_items") or []
+        return [x for x in items if isinstance(x, dict)]
 
     def _parse_dt(self, s: str) -> datetime | None:
         s = (s or "").strip()
-        if not s:
-            return None
+        if not s: return None
 
         for fmt in ("%d.%m.%Y %H:%M", "%d.%m.%Y %H:%M:%S"):
             try:
@@ -80,98 +86,107 @@ class DriverRatingStep:
 
         raise RuntimeError("Не задан ни anchor, ни template для driver_rating_tab")
 
-    def _click_insert_button(self):
-        m = self.session.find_template_in_region("btn_insert", "rating_region")
+    def _click_insert_button(self) -> bool:
+        region = self.session.ui_map.get_region("rating_region")
+        left, top, w, h = region
+
+        shot_path = self.session.capture_region("rating_region", "btn_insert__rating_region.png")
+
+        # if self.debug_mode:
+            # self.log(f"🧪 ui_map path: {self.session.ui_map.path}")
+            # self.log(f"🧪 templates keys: {list(self.session.ui_map.data.get('templates', {}).keys())}")
+            # self.log(f"🧪 regions keys: {list(self.session.ui_map.data.get('regions', {}).keys())}")
+
+        m = self.session.vision.find(shot_path,
+                                     self.session.ui_map.get_template("btn_insert"),
+                                     region_offset=(left, top), )
         if not m:
-            raise RuntimeError("Не нашёл кнопку INS")
-        self.session.click(*m.center)
-        self.session.sleep(0.4)
+            self.log("❌ Не нашёл кнопку '+' (btn_insert)")
+            return False
+
+        x, y = m.center
+        self.log(f"➕ Нажимаю '+' @ ({x}, {y})")
+        self.session.click(x, y)
+        self.session.sleep(0.5)
+        return True
 
     def _paste_remote(self, text: str):
         self.session.paste_text(text)
         self.session.sleep(0.1)
 
-    def _add_nothing(self, text: str):
-        self._click_insert_button()
-        self._paste_remote(text)
+    def _add_nothing(self):
+        if not self._click_insert_button():
+            raise RuntimeError("Не удалось нажать кнопку '+' в оценке водителя")
+        self.log("🟩 Оценка водителя: Без отклонений")
+        self.session.press("down")
+        self.session.sleep(0.15)
+        self.session.press("enter")
+        self.session.sleep(0.3)
 
-    def _add_driver_deviation(self, text: str, hours: int):
-        self._click_insert_button()
+    def _add_driver_deviation(self, kind: str, hours: int):
+        if not self._click_insert_button():
+            raise RuntimeError("Не удалось нажать кнопку '+' в оценке водителя")
 
-        self._paste_remote(text)
+        self.session.sleep(0.3)
+        # Поле "Вид отклонения"
+        self.log(f"📝 Вид отклонения: {kind}")
+        # self.session.press("tab")
         self.session.sleep(0.2)
-
         self.session.press("f2")
-        self.session.sleep(0.15)
-        self.session.press("enter")
+        self.session.sleep(0.2)
+        self.session.replace_current_field(kind, submit=False)
         self.session.sleep(0.2)
 
-        self.session.press("right")
-        self.session.sleep(0.15)
-        self.session.press("enter")
+        # Переходим в поле "Время"
+        self.session.press("tab")
         self.session.sleep(0.2)
+        # self.log(f"📝 Время: {hours}")
+        self.session.press("f2")
+        self.session.sleep(0.1)
+        self.session.replace_current_field(f'{str(hours)} ч.', submit=True)
+        self.session.sleep(0.35)
 
-        self._paste_remote(f"{hours} ч.")
-        self.session.sleep(0.2)
-
-        self.session.press("enter")
-        self.session.sleep(0.2)
+        err = self.errors.handle_generic()
+        if err:
+            raise RuntimeError(f"Ошибка при добавлении отклонения '{kind}': {err.kind}")
 
     def run(self, ctx):
-        calc = ctx.state.get("calc") or {}
-        if not calc:
-            self.log("ℹ️ Нет calc в ctx.state — DriverRatingStep пропущен")
-            return
+        items = self._get_rating_items(ctx)
 
-        load_late_min = calc.get("load_lateness_minutes")
-        unload_late_min = calc.get("unload_lateness_minutes")
+        self.log("⭐ Перехожу на вкладку оценки водителя")
 
-        load_stay_h = int(calc.get("load_stay_hours") or 0)
-        unload_stay_h = int(calc.get("unload_stay_hours") or 0)
+        anchor = self.session.ui_map.get_optional_anchor("driver_rating_tab")
+        if anchor:
+            self.session.click(*anchor)
+        else:
+            tpl = self.session.ui_map.get_optional_template("driver_rating_tab")
+            if tpl:
+                m = self.session.find_template_global("driver_rating_tab")
+                if not m:
+                    raise RuntimeError("Не удалось найти вкладку оценки водителя")
+                self.session.click(*m.center)
+            else:
+                raise RuntimeError("Не задан ни anchor, ни template для driver_rating_tab")
 
-        load_late_h = self._ceil_late_hours(load_late_min)
-        unload_late_h = self._ceil_late_hours(unload_late_min)
-
-        load_over6 = self._over_6h_hours(load_stay_h)
-        unload_over6 = self._over_6h_hours(unload_stay_h)
-
-        write_load_over6 = load_over6 > 1
-        write_unload_over6 = unload_over6 > 1
-
-        self.log(f"📊 DriverRating calc | "
-                 f"load_late_min={load_late_min}, unload_late_min={unload_late_min}, "
-                 f"load_stay_h={load_stay_h}, unload_stay_h={unload_stay_h}, "
-                 f"load_late_h={load_late_h}, unload_late_h={unload_late_h}, "
-                 f"load_over6={load_over6}, unload_over6={unload_over6}")
-
-        self._open_driver_rating()
+        self.session.sleep(0.5)
 
         err = self.errors.handle_generic()
         if err:
             raise RuntimeError(f"Ошибка при переходе на оценку водителя: {err.kind}")
 
-        has_any = ((load_late_h > 0) or
-                   (unload_late_h > 0) or
-                   write_load_over6 or
-                   write_unload_over6)
-
-        if not has_any:
-            self.log("🟩 Оценка водителя: Без отклонений")
-            self._add_nothing("Без отклонений")
+        if not items:
+            self._add_nothing()
             return
 
-        if load_late_h > 0:
-            self.log(f"🟨 Опоздание на погрузку: {load_late_h} ч.")
-            self._add_driver_deviation("Опоздание на погрузку", load_late_h)
+        for item in items:
+            kind = str(item.get("kind") or "").strip()
+            hours = int(item.get("hours") or 0)
+            if not kind or hours <= 0:
+                continue
 
-        if unload_late_h > 0:
-            self.log(f"🟨 Опоздание на разгрузку: {unload_late_h} ч.")
-            self._add_driver_deviation("Опоздание на разгрузку", unload_late_h)
+            self.log(f"🟧 {kind}: {hours} ч.")
+            self._add_driver_deviation(kind, hours)
 
-        if write_load_over6:
-            self.log(f"🟧 Простой на погрузке: {load_over6} ч.")
-            self._add_driver_deviation("Простой на погрузке", load_over6)
-
-        if write_unload_over6:
-            self.log(f"🟧 Простой на разгрузке: {unload_over6} ч.")
-            self._add_driver_deviation("Простой на разгрузке", unload_over6)
+        err = self.errors.handle_generic()
+        if err:
+            raise RuntimeError(f"Ошибка в блоке оценки водителя: {err.kind}")

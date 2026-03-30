@@ -1,11 +1,18 @@
 import json
 from pathlib import Path
 
-from PyQt6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QPushButton, QTableWidget, QTableWidgetItem,
-                             QMessageBox)
-from PyQt6.QtWidgets import QHeaderView
+from PyQt6.QtWidgets import (
+    QDialog,
+    QHeaderView,
+    QMessageBox,
+    QPushButton,
+    QTableWidget,
+    QTableWidgetItem,
+    QVBoxLayout,
+)
 
 from Navigation_Bot.gui.dialogs.aliasesEditorDialog import AliasesEditorDialog
+from Navigation_Bot.gui.dialogs.dialog_helpers import button_row_split
 
 SITES_DB_PATH = Path("LogistX/config") / "sites_db.json"
 
@@ -46,18 +53,16 @@ class SitesDbEditorDialog(QDialog):
 
         # чтобы адрес красиво переносился и строка увеличивалась
         self.table.resizeRowsToContents()
-        btns = QHBoxLayout()
         self.btn_add = QPushButton("➕ Добавить")
         self.btn_del = QPushButton("🗑 Удалить")
         self.btn_save = QPushButton("💾 Сохранить")
         self.btn_close = QPushButton("Закрыть")
-
-        btns.addWidget(self.btn_add)
-        btns.addWidget(self.btn_del)
-        btns.addStretch(1)
-        btns.addWidget(self.btn_save)
-        btns.addWidget(self.btn_close)
-        layout.addLayout(btns)
+        layout.addLayout(
+            button_row_split(
+                (self.btn_add, self.btn_del),
+                (self.btn_save, self.btn_close),
+            )
+        )
 
         self.btn_add.clicked.connect(self.add_row)
         self.btn_del.clicked.connect(self.delete_selected_rows)
@@ -171,12 +176,6 @@ class SitesDbEditorDialog(QDialog):
                 else:
                     new_map[k] = v
             self._aliases_by_row = new_map
-
-    def _reindex_aliases(self):
-        new_map = {}
-        for r in range(self.table.rowCount()):
-            new_map[r] = self._aliases_by_row.get(r, [])
-        self._aliases_by_row = new_map
 
     def save_json(self):
         try:

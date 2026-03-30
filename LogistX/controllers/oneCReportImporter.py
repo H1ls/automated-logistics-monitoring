@@ -26,13 +26,10 @@ class OneCReportImporter:
         # подсказка заголовка окна RDP (поменяешь под себя)
         self.rdp_title_hint = "176.57.78.6:2025 — Подключение к удаленному рабочему столу"
         # запасные варианты (часто встречаются)
-        self.rdp_title_fallbacks = [
-            "Подключение к удаленному рабочему столу",
-            "Remote Desktop Connection",
-        ]
+        self.rdp_title_fallbacks = ["Подключение к удаленному рабочему столу",
+                                    "Remote Desktop Connection", ]
 
         self._rdp_win = None
-
         # pyautogui safety
         pyautogui.FAILSAFE = True
 
@@ -57,9 +54,86 @@ class OneCReportImporter:
 
         # шаг 5: конвертим в нужную структуру и сохраняем json
         rows = self._to_logistx_rows(rows_1c)
-        self._save_json(rows)
+        # self._save_json(rows)
+        synced_rows = self._sync_json(rows)
 
-        return len(rows)
+        return len(synced_rows)
+
+    # ---- helpers for json sync ----
+    @staticmethod
+    def _race_key(row: dict) -> str:
+        return str(row.get("Рейс", "") or "").strip()
+
+    def _load_existing_json(self) -> list[dict]:
+        if not self.out_json_path.exists():
+            return []
+
+        try:
+            data = json.loads(self.out_json_path.read_text(encoding="utf-8") or "[]")
+            if isinstance(data, list):
+                return [x for x in data if isinstance(x, dict)]
+            if isinstance(data, dict):
+                return [data]
+            return []
+        except Exception as e:
+            self.log(f"⚠️ Не удалось прочитать существующий JSON: {e}")
+            return []
+
+    def _sync_json(self, imported_rows: list[dict]) -> list[dict]:
+        """
+        Синхронизация по полю 'Рейс':
+        - существующие и снова импортированные рейсы оставляем как есть
+        - новые рейсы добавляем
+        - исчезнувшие из нового импорта удаляем
+        Порядок берём из нового импорта 1С.
+        """
+        self.out_json_path.parent.mkdir(parents=True, exist_ok=True)
+
+        existing_rows = self._load_existing_json()
+        existing_by_race = {}
+
+        for row in existing_rows:
+            race = self._race_key(row)
+            if race:
+                existing_by_race[race] = row
+
+        synced_rows = []
+        added = 0
+        kept = 0
+
+        seen = set()
+
+        for imported in imported_rows:
+            race = self._race_key(imported)
+            if not race:
+                continue
+
+            if race in seen:
+                continue
+            seen.add(race)
+
+            old_row = existing_by_race.get(race)
+            if old_row is not None:
+                synced_rows.append(old_row)
+                kept += 1
+            else:
+                synced_rows.append(imported)
+                added += 1
+
+        removed = 0
+        imported_races = {self._race_key(r) for r in imported_rows if self._race_key(r)}
+        for race in existing_by_race:
+            if race not in imported_races:
+                removed += 1
+
+        self.out_json_path.write_text(
+            json.dumps(synced_rows, ensure_ascii=False, indent=2),
+            encoding="utf-8", )
+
+        self.log(f"✅ JSON sync сохранён: {self.out_json_path} | "
+                 f"kept={kept}, added={added}, removed={removed}, total={len(synced_rows)}")
+
+        return synced_rows
 
     # ---- RDP focus + copy ----
     def _find_rdp_window(self):
@@ -247,15 +321,13 @@ class OneCReportImporter:
 
         out = []
         for r in rows_1c:
-            row = {
-                "ТС": pick(r, "ТС"),
-                "Рейс": pick(r, "Рейс"),
-                "Рейс.Пункт отправления": pick(r, "Рейс.Пункт отправления", "Пункт отправления", "Отправление"),
-                "Рейс.Пункт назначения": pick(r, "Рейс.Пункт назначения", "Пункт назначения", "Назначение"),
-                "Плановая дата освобождения разгрузка": pick(r, "Плановая дата освобождения разгрузка",
-                                                             "Плановая дата"),
-                "Контрагент": pick(r, "Контрагент"),
-            }
+            row = {"ТС": pick(r, "ТС"),
+                   "Рейс": pick(r, "Рейс"),
+                   "Рейс.Пункт отправления": pick(r, "Рейс.Пункт отправления", "Пункт отправления", "Отправление"),
+                   "Рейс.Пункт назначения": pick(r, "Рейс.Пункт назначения", "Пункт назначения", "Назначение"),
+                   "Плановая дата освобождения разгрузка": pick(r, "Плановая дата освобождения разгрузка",
+                                                                "Плановая дата"),
+                   "Контрагент": pick(r, "Контрагент"), }
 
             # фильтр: если ВСЕ поля пустые — пропускаем (убирает хвостовые пустые строки)
             if all(not str(v).strip() for v in row.values()):
@@ -267,8 +339,5 @@ class OneCReportImporter:
 
     def _save_json(self, rows: list[dict]) -> None:
         self.out_json_path.parent.mkdir(parents=True, exist_ok=True)
-        self.out_json_path.write_text(
-            json.dumps(rows, ensure_ascii=False, indent=2),
-            encoding="utf-8"
-        )
+        self.out_json_path.write_text(json.dumps(rows, ensure_ascii=False, indent=2), encoding="utf-8")
         self.log(f"✅ JSON сохранён: {self.out_json_path}")

@@ -6,6 +6,12 @@ from PyQt6.QtWidgets import (
 
 from Navigation_Bot.core.dataContext import DataContext
 from Navigation_Bot.core.paths import ID_FILEPATH
+from Navigation_Bot.gui.dialogs.dialog_helpers import button_row_trailing
+
+_ID = "ИДОбъекта в центре мониторинга"
+_NAME = "Наименование"
+_TS = "ТС"
+_CENTER = "Центр мониторинга"
 
 
 class IDManagerDialog(QDialog):
@@ -47,22 +53,13 @@ class IDManagerDialog(QDialog):
 
         # Таблица
         self.table = QTableWidget(0, 4)
-        self.table.setHorizontalHeaderLabels(["ИД-Объекта",
-                                              "Наименование",
-                                              "ТС",
-                                              "Центр мониторинга"
-                                              ])
+        self.table.setHorizontalHeaderLabels(["ИД-Объекта", _NAME, _TS, _CENTER])
         self.table.horizontalHeader().setStretchLastSection(True)
         vbox.addWidget(self.table)
 
-        # Кнопки
-        hbox = QHBoxLayout()
         btn_ok = QPushButton("Сохранить")
         btn_cancel = QPushButton("Отмена")
-        hbox.addStretch()
-        hbox.addWidget(btn_ok)
-        hbox.addWidget(btn_cancel)
-        vbox.addLayout(hbox)
+        vbox.addLayout(button_row_trailing(btn_ok, btn_cancel))
 
         # Заполняем таблицу
         self._populate_table(self.original_entries)
@@ -74,7 +71,20 @@ class IDManagerDialog(QDialog):
         btn_ok.clicked.connect(self.accept)
         btn_cancel.clicked.connect(self.reject)
 
-    # Заполнение таблицы
+    @staticmethod
+    def _editable_item(text: str) -> QTableWidgetItem:
+        it = QTableWidgetItem(text)
+        it.setFlags(it.flags() | Qt.ItemFlag.ItemIsEditable)
+        return it
+
+    def _row_cells(self, ent: dict) -> list[QTableWidgetItem]:
+        return [
+            self._editable_item(str(ent.get(_ID, ""))),
+            self._editable_item(str(ent.get(_NAME, ""))),
+            self._editable_item(str(ent.get(_TS, ""))),
+            self._editable_item(str(ent.get(_CENTER, ""))),
+        ]
+
     def _populate_table(self, entries):
         """Заполняем таблицу из списка словарей."""
         self._initializing = True
@@ -82,22 +92,8 @@ class IDManagerDialog(QDialog):
         for ent in entries:
             row = self.table.rowCount()
             self.table.insertRow(row)
-
-            item_id = QTableWidgetItem(str(ent.get("ИДОбъекта в центре мониторинга", "")))
-            item_id.setFlags(item_id.flags() | Qt.ItemFlag.ItemIsEditable)
-            self.table.setItem(row, 0, item_id)
-
-            item_name = QTableWidgetItem(ent.get("Наименование", ""))
-            item_name.setFlags(item_name.flags() | Qt.ItemFlag.ItemIsEditable)
-            self.table.setItem(row, 1, item_name)
-
-            item_ts = QTableWidgetItem(ent.get("ТС", ""))
-            item_ts.setFlags(item_ts.flags() | Qt.ItemFlag.ItemIsEditable)
-            self.table.setItem(row, 2, item_ts)
-
-            item_center = QTableWidgetItem(ent.get("Центр мониторинга", ""))
-            item_center.setFlags(item_center.flags() | Qt.ItemFlag.ItemIsEditable)
-            self.table.setItem(row, 3, item_center)
+            for col, item in enumerate(self._row_cells(ent)):
+                self.table.setItem(row, col, item)
         self._initializing = False
 
     def _on_filter(self, text: str):
@@ -131,7 +127,7 @@ class IDManagerDialog(QDialog):
         obj_id = int(id_text)
         # Защита от дублей ID при добавлении
         for e in self.original_entries:
-            if e.get("ИДОбъекта в центре мониторинга") == obj_id:
+            if e.get(_ID) == obj_id:
                 self.log_func(f"⚠️ Ошибка: ID {obj_id} уже существует!")
                 return
 
@@ -145,32 +141,14 @@ class IDManagerDialog(QDialog):
         center_text = "Виалон"
 
         # Добавляем в оригинальный список
-        new_entry = {"ИДОбъекта в центре мониторинга": obj_id,
-                     "Наименование": name_text,
-                     "ТС": ts_text,
-                     "Центр мониторинга": center_text,
-                     }
+        new_entry = {_ID: obj_id, _NAME: name_text, _TS: ts_text, _CENTER: center_text}
 
         self.original_entries.append(new_entry)
 
         row = self.table.rowCount()
         self.table.insertRow(row)
-
-        item_id = QTableWidgetItem(str(obj_id))
-        item_id.setFlags(item_id.flags() | Qt.ItemFlag.ItemIsEditable)
-        self.table.setItem(row, 0, item_id)
-
-        item_name = QTableWidgetItem(name_text)
-        item_name.setFlags(item_name.flags() | Qt.ItemFlag.ItemIsEditable)
-        self.table.setItem(row, 1, item_name)
-
-        item_ts = QTableWidgetItem(ts_text)
-        item_ts.setFlags(item_ts.flags() | Qt.ItemFlag.ItemIsEditable)
-        self.table.setItem(row, 2, item_ts)
-
-        item_center = QTableWidgetItem(center_text)
-        item_center.setFlags(item_center.flags() | Qt.ItemFlag.ItemIsEditable)
-        self.table.setItem(row, 3, item_center)
+        for col, item in enumerate(self._row_cells(new_entry)):
+            self.table.setItem(row, col, item)
 
         # помечаем строку как изменённую
         self.changed_rows.add(row)
@@ -195,14 +173,14 @@ class IDManagerDialog(QDialog):
             for idx, e in enumerate(self.original_entries):
                 if idx == row:
                     continue  # пропускаем текущую строку
-                if e.get("ИДОбъекта в центре мониторинга") == obj_id:
+                if e.get(_ID) == obj_id:
                     self.log_func(f"⚠️ Ошибка: ID {obj_id} уже существует!")
                     return
             ent = self.original_entries[row]
-            ent["ИДОбъекта в центре мониторинга"] = obj_id
-            ent["Наименование"] = name_text
-            ent["ТС"] = ts_text
-            ent["Центр мониторинга"] = center_text
+            ent[_ID] = obj_id
+            ent[_NAME] = name_text
+            ent[_TS] = ts_text
+            ent[_CENTER] = center_text
 
         self.context.save()
         super().accept()

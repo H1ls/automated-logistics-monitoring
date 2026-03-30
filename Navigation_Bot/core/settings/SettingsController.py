@@ -1,5 +1,5 @@
 from Navigation_Bot.bots.mapsBot import MapsBot
-from Navigation_Bot.bots.navigationBot import NavigationBot
+from Navigation_Bot.bots.scenarios.NavigationBot import NavigationBot
 from Navigation_Bot.bots.googleSheetsManager import GoogleSheetsManager
 
 

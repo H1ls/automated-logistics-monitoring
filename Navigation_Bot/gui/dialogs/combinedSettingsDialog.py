@@ -9,6 +9,7 @@ from PyQt6.QtWidgets import (QDialog, QTabWidget, QWidget, QVBoxLayout, QFormLay
 from Navigation_Bot.core.jSONManager import JSONManager as JM
 from Navigation_Bot.core.paths import CONFIG_JSON
 from Navigation_Bot.core.settings.settings_schema import SECTIONS
+from Navigation_Bot.gui.dialogs.dialog_helpers import button_row_trailing
 
 
 class CombinedSettingsDialog(QDialog):
@@ -40,15 +41,11 @@ class CombinedSettingsDialog(QDialog):
             self._forms[section_key] = form
             self.tabs.addTab(form, title)
 
-        btns = QHBoxLayout()
         self.btn_save = QPushButton("Сохранить")
         self.btn_cancel = QPushButton("Отмена")
         self.btn_save.clicked.connect(self._on_save)
         self.btn_cancel.clicked.connect(self.reject)
-        btns.addStretch(1)
-        btns.addWidget(self.btn_save)
-        btns.addWidget(self.btn_cancel)
-        root.addLayout(btns)
+        root.addLayout(button_row_trailing(self.btn_save, self.btn_cancel))
 
     def _validate_required(self) -> tuple[bool, str]:
         for s_key, (title, fields) in SECTIONS.items():
@@ -152,42 +149,35 @@ class SectionForm(QWidget):
             self._widgets[key] = editor
             form.addRow(label + (" *" if required else ""), editor)
 
-        btns = QHBoxLayout()
         self.btn_reset = QPushButton("Сбросить (default)")
         self.btn_reset.clicked.connect(self.reset_to_default)
 
         self.btn_clear_json = QPushButton("Очистить JSON")
-        # parent здесь - CombinedSettingsDialog
         if isinstance(parent, CombinedSettingsDialog):
             self.btn_clear_json.clicked.connect(parent.clear_json)
 
-        btns.addStretch(1)
-        btns.addWidget(self.btn_reset)
-        btns.addWidget(self.btn_clear_json)
-        self.layout().addLayout(btns)
+        self.layout().addLayout(button_row_trailing(self.btn_reset, self.btn_clear_json))
 
-    # Переписать на читаемый, возможно использовать словари _READERS, _CASTERS (тогда переписать весь class)
     def values(self) -> dict:
         out = {}
         for key, editor in self._widgets.items():
-            spec = self.fields_spec[key]
-            tp = spec[1]
+            _, tp, _ = self.fields_spec[key]
             if isinstance(editor, QCheckBox):
-                val = editor.isChecked()
+                raw = editor.isChecked()
             elif isinstance(editor, QSpinBox):
-                val = editor.value()
+                raw = editor.value()
             else:
-                val = editor.text().strip()
+                raw = editor.text().strip()
+
             if tp is int:
                 try:
-                    val = int(val)
-                except:
-                    val = 0
+                    out[key] = int(raw)
+                except (TypeError, ValueError):
+                    out[key] = 0
             elif tp is bool:
-                val = bool(val)
+                out[key] = bool(raw)
             else:
-                val = str(val)
-            out[key] = val
+                out[key] = str(raw)
         return out
 
     def reset_to_default(self):
@@ -202,7 +192,7 @@ class SectionForm(QWidget):
             elif isinstance(editor, QSpinBox):
                 try:
                     editor.setValue(int(val))
-                except:
+                except (TypeError, ValueError):
                     editor.setValue(0)
             else:
                 editor.setText("" if val is None else str(val))

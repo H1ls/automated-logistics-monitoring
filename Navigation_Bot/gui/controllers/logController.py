@@ -38,9 +38,9 @@ class LogController(QObject):
 
         if text.startswith("❌") or "ошибка" in lower or "error" in lower:
             color = "red"
-        elif text.startswith("✅") or "успеш" in lower or "успех" in lower:
+        elif text.startswith("✅") or text.startswith("📡") or text.startswith("🗺️") or "успеш" in lower or "успех" in lower:
             color = "green"
-        elif text.startswith("⚠") or "предупр" in lower or "warning" in lower:
+        elif text.startswith("⚠") or text.startswith("⌛") or "предупр" in lower or "warning" in lower:
             color = "#c08000"
 
         if color:

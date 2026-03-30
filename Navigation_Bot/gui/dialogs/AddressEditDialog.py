@@ -10,6 +10,7 @@ from PyQt6.QtWidgets import (
 
 from Navigation_Bot.core.datasetArchive import DatasetArchive
 from Navigation_Bot.core.processedFlags import StatusEditorWidget, init_processed_flags
+from Navigation_Bot.gui.dialogs.dialog_helpers import button_row_split
 from Navigation_Bot.gui.dialogs.sitesDbEditorDialog import SitesDbEditorDialog
 
 
@@ -46,16 +47,8 @@ class AddressEditDialog(QDialog):
         self.scroll_layout = QVBoxLayout(self.scroll_widget)
         self.scroll_area.setWidget(self.scroll_widget)
 
-        # --- отделяем реальные точки от комментария ---
         all_blocks = self.row_data.get(self.prefix, []) or []
-
-        points = []
-        self._comment_text = ""
-        for d in all_blocks:
-            if isinstance(d, dict) and any(k.startswith(f"{self.prefix} ") for k in d.keys()):
-                points.append(d)
-            elif isinstance(d, dict) and ("Комментарий" in d or f"{self.prefix} другое" in d):
-                self._comment_text = d.get("Комментарий", d.get(f"{self.prefix} другое", "")) or ""
+        points, self._comment_text = self._extract_points_and_comment(all_blocks)
 
         # loads для чекбоксов - только по реальным точкам
         loads = [blk.get(f"{self.prefix} {i + 1}", "") for i, blk in enumerate(points)]
@@ -108,13 +101,18 @@ class AddressEditDialog(QDialog):
 
         self.layout.addWidget(self.scroll_area)  # список точек
 
-        # Кнопки
-        btns = QHBoxLayout()
-        btns.addWidget(self.btn_add)
-        btns.addStretch(1)
-        btns.addWidget(self.btn_archive)
-        btns.addWidget(self.btn_save)
-        self.layout.addLayout(btns)
+        self.layout.addLayout(button_row_split((self.btn_add,), (self.btn_archive, self.btn_save), ))
+
+    def _extract_points_and_comment(self, all_blocks: list) -> tuple[list, str]:
+        """Отделяет блоки точек «{prefix} N» от блока комментария."""
+        points = []
+        comment = ""
+        for d in all_blocks:
+            if isinstance(d, dict) and any(k.startswith(f"{self.prefix} ") for k in d.keys()):
+                points.append(d)
+            elif isinstance(d, dict) and ("Комментарий" in d or f"{self.prefix} другое" in d):
+                comment = d.get("Комментарий", d.get(f"{self.prefix} другое", "")) or ""
+        return points, comment
 
     def open_sites_editor(self, prefill_address: str = "") -> None:
         dlg = SitesDbEditorDialog(parent=self, prefill_address=prefill_address, log_func=self.log)

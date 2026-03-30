@@ -10,7 +10,7 @@ from PIL import Image, ImageDraw
 class FillTimesStep:
     stage = "fill_times"
 
-    def __init__(self, session, errors, log_func=print, debug_mode: bool = True):
+    def __init__(self, session, errors, log_func=print, debug_mode: bool = False):
         self.session = session
         self.errors = errors
         self.log = log_func
@@ -96,6 +96,22 @@ class FillTimesStep:
             ctx.state["calc"] = calc
         return calc
 
+    def _draw_debug_regions(self, shot_path: str | Path, region_names: list[str]):
+        if not self.debug_mode:
+            return
+
+        dbg_path = Path(shot_path).with_name(Path(shot_path).stem + "_regions.png")
+        with Image.open(shot_path).convert("RGB") as img:
+            draw = ImageDraw.Draw(img)
+
+            for name in region_names:
+                left, top, w, h = self.session.ui_map.get_region(name)
+                draw.rectangle((left, top, left + w, top + h), outline="yellow", width=3)
+                draw.text((left + 5, top + 5), name, fill="yellow")
+
+            img.save(dbg_path)
+        self.log(f"🧭 debug regions screenshot: {dbg_path}")
+
     def _draw_debug_points(self, shot_path: str | Path, points: list[tuple[str, int, int]]):
         if not self.debug_mode:
             return
@@ -110,7 +126,6 @@ class FillTimesStep:
             for label, x_abs, y_abs in points:
                 x = x_abs - left
                 y = y_abs - top
-
                 r = 8
                 draw.ellipse((x - r, y - r, x + r, y + r), outline="red", width=3)
                 draw.text((x + 10, y - 10), label, fill="red")
@@ -140,7 +155,8 @@ class FillTimesStep:
     def _store_calc(self, ctx):
         calc = self._ensure_calc_state(ctx)
 
-        load_lateness_minutes = self._calc_lateness_minutes(ctx.load_in, getattr(ctx, "load_arrive_deadline", None))
+        load_lateness_minutes = self._calc_lateness_minutes(ctx.load_in,
+                                                            getattr(ctx, "load_arrive_deadline", None))
         unload_lateness_minutes = self._calc_lateness_minutes(ctx.unload_in,
                                                               getattr(ctx, "unload_arrive_deadline", None))
 
@@ -194,20 +210,19 @@ class FillTimesStep:
 
         calc["driver_rating_items"] = driver_rating_items
 
-        self.log("📊 calc: "
-                 f"load_deadline={calc['load_arrive_deadline']!r}, "
-                 f"unload_deadline={calc['unload_arrive_deadline']!r}, "
-                 f"load_lateness_minutes={load_lateness_minutes}, "
-                 f"unload_lateness_minutes={unload_lateness_minutes}, "
-                 f"load_stay_minutes={load_stay_minutes}, "
-                 f"unload_stay_minutes={unload_stay_minutes}, "
-                 f"load_late_hours={load_late_hours}, "
-                 f"unload_late_hours={unload_late_hours}, "
-                 f"load_stay_hours={load_stay_hours}, "
-                 f"unload_stay_hours={unload_stay_hours}, "
-                 f"load_over_6h_hours={load_over_6h_hours}, "
-                 f"unload_over_6h_hours={unload_over_6h_hours}"
-                 )
+        # self.log("📊 calc: "
+        #          f"load_deadline={calc['load_arrive_deadline']!r}, "
+        #          f"unload_deadline={calc['unload_arrive_deadline']!r}, "
+        #          f"load_lateness_minutes={load_lateness_minutes}, "
+        #          f"unload_lateness_minutes={unload_lateness_minutes}, "
+        #          f"load_stay_minutes={load_stay_minutes}, "
+        #          f"unload_stay_minutes={unload_stay_minutes}, "
+        #          f"load_late_hours={load_late_hours}, "
+        #          f"unload_late_hours={unload_late_hours}, "
+        #          f"load_stay_hours={load_stay_hours}, "
+        #          f"unload_stay_hours={unload_stay_hours}, "
+        #          f"load_over_6h_hours={load_over_6h_hours}, "
+        #          f"unload_over_6h_hours={unload_over_6h_hours}")
 
         if driver_rating_items:
             self.log(f"🧾 driver_rating_items={driver_rating_items}")
@@ -227,6 +242,12 @@ class FillTimesStep:
         left, top, w, h = region
 
         shot_path = self.session.capture_region("cargo_search_region", "fill_times_cargo.png")
+        screen = self.session.screenshot_full("debug_regions.png")
+        self._draw_debug_regions(screen, ["cargo_search_region",
+                                                      "error_header_region",
+                                                      "error_search_region",
+                                                      "error_buttons_region",
+                                                      "error_text_region"])
 
         m_arr = self.session.vision.find(shot_path,
                                          self.session.ui_map.get_template("hdr_arrival_fact"),
@@ -293,10 +314,11 @@ class FillTimesStep:
                 self._set_cell(x_dep, y_unload, ctx.unload_out, "Разгрузка / Убытие факт")
 
         self._draw_debug_points(shot_path, debug_points)
+
         self._store_calc(ctx)
 
         self.session.click_anchor("start_page_tab")
-        self.log("✅ FillTimesStep done: "
-                 f"load_arrive_deadline={getattr(ctx, 'load_arrive_deadline', None)!r}, "
-                 f"unload_arrive_deadline={getattr(ctx, 'unload_arrive_deadline', None)!r}, "
-                 f"calc={ctx.state.get('calc')!r}")
+        # self.log("✅ FillTimesStep done: "
+        #          f"load_arrive_deadline={getattr(ctx, 'load_arrive_deadline', None)!r}, "
+        #          f"unload_arrive_deadline={getattr(ctx, 'unload_arrive_deadline', None)!r}, "
+        #          f"calc={ctx.state.get('calc')!r}")
