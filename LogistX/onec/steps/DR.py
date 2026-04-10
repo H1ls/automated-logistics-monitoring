@@ -1,3 +1,4 @@
+# LogistX/onec/steps/driver_rating.py
 from __future__ import annotations
 
 from datetime import datetime
@@ -27,7 +28,7 @@ class DriverRatingStep:
             try:
                 return datetime.strptime(s[:19], fmt)
             except Exception:
-                pass
+                self.log(f"DriverRatingStep._parse_dt = {fmt:%d.%m.%Y %H:%M}, ")
         return None
 
     def _calc_minutes_diff(self, a: str, b: str) -> int | None:
@@ -66,63 +67,40 @@ class DriverRatingStep:
     def _over_6h_hours(self, stay_hours: int) -> int:
         return max(0, int(stay_hours) - 6)
 
-    def _get_ctx_point(self, ctx, name: str):
-        if not ctx:
-            return None
-        ui_points = (getattr(ctx, "state", {}) or {}).get("ui_points") or {}
-        point = ui_points.get(name)
-        if not point:
-            return None
-        return int(point["x"]), int(point["y"])
-
-    def _click_point(self, name: str, ctx=None):
-        point = self._get_ctx_point(ctx, name)
-        if point:
-            x, y = point
-            # self.log(f"→ click ctx ui_point: {name} @ ({x}, {y})")
-            self.session.click(x, y)
-            return
-
-        anchor = self.session.ui_map.get_optional_anchor(name)
-        if anchor:
-            x, y = anchor
-            # self.log(f"→ click ui_map anchor: {name} @ ({x}, {y})")
-            self.session.click(x, y)
-            return
-
-        tpl = self.session.ui_map.get_optional_template(name)
-        if tpl:
-            m = self.session.find_template_global(name)
-            if not m:
-                raise RuntimeError(f"Не удалось найти '{name}'")
-            x, y = m.center
-            # self.log(f"→ click template match: {name} @ ({x}, {y})")
-            self.session.click(x, y)
-            return
-
-        raise RuntimeError(f"Не задан ни ctx/ui_map/template для {name}")
-
-    def _open_driver_rating(self, ctx=None):
+    def _open_driver_rating(self):
         self.log("⭐ Перехожу на вкладку оценки водителя")
-        self._click_point("driver_rating_tab", ctx=ctx)
-        self.session.sleep(0.4)
+
+        anchor = self.session.ui_map.get_optional_anchor("driver_rating_tab")
+        if anchor:
+            self.session.click(*anchor)
+            self.session.sleep(0.4)
+            return
+
+        tpl = self.session.ui_map.get_optional_template("driver_rating_tab")
+        if tpl:
+            m = self.session.find_template_global("driver_rating_tab")
+            if not m:
+                raise RuntimeError("Не удалось найти вкладку оценки водителя")
+            self.session.click(*m.center)
+            self.session.sleep(0.4)
+            return
+
+        raise RuntimeError("Не задан ни anchor, ни template для driver_rating_tab")
 
     def _click_insert_button(self) -> bool:
-        region = self.session.ui_map.get_optional_region("rating_region")
+        region = self.session.ui_map.get_region("rating_region")
+        left, top, w, h = region
 
-        if region:
-            left, top, w, h = region
-            shot_path = self.session.capture_region("rating_region", "btn_insert__rating_region.png")
-            region_offset = (left, top)
-            # self.log(f"🧭 Ищу '+' в rating_region={region}")
-        else:
-            shot_path = self.session.capture_current_race_form("btn_insert__full.png")
-            region_offset = (0, 0)
-            self.log("⚠️ rating_region не задан — ищу '+' по всему экрану")
+        shot_path = self.session.capture_region("rating_region", "btn_insert__rating_region.png")
+
+        # if self.debug_mode:
+            # self.log(f"🧪 ui_map path: {self.session.ui_map.path}")
+            # self.log(f"🧪 templates keys: {list(self.session.ui_map.data.get('templates', {}).keys())}")
+            # self.log(f"🧪 regions keys: {list(self.session.ui_map.data.get('regions', {}).keys())}")
 
         m = self.session.vision.find(shot_path,
                                      self.session.ui_map.get_template("btn_insert"),
-                                     region_offset=region_offset,)
+                                     region_offset=(left, top), )
         if not m:
             self.log("❌ Не нашёл кнопку '+' (btn_insert)")
             return False
@@ -151,19 +129,22 @@ class DriverRatingStep:
             raise RuntimeError("Не удалось нажать кнопку '+' в оценке водителя")
 
         self.session.sleep(0.3)
+        # Поле "Вид отклонения"
         self.log(f"📝 Вид отклонения: {kind}")
+        # self.session.press("tab")
         self.session.sleep(0.2)
         self.session.press("f2")
         self.session.sleep(0.2)
         self.session.replace_current_field(kind, submit=False)
         self.session.sleep(0.2)
 
+        # Переходим в поле "Время"
         self.session.press("tab")
         self.session.sleep(0.2)
-        self.log(f"📝 Время: {hours}")
+        # self.log(f"📝 Время: {hours}")
         self.session.press("f2")
         self.session.sleep(0.1)
-        self.session.replace_current_field(f"{hours} ч.", submit=True)
+        self.session.replace_current_field(f'{str(hours)} ч.', submit=True)
         self.session.sleep(0.35)
 
         err = self.errors.handle_generic()
@@ -174,10 +155,21 @@ class DriverRatingStep:
         items = self._get_rating_items(ctx)
 
         self.log("Возврат на Основную вкладку")
-        self._click_point("start_page_tab", ctx=ctx)
-        self.session.sleep(0.5)
+        self.session.click_anchor("start_page_tab")
+        self.log("⭐ Перехожу на вкладку оценки водителя")
+        anchor = self.session.ui_map.get_optional_anchor("driver_rating_tab")
+        if anchor:
+            self.session.click(*anchor)
+        else:
+            tpl = self.session.ui_map.get_optional_template("driver_rating_tab")
+            if tpl:
+                m = self.session.find_template_global("driver_rating_tab")
+                if not m:
+                    raise RuntimeError("Не удалось найти вкладку оценки водителя")
+                self.session.click(*m.center)
+            else:
+                raise RuntimeError("Не задан ни anchor, ни template для driver_rating_tab")
 
-        self._open_driver_rating(ctx=ctx)
         self.session.sleep(0.5)
 
         err = self.errors.handle_generic()

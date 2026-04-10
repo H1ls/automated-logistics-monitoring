@@ -13,11 +13,11 @@
     ],
     "race_params_tab": [
       235,
-      547
+      512
     ],
     "driver_rating_tab": [
       511,
-      546
+      511
     ],
     "cargo_tab": [
       183,
@@ -25,18 +25,24 @@
     ],
     "departure_label": [
       235,
-      584
+      549
     ],
     "departure_date_field": [
       308,
-      584
+      549
     ],
     "departure_time_field": [
       437,
-      584
+      549
     ]
   },
   "regions": {
+    "rating_region": [
+      10,
+      420,
+      250,
+      300
+    ],
     "error_header_region": [
       510,
       450,
@@ -69,6 +75,7 @@
     ]
   },
   "templates": {
+    "btn_insert": "btn_insert.png",
     "error_title_1c": "error_title_1c.png",
     "error_ok_button": "error_ok_button.png",
     "error_dialog": "error_ok_button.png",

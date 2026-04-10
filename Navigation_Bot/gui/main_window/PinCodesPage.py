@@ -405,10 +405,8 @@ class PinCodesPage(QWidget):
             pass
         data = {"meta": {"updated_at": time.time(),
                          "xlsx_path": self.xlsx_path,
-                         "xlsx_mtime": self._mtime,
-                         },
-                "rows": [r.__dict__ for r in self.rows],
-                }
+                         "xlsx_mtime": self._mtime, },
+                "rows": [r.__dict__ for r in self.rows], }
         try:
             with open(self.json_path, "w", encoding="utf-8") as f:
                 json.dump(data, f, ensure_ascii=False, indent=2)

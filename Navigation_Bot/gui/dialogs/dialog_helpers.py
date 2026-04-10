@@ -8,7 +8,7 @@ from PyQt6.QtWidgets import QHBoxLayout, QWidget
 
 
 def button_row_trailing(*buttons: QWidget) -> QHBoxLayout:
-    """[stretch] · кнопки слева направо (типично «Сохранить», «Отмена»)."""
+    """кнопки слева направо («Сохранить», «Отмена»)"""
     row = QHBoxLayout()
     row.addStretch(1)
     for b in buttons:
@@ -17,7 +17,7 @@ def button_row_trailing(*buttons: QWidget) -> QHBoxLayout:
 
 
 def button_row_leading(*widgets: QWidget) -> QHBoxLayout:
-    """Виджеты слева, затем stretch (вся группа прижата влево)."""
+    """Виджеты слева, затем stretch (вся группа прижата влево)"""
     row = QHBoxLayout()
     for w in widgets:
         row.addWidget(w)

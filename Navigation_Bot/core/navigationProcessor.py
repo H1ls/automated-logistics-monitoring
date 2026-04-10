@@ -309,31 +309,46 @@ class NavigationProcessor:
         else:
             self.log(msg)
 
-    def fetch_fact_logistx_and_fill_1c(self, page, row: int):
-        """Главный метод для close_race из LogistX"""
+    def close_race_logistx_async(self, job_data: dict, on_done=None):
+        """
+        Асинхронное закрытие рейса из LogistX.
+
+        job_data должен содержать:
+          - row: int (номер строки на странице LogistX)
+          - obj: dict (сама строка-объект, которую обновляем по результату)
+          - race_no: str
+          - unit: str
+          - load_zone: str
+          - unload_zone: str
+
+        on_done (опционально) вызывается в GUI-потоке:
+          on_done(ctx, result, job_data)
+        """
         self.ensure_driver_and_bots()
         self._ensure_onec_dependencies()
 
-        # Всё, что связано с Qt, читаем ТОЛЬКО в GUI-потоке
-        obj = page.rows[row]
-
-        from_item = page.table.item(row, page.COL_FROM)
-        to_item = page.table.item(row, page.COL_TO)
-
-        from_text = from_item.text() if from_item else ""
-        to_text = to_item.text() if to_item else ""
-
-        job_data = {"row": row,
-                    "obj": obj,
-                    "race_no": str(obj.get("Рейс", "") or "").strip(),
-                    "unit": str(obj.get("ТС", "") or "").strip(),
-                    "load_zone": self._geofence_from_cell_text(from_text),
-                    "unload_zone": self._geofence_from_cell_text(to_text), }
-
         fut = self.executor.submit(self._job_close_race, job_data)
-        fut.add_done_callback(
-            lambda _f: self.ui_bridge.call.emit(
-                lambda: self._apply_close_race_result(page, row, fut)))
+        if not on_done:
+            # по умолчанию логируем результат в UI
+            def on_done(ctx, result, _job):
+                race_no = getattr(ctx, "race_name", "") or _job.get("race_no", "")
+                if result.get("ok"):
+                    self._uilog(f"✅ {race_no}: {result.get('message')}")
+                else:
+                    self._uilog(f"❌ {race_no}: {result.get('message')}")
+
+        def _apply():
+            try:
+                ctx, result = fut.result()
+                on_done(ctx, result, job_data)
+            except Exception as e:
+                self._uilog(f"❌ Ошибка close_race_logistx_async: {e}")
+
+        # Все UI-вызовы — через мост (GUI-thread)
+        if getattr(self, "ui_bridge", None):
+            fut.add_done_callback(lambda _f: self.ui_bridge.call.emit(_apply))
+        else:
+            fut.add_done_callback(lambda _f: _apply())
 
     def _ensure_onec_dependencies(self):
         """Подготовка зависимостей удалёнки и отчёта в навигации"""
@@ -388,89 +403,3 @@ class NavigationProcessor:
             first = s.splitlines()[0]
             return first.replace("🏷", "").strip()
         return ""
-
-    def _apply_close_race_result(self, page, row: int, fut):
-        try:
-            obj = page.rows[row]
-            ctx, result = fut.result()
-            race_no = ctx.race_name
-
-            self._update_row_from_ctx(obj, ctx, result)
-            self._update_fact_column(page, row, ctx, result)
-            self._update_status_column(page, row, ctx, result)
-
-            page.table.resizeRowToContents(row)
-
-            if hasattr(page, "save_rows"):
-                page.save_rows()
-
-            if result.get("ok"):
-                self._uilog(f"✅ {race_no}: {result.get('message')}")
-            else:
-                self._uilog(f"❌ {race_no}: {result.get('message')}")
-
-        except Exception as e:
-            self._uilog(f"❌ Ошибка fetch_fact_logistx_and_fill_1c: {e}")
-
-    def _update_row_from_ctx(self, obj: dict, ctx, result: dict):
-        state = getattr(ctx, "state", {}) or {}
-        precheck = state.get("mini_wialon_precheck") or {}
-        progress = state.get("onec_progress") or {}
-
-        status_1c = str(state.get("close_status", "") or "")
-        status_text = str(precheck.get("status_text", "") or "")
-        precheck_payload = precheck.get("payload") or {}
-
-        final_payload = {"load_in": ctx.load_in or "",
-                         "load_out": ctx.load_out or "",
-                         "unload_in": ctx.unload_in or "",
-                         "unload_out": ctx.unload_out or "", }
-
-        if not any(final_payload.values()):
-            final_payload = {"load_in": str(precheck_payload.get("load_in", "") or ""),
-                             "load_out": str(precheck_payload.get("load_out", "") or ""),
-                             "unload_in": str(precheck_payload.get("unload_in", "") or ""),
-                             "unload_out": str(precheck_payload.get("unload_out", "") or ""),
-                             }
-
-        obj["status_1c"] = status_1c
-        obj["status_text"] = status_text
-        obj["departure_dt_1c"] = ctx.departure_dt or ""
-        obj["wialon_payload"] = final_payload
-        obj["onec_progress"] = progress
-        obj["last_result"] = {"ok": bool(result.get("ok")),
-                              "stage": str(result.get("stage", "") or ""),
-                              "message": str(result.get("message", "") or ""),
-                              }
-
-    def _update_fact_column(self, page, row: int, ctx, result: dict):
-        if result.get("ok"):
-            txt = (f"Отправление: {ctx.departure_dt or ''}\n"
-                   f"Погр(въезд): {ctx.load_in or ''}\n"
-                   f"Погр(выезд): {ctx.load_out or ''}\n"
-                   f"Выгр(въезд): {ctx.unload_in or ''}\n"
-                   f"Выгр(выезд): {ctx.unload_out or ''}")
-
-            page.table.setItem(row, page.COL_FACT, QTableWidgetItem(txt))
-        else:
-            old_fact_item = page.table.item(row, page.COL_FACT)
-            if old_fact_item is None:
-                page.table.setItem(row, page.COL_FACT, QTableWidgetItem(""))
-
-    def _update_status_column(self, page, row: int, ctx, result: dict):
-        state = getattr(ctx, "state", {}) or {}
-        precheck = state.get("mini_wialon_precheck") or {}
-
-        status_1c = str(state.get("close_status", "") or "")
-        precheck_text = str(precheck.get("status_text", "") or "")
-        result_message = str(result.get("message", "") or "")
-
-        status_map = {"in_transit": "Ещё в пути",
-                      "on_unload": "Ещё на выгрузке",
-                      "ready_to_close": "Можно закрывать",
-                      "closed": "Закрыт",
-                      "error": "Ошибка",
-                      }
-
-        base = status_map.get(status_1c, "") or precheck_text or result_message
-        page.table.setItem(row, page.COL_STATUS, QTableWidgetItem(base or "—"))

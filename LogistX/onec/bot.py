@@ -26,16 +26,10 @@ class OneCBot:
         if tmp_dir is None:
             tmp_dir = logistx_dir / "tmp"
 
-        print("A1 before UiMap")
         self.ui_map = UiMap(ui_map_path)
-        print("A2 after UiMap")
-        print("A3 before OneCSession")
         self.session = OneCSession(rdp_activator=rdp_activator,ui_map=self.ui_map,
                                    templates_dir=templates_dir,tmp_dir=tmp_dir,log_func=log_func, )
-        print("A4 after OneCSession")
-        print("A3 before OneCSession")
         self.errors = OneCErrorHandler(self.session, log_func=log_func)
-        print("A6 after OneCErrorHandler")
         # self.log(f"ui_map_path={ui_map_path}")
         # self.log(f"templates_dir={templates_dir}")
         # self.log(f"tmp_dir={tmp_dir}")

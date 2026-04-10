@@ -96,44 +96,6 @@ class FillTimesStep:
             ctx.state["calc"] = calc
         return calc
 
-    def _draw_debug_regions(self, shot_path: str | Path, region_names: list[str]):
-        if not self.debug_mode:
-            return
-
-        dbg_path = Path(shot_path).with_name(Path(shot_path).stem + "_regions.png")
-        with Image.open(shot_path).convert("RGB") as img:
-            draw = ImageDraw.Draw(img)
-
-            for name in region_names:
-                left, top, w, h = self.session.ui_map.get_region(name)
-                draw.rectangle((left, top, left + w, top + h), outline="yellow", width=3)
-                draw.text((left + 5, top + 5), name, fill="yellow")
-
-            img.save(dbg_path)
-        self.log(f"🧭 debug regions screenshot: {dbg_path}")
-
-    def _draw_debug_points(self, shot_path: str | Path, points: list[tuple[str, int, int]]):
-        if not self.debug_mode:
-            return
-
-        dbg_path = Path(shot_path).with_name(Path(shot_path).stem + "_debug.png")
-
-        with Image.open(shot_path).convert("RGB") as img:
-            draw = ImageDraw.Draw(img)
-
-            left, top, _, _ = self.session.ui_map.get_region("cargo_search_region")
-
-            for label, x_abs, y_abs in points:
-                x = x_abs - left
-                y = y_abs - top
-                r = 8
-                draw.ellipse((x - r, y - r, x + r, y + r), outline="red", width=3)
-                draw.text((x + 10, y - 10), label, fill="red")
-
-            img.save(dbg_path)
-
-        self.log(f"🧪 debug screenshot: {dbg_path}")
-
     def _copy_deadline(self, x_dep: int, y_row: int, plan_dy: int, label: str) -> str:
         x = x_dep
         y = y_row + plan_dy
@@ -244,10 +206,10 @@ class FillTimesStep:
         shot_path = self.session.capture_region("cargo_search_region", "fill_times_cargo.png")
         screen = self.session.screenshot_full("debug_regions.png")
         self._draw_debug_regions(screen, ["cargo_search_region",
-                                                      "error_header_region",
-                                                      "error_search_region",
-                                                      "error_buttons_region",
-                                                      "error_text_region"])
+                                          "error_header_region",
+                                          "error_search_region",
+                                          "error_buttons_region",
+                                          "error_text_region"])
 
         m_arr = self.session.vision.find(shot_path,
                                          self.session.ui_map.get_template("hdr_arrival_fact"),
@@ -322,3 +284,41 @@ class FillTimesStep:
         #          f"load_arrive_deadline={getattr(ctx, 'load_arrive_deadline', None)!r}, "
         #          f"unload_arrive_deadline={getattr(ctx, 'unload_arrive_deadline', None)!r}, "
         #          f"calc={ctx.state.get('calc')!r}")
+
+    def _draw_debug_points(self, shot_path: str | Path, points: list[tuple[str, int, int]]):
+        if not self.debug_mode:
+            return
+
+        dbg_path = Path(shot_path).with_name(Path(shot_path).stem + "_debug.png")
+
+        with Image.open(shot_path).convert("RGB") as img:
+            draw = ImageDraw.Draw(img)
+
+            left, top, _, _ = self.session.ui_map.get_region("cargo_search_region")
+
+            for label, x_abs, y_abs in points:
+                x = x_abs - left
+                y = y_abs - top
+                r = 8
+                draw.ellipse((x - r, y - r, x + r, y + r), outline="red", width=3)
+                draw.text((x + 10, y - 10), label, fill="red")
+
+            img.save(dbg_path)
+
+        self.log(f"🧪 debug screenshot: {dbg_path}")
+
+    def _draw_debug_regions(self, shot_path: str | Path, region_names: list[str]):
+        if not self.debug_mode:
+            return
+
+        dbg_path = Path(shot_path).with_name(Path(shot_path).stem + "_regions.png")
+        with Image.open(shot_path).convert("RGB") as img:
+            draw = ImageDraw.Draw(img)
+
+            for name in region_names:
+                left, top, w, h = self.session.ui_map.get_region(name)
+                draw.rectangle((left, top, left + w, top + h), outline="yellow", width=3)
+                draw.text((left + 5, top + 5), name, fill="yellow")
+
+            img.save(dbg_path)
+        self.log(f"🧭 debug regions screenshot: {dbg_path}")

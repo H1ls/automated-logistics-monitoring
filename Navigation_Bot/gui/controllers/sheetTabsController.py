@@ -4,9 +4,6 @@ from __future__ import annotations
 from PyQt6.QtGui import QAction
 from PyQt6.QtWidgets import QPushButton, QToolButton, QMenu, QTableWidget
 
-from LogistX.gui.logistxPage import LogistXPage
-from Navigation_Bot.gui.main_window.PinCodesPage import PinCodesPage
-
 
 class SheetTabsController:
     """
@@ -180,24 +177,13 @@ class SheetTabsController:
         if tab.get("kind") == "local":
             key = tab["key"]
 
-            # создать страницу при первом открытии
-            if key not in gui._local_pages_by_key:
-                if key == "local:pincodes":
-
-                    page = PinCodesPage(xlsx_path=gui.pincodes_xlsx_path,
-                                        json_path=gui.pincodes_json_path,
-                                        log_func=gui.log,
-                                        parent=gui.stack,)
-                    gui.stack.addWidget(page)
-                    gui._local_pages_by_key[key] = page
-
-                elif key == "local:logistx":
-
-                    page = LogistXPage(log_func=gui.log, parent=gui.stack)
-                    page.fact_clicked.connect(lambda row: gui.processor.fetch_fact_logistx_and_fill_1c(page, row))
-                    gui.stack.addWidget(page)
-                    gui._local_pages_by_key[key] = page
-            page = gui._local_pages_by_key.get(key)
+            # создание страницы — обязанность GUI/composition root (чтобы не тянуть зависимости сюда)
+            page = None
+            try:
+                if hasattr(gui, "get_or_create_local_page"):
+                    page = gui.get_or_create_local_page(key)
+            except Exception:
+                page = None
 
             if page:
                 gui.stack.setCurrentWidget(page)

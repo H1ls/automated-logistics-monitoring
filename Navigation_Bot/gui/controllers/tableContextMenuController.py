@@ -5,9 +5,10 @@ from Navigation_Bot.bots.dataCleaner import DataCleaner
 
 
 class TableContextMenuController:
-    def __init__(self, gui):
+    def __init__(self, gui, tasks_service=None):
         self.gui = gui
         self.table = gui.table
+        self.tasks = tasks_service
 
     def install(self):
         self.table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
@@ -53,11 +54,16 @@ class TableContextMenuController:
             return None
 
     def _delete_row(self, real_idx: int):
-        data = self.gui.data_context.get() or []
-        if not (0 <= real_idx < len(data)):
+        if self.tasks:
+            item = self.tasks.delete_row(real_idx)
+        else:
+            data = self.gui.data_context.get() or []
+            if not (0 <= real_idx < len(data)):
+                return
+            item = data.pop(real_idx)
+            self.gui.data_context.save()
+        if not item:
             return
-        item = data.pop(real_idx)
-        self.gui.data_context.save()
         self.gui.log(f"🗑 Удалено: ТС={item.get('ТС')} index={item.get('index')}")
         self.gui.reload_and_show()
 

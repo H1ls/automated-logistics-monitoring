@@ -10,7 +10,7 @@ from Navigation_Bot.gui.dialogs.combinedSettingsDialog import VerticalTextDelega
 
 class TableManager:
     def __init__(self, table_widget, data_context, log_func, on_row_click, on_edit_id_click, gsheet,
-                 reload_callback=None):
+                 tasks_service=None, reload_callback=None):
 
         self.data_context = data_context
         self.table = table_widget
@@ -24,6 +24,7 @@ class TableManager:
         self.on_edit_id_click = on_edit_id_click
         self._new_entry_buffer = {}
         self.gsheet = gsheet
+        self.tasks = tasks_service
         self._editable_headers = {"Телефон", "ФИО", "КА", "id"}
         self.after_display = None
         self.view_order = []
@@ -170,45 +171,21 @@ class TableManager:
             ka = self.table.item(row_idx, 3).text().strip()
             fio = self.table.item(row_idx, 4).text().strip()
 
-            if not ts_phone or "Погрузка" not in self._new_entry_buffer or "Выгрузка" not in self._new_entry_buffer:
-                self.log("⚠️ Заполните все поля (ТС, КА, Погрузка, Выгрузка)")
+            if not self.tasks:
+                self.log("⚠️ TasksService не подключён: добавление строки недоступно")
                 return
 
-            # разбиваем ТС и телефон
-            parts = ts_phone.split()
-            ts = " ".join(parts[:-1]) if len(parts) > 1 else ts_phone
-            phone = parts[-1] if len(parts) > 1 else ""
+            ok, new_entry, err = self.tasks.add_entry_from_new_row(
+                ts_phone=ts_phone,ka=ka,fio=fio,new_entry_buffer=self._new_entry_buffer,)
 
-            new_entry = {"ТС": ts,
-                         "Телефон": phone,
-                         "ФИО": fio,
-                         "КА": ka,
-                         "Погрузка": self._new_entry_buffer.get("Погрузка", []),
-                         "Выгрузка": self._new_entry_buffer.get("Выгрузка", [])
-                         }
-            if "Время отправки" in self._new_entry_buffer:
-                new_entry["Время отправки"] = self._new_entry_buffer["Время отправки"]
-            if "Транзит" in self._new_entry_buffer:
-                new_entry["Транзит"] = self._new_entry_buffer["Транзит"]
+            if not ok:
+                if err == "missing_required_fields":
+                    self.log("⚠️ Заполните все поля (ТС, КА, Погрузка, Выгрузка)")
+                else:
+                    self.log(f"❌ Ошибка добавления строки: {err}")
+                return
 
-            # index
-            json_data = self.data_context.get()
-            last_index = max([x.get("index", 0) for x in json_data], default=0)
-            index = last_index + 1
-            while not self.gsheet.is_row_empty(index):
-                index += 1
-            new_entry["index"] = index
-
-            # сохраняем в JSON
-            json_data.append(new_entry)
-            self.data_context.save()
-
-            # отправляем в Google Sheets
-            self.gsheet.upload_new_row(new_entry)
-            new_entry["uploaded"] = True
-            self.data_context.save()
-
-            self.log(f"✅ Новая запись добавлена (index={index})")
+            self.log(f"✅ Новая запись добавлена (index={new_entry.get('index')})")
             self._new_entry_buffer = {}  # сбрасываем буфер
             # self.display()
             if callable(self.reload_callback):
@@ -342,12 +319,8 @@ class TableManager:
         if getattr(self, "_block_item_save", False):
             return
 
-        json_data = self.data_context.get()
         row = item.row()
         col = item.column()
-        if row >= len(json_data):
-            # это ключевая строка — не сохраняем здесь
-            return
 
         header_item = self.table.horizontalHeaderItem(col)
         if not header_item:
@@ -360,29 +333,17 @@ class TableManager:
 
         value = item.text()
 
-        # id — отдельные правила
-        if header == "id":
-            if not value.strip():
-                return
-            if not value.strip().isdigit():
-                self.log(f"⚠️ Неверный ID в строке {row + 1}")
-                return
-            value = int(value)
-
         visual_row = item.row()
         if visual_row < 0 or visual_row >= len(self.view_order):
             return
 
         real_idx = self.view_order[visual_row]
-        if real_idx < 0 or real_idx >= len(json_data):
+        if not self.tasks:
             return
 
-        old_value = json_data[real_idx].get(header)
-        if old_value == value:
-            return
-
-        json_data[real_idx][header] = value  # пишем в реальную строку
-        self.data_context.save()
+        ok, err = self.tasks.update_editable_field(real_idx=real_idx, header=header, value=value)
+        if not ok and err == "invalid_id":
+            self.log(f"⚠️ Неверный ID в строке {row + 1}")
         # self.log(f"✏️ Изменено: строка {row + 1}, колонка '{header}' → {value}")
 
     def visual_row_by_index_key(self, key):

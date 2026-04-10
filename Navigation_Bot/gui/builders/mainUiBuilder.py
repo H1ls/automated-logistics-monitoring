@@ -1,10 +1,9 @@
 from __future__ import annotations
 
 from PyQt6.QtCore import Qt
-from PyQt6.QtWidgets import (
-    QHBoxLayout, QTableWidget, QPushButton, QTextEdit,
-    QHeaderView, QAbstractItemView, QTableWidgetItem, QStackedWidget, QWidget, QVBoxLayout, QLabel, QProgressBar
-)
+from PyQt6.QtWidgets import (QHBoxLayout, QTableWidget, QPushButton, QTextEdit,
+                             QHeaderView, QAbstractItemView, QTableWidgetItem, QStackedWidget, QWidget, QVBoxLayout,
+                             QLabel, QProgressBar)
 
 from Navigation_Bot.gui.controllers.logController import LogController
 from Navigation_Bot.gui.widgets.globalSearchBar import GlobalSearchBar

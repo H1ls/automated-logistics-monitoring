@@ -173,6 +173,8 @@ class CaptureRaceUiStep:
             self.log("ℹ️ Не все точки найдены достаточно уверенно — сохраняю только в ctx.state")
 
         self.session.ui_calibrated = True
+        # print("CTX:", ctx.state["ui_points"]["driver_rating_tab"])
+        # print("JSON:", self.session.ui_map.get_optional_anchor("driver_rating_tab"))
 
     def _log_point(self, point: UiPoint):
         score_part = f", score={point.score:.3f}" if point.score is not None else ""

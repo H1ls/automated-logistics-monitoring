@@ -10,6 +10,7 @@ from Navigation_Bot.core.paths import INPUT_FILEPATH
 from Navigation_Bot.core.paths import PIN_XLSX_FILEPATH, PIN_JSON_FILEPATH
 from Navigation_Bot.core.processedFlags import init_processed_flags
 from Navigation_Bot.gui.builders.mainUiBuilder import MainUiBuilder
+from Navigation_Bot.gui.controllers.sheet_tab_definitions import default_local_tabs
 from Navigation_Bot.gui.controllers.appServices import AppServices
 from Navigation_Bot.gui.controllers.sheetTabsController import SheetTabsController
 from Navigation_Bot.gui.controllers.signalsBinder import SignalsBinder
@@ -104,18 +105,84 @@ class NavigationGUI(QWidget):
             self.loading_overlay.hide()
 
     # _____END
-
     def local_page(self):
-        self.local_tabs = [{"kind": "local", "key": "local:pincodes", "title": "Пин коды"},
-                           {"kind": "local", "key": "local:logistx", "title": "LogistX"},
-                           ]
+        self.local_tabs = default_local_tabs()
         self._local_pages_by_key = {}
 
         self.pincodes_xlsx_path = PIN_XLSX_FILEPATH
         self.pincodes_json_path = PIN_JSON_FILEPATH
 
+        # фабрики локальных страниц по ключу (убираем прямые импорты из SheetTabsController)
+        self._local_page_factories = {
+            "local:pincodes": self._build_page_pincodes,
+            "local:logistx": self._build_page_logistx,
+        }
+
+    def get_or_create_local_page(self, key: str):
+        """Создать страницу по ключу (если ещё нет) и вернуть её."""
+        if not hasattr(self, "_local_pages_by_key"):
+            self._local_pages_by_key = {}
+
+        if key in self._local_pages_by_key:
+            return self._local_pages_by_key[key]
+
+        factory = getattr(self, "_local_page_factories", {}).get(key)
+        if not factory:
+            return None
+
+        page = factory()
+        if page:
+            self._local_pages_by_key[key] = page
+        return page
+
+    def _build_page_pincodes(self):
+        # локальный импорт, чтобы не создавать жёсткую зависимость при импорте модулей
+        from Navigation_Bot.gui.main_window.PinCodesPage import PinCodesPage
+
+        page = PinCodesPage(xlsx_path=self.pincodes_xlsx_path,
+                            json_path=self.pincodes_json_path,
+                            log_func=self.log,
+                            parent=self.stack,)
+        self.stack.addWidget(page)
+        return page
+
+    def _build_page_logistx(self):
+        # локальный импорт, чтобы убрать прямую зависимость из контроллера вкладок
+        from LogistX.gui.logistxPage import LogistXPage
+
+        page = LogistXPage(log_func=self.log, parent=self.stack)
+        page.fact_clicked.connect(lambda row: self._on_logistx_fact_clicked(page, row))
+        self.stack.addWidget(page)
+        return page
+
+    def _on_logistx_fact_clicked(self, page, row: int):
+        """
+        Обработчик кнопки ▶ на странице LogistX.
+        UI сам формирует job_data (читает таблицу), а processor не зависит от QWidget.
+        """
+        try:
+            job_data = page.build_close_race_job(row)
+            if not job_data:
+                return
+
+            def _on_done(ctx, result: dict, _job: dict):
+                page.apply_close_race_result(row=row, ctx=ctx, result=result)
+                race_no = getattr(ctx, "race_name", "") or _job.get("race_no", "")
+                if result.get("ok"):
+                    self.ui_bridge.log.emit(f"✅ {race_no}: {result.get('message')}")
+                else:
+                    self.ui_bridge.log.emit(f"❌ {race_no}: {result.get('message')}")
+
+            self.processor.close_race_logistx_async(job_data, on_done=_on_done)
+        except Exception as e:
+            if getattr(self, "ui_bridge", None):
+                self.ui_bridge.log.emit(f"❌ LogistX ▶ ошибка: {e}")
+            else:
+                self.log(f"❌ LogistX ▶ ошибка: {e}")
+
     def init_managers(self):
         self.services = AppServices(self)
+        # build() возвращает ctx и сохраняет его в self.ctx
         self.services.build()
 
         self.sheet_tabs_controller = SheetTabsController(gui=self)

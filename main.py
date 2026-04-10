@@ -1,16 +1,14 @@
 import os
-from PyQt6.QtWidgets import QApplication, QDialog, QMessageBox
 import faulthandler, sys
+from PyQt6.QtWidgets import QApplication, QDialog, QMessageBox
+from Navigation_Bot.gui.main_window.Gui import NavigationGUI
+
 faulthandler.enable(all_threads=True)
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
 
-    from Navigation_Bot.gui.dialogs.loginDialog import LoginDialog
-    from Navigation_Bot.gui.main_window.Gui import NavigationGUI
-    from Navigation_Bot.bots.googleSheetsManager import GoogleSheetsManager
-
-    gsheet = GoogleSheetsManager(log_func=print)
+    # gsheet = GoogleSheetsManager(log_func=print)
 
     # while True:
     #     login_dialog = LoginDialog()

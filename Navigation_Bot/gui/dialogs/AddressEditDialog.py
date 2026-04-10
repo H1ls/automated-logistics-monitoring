@@ -166,11 +166,9 @@ class AddressEditDialog(QDialog):
                 best = obj
 
         if best and best_score > 0:
-            return {
-                "site_id": str(best.get("site_id", "") or ""),
-                "geofence": str(best.get("geofence", "") or ""),
-                "score": best_score
-            }
+            return {"site_id": str(best.get("site_id", "") or ""),
+                    "geofence": str(best.get("geofence", "") or ""),
+                    "score": best_score}
 
         return None
 
@@ -210,6 +208,7 @@ class AddressEditDialog(QDialog):
 
     def _connect_normalizers(self, dep_date: QLineEdit, dep_time: QLineEdit,
                              arr_date: QLineEdit, arr_time: QLineEdit) -> None:
+
         dep_date.editingFinished.connect(lambda: self._normalize_date(dep_date))
         arr_date.editingFinished.connect(lambda: self._normalize_date(arr_date))
         dep_time.editingFinished.connect(lambda: self._normalize_time(dep_time))
@@ -236,7 +235,7 @@ class AddressEditDialog(QDialog):
                                    "Транзит": f"{transit.value()} ч", }
 
             except Exception as e:
-                print(f"[DEBUG] ❌ Ошибка расчёта: {e}")
+                self.log(f"[DEBUG] ❌ Ошибка расчёта: {e}")
 
         btn_calc.clicked.connect(calculate_arrival)
 
@@ -394,7 +393,7 @@ class AddressEditDialog(QDialog):
 
             super().accept()
         except Exception as e:
-            print(f"[DEBUG] ❌ Ошибка в _accept(): {e}")
+            self.log(f"[DEBUG] ❌ Ошибка в _accept(): {e}")
 
     def get_result(self):
         """
@@ -468,4 +467,4 @@ class AddressEditDialog(QDialog):
             self.log(f"📦 В архив добавлено: {raw_input[:60]}...")
             DatasetArchive(log_func=self.log).append(sample)
         except Exception as e:
-            print(f"❌ Ошибка в _archive_sample: {e}")
+            self.log(f"❌ Ошибка в _archive_sample: {e}")

@@ -117,13 +117,15 @@ class LogistXPage(QWidget):
         item.setText(text)
 
         self.table.resizeRowToContents(row)
+
     def save_rows(self):
         try:
             self.sample_path.parent.mkdir(parents=True, exist_ok=True)
-            self.sample_path.write_text(json.dumps(self.rows, ensure_ascii=False, indent=2),encoding="utf-8",)
+            self.sample_path.write_text(json.dumps(self.rows, ensure_ascii=False, indent=2), encoding="utf-8", )
             self.log(f"💾 LogistX: сохранено строк: {len(self.rows)}")
         except Exception as e:
             self.log(f"❌ Ошибка сохранения LogistX JSON: {e}")
+
     def load_sample(self):
         try:
             p = self.sample_path.resolve()
@@ -244,6 +246,108 @@ class LogistXPage(QWidget):
         if geofence:
             return f"🏷 {geofence}\n{address}"
         return address
+
+    # --- close_race integration (UI-side) ---
+    def _geofence_from_cell_text(self, s: str) -> str:
+        s = (s or "").strip()
+        if s.startswith("🏷"):
+            first = s.splitlines()[0]
+            return first.replace("🏷", "").strip()
+        return ""
+
+    def build_close_race_job(self, row: int) -> dict | None:
+        """
+        Собрать job_data для NavigationProcessor.close_race_logistx_async.
+        Здесь можно безопасно читать Qt-таблицу (мы в GUI-потоке).
+        """
+        if row < 0 or row >= len(self.rows):
+            return None
+
+        obj = self.rows[row] or {}
+
+        from_item = self.table.item(row, self.COL_FROM)
+        to_item = self.table.item(row, self.COL_TO)
+
+        from_text = from_item.text() if from_item else ""
+        to_text = to_item.text() if to_item else ""
+
+        job_data = {"row": int(row),
+                    "obj": obj,
+                    "race_no": str(obj.get("Рейс", "") or "").strip(),
+                    "unit": str(obj.get("ТС", "") or "").strip(),
+                    "load_zone": self._geofence_from_cell_text(from_text),
+                    "unload_zone": self._geofence_from_cell_text(to_text), }
+
+        return job_data
+
+    def apply_close_race_result(self, row: int, ctx, result: dict):
+        """
+        Обновить self.rows + таблицу по результату close_race.
+        Процессор сюда не лезет — страница сама отвечает за свой UI.
+        """
+        try:
+            if row < 0 or row >= len(self.rows):
+                return
+
+            obj = self.rows[row] or {}
+
+            state = getattr(ctx, "state", {}) or {}
+            precheck = state.get("mini_wialon_precheck") or {}
+            progress = state.get("onec_progress") or {}
+
+            status_1c = str(state.get("close_status", "") or "")
+            status_text = str(precheck.get("status_text", "") or "")
+            precheck_payload = precheck.get("payload") or {}
+
+            final_payload = {"load_in": getattr(ctx, "load_in", "") or "",
+                             "load_out": getattr(ctx, "load_out", "") or "",
+                             "unload_in": getattr(ctx, "unload_in", "") or "",
+                             "unload_out": getattr(ctx, "unload_out", "") or "", }
+
+            if not any(final_payload.values()):
+                final_payload = {"load_in": str(precheck_payload.get("load_in", "") or ""),
+                                 "load_out": str(precheck_payload.get("load_out", "") or ""),
+                                 "unload_in": str(precheck_payload.get("unload_in", "") or ""),
+                                 "unload_out": str(precheck_payload.get("unload_out", "") or ""), }
+
+            obj["status_1c"] = status_1c
+            obj["status_text"] = status_text
+            obj["departure_dt_1c"] = getattr(ctx, "departure_dt", "") or ""
+            obj["wialon_payload"] = final_payload
+            obj["onec_progress"] = progress
+            obj["last_result"] = {"ok": bool(result.get("ok")),
+                                  "stage": str(result.get("stage", "") or ""),
+                                  "message": str(result.get("message", "") or ""), }
+
+            # --- обновление таблицы ---
+            if result.get("ok"):
+                txt = (f"Отправление: {getattr(ctx, 'departure_dt', '') or ''}\n"
+                       f"Погр(въезд): {getattr(ctx, 'load_in', '') or ''}\n"
+                       f"Погр(выезд): {getattr(ctx, 'load_out', '') or ''}\n"
+                       f"Выгр(въезд): {getattr(ctx, 'unload_in', '') or ''}\n"
+                       f"Выгр(выезд): {getattr(ctx, 'unload_out', '') or ''}")
+                self.table.setItem(row, self.COL_FACT, QTableWidgetItem(txt))
+            else:
+                old_fact_item = self.table.item(row, self.COL_FACT)
+                if old_fact_item is None:
+                    self.table.setItem(row, self.COL_FACT, QTableWidgetItem(""))
+
+            status_map = {"in_transit": "Ещё в пути",
+                          "on_unload": "Ещё на выгрузке",
+                          "ready_to_close": "Можно закрывать",
+                          "closed": "Закрыт",
+                          "error": "Ошибка",}
+
+            precheck_text = str(precheck.get("status_text", "") or "")
+            result_message = str(result.get("message", "") or "")
+            base = status_map.get(status_1c, "") or precheck_text or result_message
+            self.table.setItem(row, self.COL_STATUS, QTableWidgetItem(base or "—"))
+
+            self.table.resizeRowToContents(row)
+            self.save_rows()
+
+        except Exception as e:
+            self.log(f"❌ LogistX apply_close_race_result: {e}")
 
     def _norm(self, s: str) -> str:
         s = (s or "").lower().replace("ё", "е")

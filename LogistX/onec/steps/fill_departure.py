@@ -138,8 +138,7 @@ class FillDepartureStep:
 
         self.log(f"⚠️ finish_dt={finish_dt:%d.%m.%Y %H:%M:%S}, "
                  f"candidate={candidate:%d.%m.%Y %H:%M}, "
-                 f"current={current_dt:%d.%m.%Y %H:%M}"
-                 )
+                 f"current={current_dt:%d.%m.%Y %H:%M}")
 
         if candidate != current_dt:
             ctx.state["finish_dt"] = finish_dt

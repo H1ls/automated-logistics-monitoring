@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+from Navigation_Bot.gui.app.appContext import AppContext
 from Navigation_Bot.bots.googleSheetsManager import GoogleSheetsManager
 from Navigation_Bot.core.dataContext import DataContext
 from Navigation_Bot.core.hotkeyManager import HotkeyManager
 from Navigation_Bot.core.navigationProcessor import NavigationProcessor
 from Navigation_Bot.core.settings.SettingsController import SettingsController
+from Navigation_Bot.core.tasksService import TasksService
 from Navigation_Bot.gui.controllers.tableContextMenuController import TableContextMenuController
 from Navigation_Bot.gui.dialogs.combinedSettingsDialog import CombinedSettingsDialog
 from Navigation_Bot.gui.widgets.rowHighlighter import RowHighlighter
@@ -20,7 +22,7 @@ class AppServices:
     def __init__(self, gui):
         self.gui = gui
 
-    def build(self):
+    def build(self) -> AppContext:
         g = self.gui
 
         # --- DataContext ---
@@ -39,6 +41,7 @@ class AppServices:
         g.gsheet.error.connect(lambda err: (g.hide_loading(), g.log(f"❌ {err}")))
 
         g.gsheet.log_message.connect(g.log)
+        g.tasks_service = TasksService(data_context=g.data_context, gsheet=g.gsheet, log=g.log)
 
         # --- TableManager ---
         g.table_manager = TableManager(table_widget=g.table,
@@ -47,6 +50,7 @@ class AppServices:
                                        on_row_click=None,
                                        on_edit_id_click=g.open_id_editor,
                                        gsheet=g.gsheet,
+                                       tasks_service=g.tasks_service,
                                        reload_callback=g.reload_and_show)
 
         # --- Highlighter / Processor / Sort ---
@@ -71,7 +75,7 @@ class AppServices:
         g.sort_controller = TableSortController(data_context=g.data_context, log=g.log)
         g.hotkeys = HotkeyManager(log_func=g.log)
         # --- Context menu ---
-        g.table_context_menu = TableContextMenuController(gui=g)
+        g.table_context_menu = TableContextMenuController(gui=g, tasks_service=g.tasks_service)
         g.table_context_menu.install()
 
         # связи
@@ -83,6 +87,25 @@ class AppServices:
             g.row_highlighter.highlight_expired_unloads()
 
         g.table_manager.after_display = _after_display
+
+        # Явный контекст зависимостей (чтобы дальше уходить от gui.* как глобального контейнера)
+        ctx = AppContext(data_context=g.data_context,
+                         # простые операции над задачами/JSON
+                         tasks_service=g.tasks_service,
+                         gsheet=g.gsheet,
+                         settings_controller=g.settings_controller,
+                         settings_ui=g.settings_ui,
+                         table_manager=g.table_manager,
+                         row_highlighter=g.row_highlighter,
+                         processor=g.processor,
+                         sort_controller=g.sort_controller,
+                         hotkeys=g.hotkeys,
+                         table_context_menu=g.table_context_menu,
+                         ui_bridge=getattr(g, "ui_bridge", None),)
+
+        # сохранить на gui для удобного доступа
+        g.ctx = ctx
+        return ctx
 
     def shutdown(self):
         g = self.gui

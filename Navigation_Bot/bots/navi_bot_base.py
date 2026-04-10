@@ -71,7 +71,7 @@ class NaviBase:
 
     def _short_err(self, e: Exception) -> str:
         # return str(e).splitlines()[0] if e else "unknow error"
-        return str(e) if e else "unknow error"
+        return str(e) if e else f"NaviBase._short_err"
 
     # --WialonReportsBot
     def _wait_present_xpath(self, xpath: str, timeout: int | None = None):

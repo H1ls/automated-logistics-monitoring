@@ -10,16 +10,9 @@ class UiMap:
         self.path = Path(path)
         self.data = json.loads(self.path.read_text(encoding="utf-8"))
 
-    """
-    left, top, width, height
-    width  = x2 - x1
-    height = y2 - y1    
-    [x1, y1, x2, y2]  ->  [x1, y1, x2-x1, y2-y1]
-    """
-
     def save(self):
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        self.path.write_text(json.dumps(self.data, ensure_ascii=False, indent=2),encoding="utf-8",)
+        self.path.write_text(json.dumps(self.data, ensure_ascii=False, indent=2), encoding="utf-8", )
 
     def get_anchor(self, name: str) -> tuple[int, int]:
         anchors = self.data.get("anchors", {})
@@ -77,5 +70,5 @@ class UiMap:
             return None
         return int(value[0]), int(value[1])
 
-    def get_window_title_hint(self) -> str:
-        return self.data.get("window", {}).get("title_hint", "")
+    # def get_window_title_hint(self) -> str:
+    #     return self.data.get("window", {}).get("title_hint", "")

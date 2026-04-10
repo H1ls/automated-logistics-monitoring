@@ -109,7 +109,6 @@ class GoogleSheetsManager(QObject):
                 self.sheet = self._worksheets_cache[0]
 
         except Exception as e:
-            print(f"❌ Ошибка подключения к Google Sheets: {e}")
             self._log(f"❌ Ошибка подключения к Google Sheets: {e}")
             self.sheet = None
 
@@ -254,7 +253,6 @@ class GoogleSheetsManager(QObject):
                 result.append({"title": ws.title, "index": ws.index})
             return result
         except Exception as e:
-            print(f"⚠️ Не удалось получить список листов: {e}")
             self._log(f"⚠️ Не удалось получить список листов: {e}")
             return []
 
@@ -263,12 +261,10 @@ class GoogleSheetsManager(QObject):
         try:
             cache = getattr(self, "_worksheets_cache", None)
             if not cache:
-                print("⚠️ Листы ещё не загружены (нет _worksheets_cache).")
                 self._log("⚠️ Листы ещё не загружены (нет _worksheets_cache).")
                 return
 
             if not (0 <= index < len(cache)):
-                print(f"⚠️ Некорректный индекс листа: {index}")
                 self._log(f"⚠️ Некорректный индекс листа: {index}")
                 return
 
@@ -284,8 +280,8 @@ class GoogleSheetsManager(QObject):
             self.config_manager.save_in_json(cfg)
 
             self._log(f"✅ Активный лист: {self.sheet.title}")
-        except:
-            print("set_active_worksheet")
+        except Exception as e:
+            self._log(f"❌ GoogleSheetsManager.set_active_worksheet: {e}")
 
     def pull_to_context(self, data_context, input_filepath: str | None = None):
         try:
@@ -310,7 +306,7 @@ class GoogleSheetsManager(QObject):
             return True, None
 
         except Exception as e:
-            self._log(f"❌ pull_to_context: {e}")
+            self._log(f"❌ GoogleSheetsManager.pull_to_context: {e}")
             return False, str(e)
 
     def pull_to_context_async(self, data_context, input_filepath: str, executor):
@@ -327,7 +323,7 @@ class GoogleSheetsManager(QObject):
 
             executor.submit(task)
         except Exception as e:
-            self._log(f"❌ pull_to_context_async: {e}")
+            self._log(f"❌ GoogleSheetsManager.pull_to_context_async: {e}")
 
     def load_data(self):
         """

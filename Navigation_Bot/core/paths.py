@@ -21,4 +21,4 @@ PIN_XLSX_FILEPATH = os.path.join(CONFIG_DIR,"Обновленный РЕЕСТР
 PIN_JSON_FILEPATH = os.path.join(CONFIG_DIR,"pincodes_cache.json")
 
 
-VERSION = "30032026"
+VERSION = "10042026"

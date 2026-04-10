@@ -30,7 +30,6 @@ class OneCSession:
         pyautogui.FAILSAFE = True
 
     # ------------------ base helpers ------------------
-
     def sleep(self, sec: float = 0.2):
         time.sleep(sec)
 
@@ -91,23 +90,23 @@ class OneCSession:
         except Exception:
             pass
 
-    def click(self, x: int, y: int):
-        pyautogui.click(int(x), int(y))
-        self.sleep(0.12)
-
     def double_click(self, x: int, y: int):
         pyautogui.doubleClick(int(x), int(y))
         self.sleep(0.20)
+
+    def move_and_click_anchor(self, name: str):
+        x, y = self.ui_map.get_anchor(name)
+        pyautogui.moveTo(x, y, duration=0.05)
+        self.click(x, y)
 
     def click_anchor(self, name: str):
         x, y = self.ui_map.get_anchor(name)
         # self.log(f"→ click anchor: {name} @ ({x}, {y})")
         self.click(x, y)
 
-    def move_and_click_anchor(self, name: str):
-        x, y = self.ui_map.get_anchor(name)
-        pyautogui.moveTo(x, y, duration=0.05)
-        self.click(x, y)
+    def click(self, x: int, y: int):
+        pyautogui.click(int(x), int(y))
+        self.sleep(0.12)
 
     def select_all(self):
         self.hotkey("ctrl", "a")
@@ -119,7 +118,6 @@ class OneCSession:
         txt = self.copy_clipboard()
         if txt:
             return txt
-
         self.hotkey("ctrl", "insert")
         self.sleep(0.12)
         return self.copy_clipboard()
@@ -132,38 +130,22 @@ class OneCSession:
         if submit:
             self.press("enter")
 
-    # def replace_current_field(self, text: str, submit: bool = False):
-    #     self.hotkey("ctrl", "a")
-    #     self.sleep(0.05)
-    #     self.press("backspace")
-    #     self.sleep(0.05)
-    #     self.paste_text(text)
-    #     self.sleep(0.05)
-    #     if submit:
-    #         self.press("enter")
-    def click_field_and_set_value(self, anchor_name: str, value: str, enter: bool = True):
-        x, y = self.ui_map.get_anchor(anchor_name)
+    def copy_cell_text(self, x: int, y: int) -> str:
         self.click(x, y)
         self.sleep(0.08)
         self.press("f2")
         self.sleep(0.08)
-        self.paste_text(value)
+        text = self.copy_current()
+        # self.press("esc")
         self.sleep(0.05)
-        if enter:
-            self.press("enter")
+        return (text or "").strip()
 
-    def screenshot_region(self, region_name: str, filename: str):
-        region = self.ui_map.get_region(region_name)
-        path = self.tmp_dir / filename
-        return self.vision.screenshot(path, region=region)
-
-    def find_template_global(self, template_name: str, region=None):
-        if region is None:
-            region = (0, 0, 1920, 1080)
-        left, top, w, h = region
-        path = self.tmp_dir / f"global_{template_name}.png"
-        self.vision.screenshot(path, region=region)
-        return self.vision.find(path, self.ui_map.get_template(template_name), region_offset=(left, top))
+    def replace_cell(self, x: int, y: int, value: str, submit: bool = True):
+        self.click(x, y)
+        self.sleep(0.08)
+        self.press("f2")
+        self.sleep(0.08)
+        self.replace_current_field(value, submit=submit)
 
     def safe_close_card(self):
         self.log("↩️ Безопасное закрытие карточки/диалога")
@@ -177,17 +159,12 @@ class OneCSession:
         self.hotkey("ctrl", "enter")
         self.sleep(0.7)
 
-    def capture_current_race_form(self, filename: str = "race_form.png"):
-        return self.vision.screenshot(self.tmp_dir / filename)
-
-    def find_template_on_shot(self, shot_path, template_name: str):
-        template_file = self.ui_map.get_template(template_name)
-        return self.vision.find(shot_path, template_file)
-
-    def find_template_in_region(self, template_name: str, region_name: str):
-        region = self.ui_map.get_region(region_name)
+    def find_template_global(self, template_name: str, region=None):
+        if region is None:
+            region = (0, 0, 1920, 1080)
         left, top, w, h = region
-        path = self.screenshot_region(region_name, f"{region_name}_{template_name}.png")
+        path = self.tmp_dir / f"global_{template_name}.png"
+        self.vision.screenshot(path, region=region)
         return self.vision.find(path, self.ui_map.get_template(template_name), region_offset=(left, top))
 
     def capture_full(self, filename: str = "race_form.png"):
@@ -217,25 +194,19 @@ class OneCSession:
         shot_path = self.capture_region(region_name, filename)
         return self.find_template_on_shot(shot_path, template_name)
 
-    def copy_cell_text(self, x: int, y: int) -> str:
-        self.click(x, y)
-        self.sleep(0.08)
-        self.press("f2")
-        self.sleep(0.08)
-        text = self.copy_current()
-        # self.press("esc")
-        self.sleep(0.05)
-        return (text or "").strip()
-
-    def replace_cell(self, x: int, y: int, value: str, submit: bool = True):
-        self.click(x, y)
-        self.sleep(0.08)
-        self.press("f2")
-        self.sleep(0.08)
-        self.replace_current_field(value, submit=submit)
-
     def screenshot_full(self, name: str):
         path = self.tmp_dir / name
         img = pyautogui.screenshot()
         img.save(path)
         return str(path)
+
+    # def find_template_in_region(self, template_name: str, region_name: str):
+    #     region = self.ui_map.get_region(region_name)
+    #     left, top, w, h = region
+    #     path = self.screenshot_region(region_name, f"{region_name}_{template_name}.png")
+    #     return self.vision.find(path, self.ui_map.get_template(template_name), region_offset=(left, top))
+
+    # def screenshot_region(self, region_name: str, filename: str):
+    #     region = self.ui_map.get_region(region_name)
+    #     path = self.tmp_dir / filename
+    #     return self.vision.screenshot(path, region=region)

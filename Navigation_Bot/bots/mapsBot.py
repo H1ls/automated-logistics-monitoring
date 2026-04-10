@@ -279,7 +279,7 @@ class MapsBot:
                 # пробуем без секунд
                 return datetime.strptime(f"{date_str} {time_str}", "%d.%m.%Y %H:%M")
             except Exception as e:
-                # print(f"❗ Не удалось распарсить дату/время: '{date_str}' '{time_str}' → {e}")
+                # self.log(f"❗ Не удалось распарсить дату/время: '{date_str}' '{time_str}' → {e}")
                 return None
 
     @staticmethod
