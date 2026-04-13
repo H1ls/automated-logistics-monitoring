@@ -3,6 +3,7 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.common.action_chains import ActionChains
+from selenium.common.exceptions import NoSuchElementException
 
 from Navigation_Bot.core.jSONManager import JSONManager
 from Navigation_Bot.core.paths import CONFIG_JSON
@@ -47,7 +48,7 @@ class NaviBase:
     def validate_selectors(self) -> None:
         missing = [key for key in self.REQUIRED_KEYS if not self.selectors.get(key)]
         if missing:
-            raise ValueError(f"⛔ {self.__class__.__name__}: отсутствуют селекторы: {missing}")
+            raise ValueError(f"❌ {self.__class__.__name__}: отсутствуют селекторы: {missing}")
 
     # --- B. Selenium helpers
     def _wait_visible_xpath(self, xpath: str, timeout: int = None):
@@ -63,14 +64,17 @@ class NaviBase:
     def _safe_find_css(self, css: str):
         try:
             return self.driver.find_element(By.CSS_SELECTOR, css)
-        except Exception:
+        except NoSuchElementException:
+        # Нормально - элемента просто нет
+            return None
+        except Exception as e:
+            self.log(f"⚠️ Ошибка поиска элемента '{css[:50]}': {self._short_err(e)}")
             return None
 
     def _hover(self, element) -> None:
         ActionChains(self.driver).move_to_element(element).perform()
 
     def _short_err(self, e: Exception) -> str:
-        # return str(e).splitlines()[0] if e else "unknow error"
         return str(e) if e else f"NaviBase._short_err"
 
     # --WialonReportsBot
@@ -106,8 +110,8 @@ class NaviBase:
                 if ("gps.skyglonass" in url) or ("rtmglonass" in url) or ("wialon" in title):
                     return True
 
-            self.log("⛔ Не нашёл вкладку Wialon среди открытых вкладок.")
+            self.log("❌ Не нашёл вкладку Wialon среди открытых вкладок.")
             return False
         except Exception as e:
-            self.log(f"⛔ Ошибка _ensure_on_wialon_tab: {e}")
+            self.log(f"❌ Ошибка _ensure_on_wialon_tab: {e}")
             return False

@@ -58,7 +58,8 @@ class NavigationGUI(QWidget):
 
         def job():
             try:
-                self.processor.ensure_driver_and_bots()
+                # self.processor.ensure_driver_and_bots()
+                self.processor.browser_session.ensure_ready()
                 # ЛОГ будет через UiBridge внутри processor (после шага 1)
             except Exception as e:
                 # тоже через мост
@@ -73,13 +74,29 @@ class NavigationGUI(QWidget):
         self.executor.submit(job)
 
     def closeEvent(self, event):
+        """Гарантированная очистка при закрытии окна"""
         try:
+            # 1. Закрыть браузер (самое важное)
+            if getattr(self, "processor", None) and hasattr(self.processor, "driver_manager"):
+                try:
+                    self.processor.browser_session.stop_browser()
+                except Exception as e:
+                    self.log(f"⚠️ Ошибка закрытия браузера: {e}")
+
+            # 2. Shutdown services
             if getattr(self, "services", None):
                 self.services.shutdown()
         except Exception as e:
             self.log(f"⚠️ Ошибка shutdown: {e}")
+        finally:
+            # 3. Shutdown executor (чтобы threads корректно завершились)
+            if getattr(self, "executor", None):
+                try:
+                    self.executor.shutdown(wait=True, timeout=5)
+                except Exception:
+                    pass
 
-        super().closeEvent(event)
+            super().closeEvent(event)
 
     def _startup_reload(self):
         try:
@@ -113,10 +130,8 @@ class NavigationGUI(QWidget):
         self.pincodes_json_path = PIN_JSON_FILEPATH
 
         # фабрики локальных страниц по ключу (убираем прямые импорты из SheetTabsController)
-        self._local_page_factories = {
-            "local:pincodes": self._build_page_pincodes,
-            "local:logistx": self._build_page_logistx,
-        }
+        self._local_page_factories = {"local:pincodes": self._build_page_pincodes,
+                                      "local:logistx": self._build_page_logistx, }
 
     def get_or_create_local_page(self, key: str):
         """Создать страницу по ключу (если ещё нет) и вернуть её."""
@@ -142,7 +157,7 @@ class NavigationGUI(QWidget):
         page = PinCodesPage(xlsx_path=self.pincodes_xlsx_path,
                             json_path=self.pincodes_json_path,
                             log_func=self.log,
-                            parent=self.stack,)
+                            parent=self.stack, )
         self.stack.addWidget(page)
         return page
 
@@ -173,7 +188,7 @@ class NavigationGUI(QWidget):
                 else:
                     self.ui_bridge.log.emit(f"❌ {race_no}: {result.get('message')}")
 
-            self.processor.close_race_logistx_async(job_data, on_done=_on_done)
+            self.processor.logistx_race_service.close_race_async(job_data, on_done=_on_done)
         except Exception as e:
             if getattr(self, "ui_bridge", None):
                 self.ui_bridge.log.emit(f"❌ LogistX ▶ ошибка: {e}")

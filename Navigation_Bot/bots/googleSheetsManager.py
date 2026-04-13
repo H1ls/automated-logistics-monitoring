@@ -1,8 +1,9 @@
 import os
 import re
-from datetime import datetime, date
-
+import sys
 import gspread
+
+from datetime import datetime, date
 from PyQt6.QtCore import QObject, pyqtSignal
 from oauth2client.service_account import ServiceAccountCredentials
 
@@ -44,8 +45,8 @@ class GoogleSheetsManager(QObject):
         if self._external_log:
             try:
                 self._external_log(text)
-            except Exception:
-                pass
+            except Exception as e:
+                print(f"Warning: logging failed: {e}", file=sys.stderr)
         # сигнал для GUI
         self.log_message.emit(text)
 
@@ -143,7 +144,8 @@ class GoogleSheetsManager(QObject):
             self._log(f"❌ Ошибка поиска листа '{title}' в таблице аккаунтов: {e}")
             return None
 
-    def check_user_credentials(self, login: str,
+    def check_user_credentials(self,
+                               login: str,
                                password: str,
                                account_sheet_title: str = "Account",
                                sheet_id: str | None = None) -> tuple[bool, str]:
@@ -584,11 +586,11 @@ class GoogleSheetsManager(QObject):
             unload_str = "; ".join(f"{blk.get(f'Время {i + 1}', '')} {blk.get(f'Выгрузка {i + 1}', '')}".strip()
                                    for i, blk in enumerate(entry.get("Выгрузка", [])))
 
-            row_data = [ts_with_phone,       # col D (ТС + телефон)
-                        entry.get("ФИО", ""),# col E (ФИО)
-                        entry.get("КА", ""), # col F (КА)
-                        load_str,            # col G (Погрузка)
-                        unload_str]          # col H (Выгрузка)
+            row_data = [ts_with_phone,         # col D (ТС + телефон)
+                        entry.get("ФИО", ""),  # col E (ФИО)
+                        entry.get("КА", ""),   # col F (КА)
+                        load_str,              # col G (Погрузка)
+                        unload_str]            # col H (Выгрузка)
 
             self.sheet.update(f"D{row_index}:H{row_index}", [row_data])
             self._log(f"📤 Новая запись отправлена в Google Sheets (row={row_index})")

@@ -130,21 +130,55 @@ class OneCErrorHandler:
 
         s = " ".join(text.split())
 
-        # 4-40:00 -> 4:40:00
-        s = re.sub(r"(?<!\d)(\d{1,2})-(\d{2}:\d{2})(?!\d)", r"\1:\2", s)
-        # 4;40:00 -> 4:40:00
-        s = re.sub(r"(?<!\d)(\d{1,2});(\d{2}:\d{2})(?!\d)", r"\1:\2", s)
-        # 4 40:00 -> 4:40:00
-        s = re.sub(r"(?<![\d.])(\d{1,2})\s+(\d{2}:\d{2})(?!\d)", r"\1:\2", s)
-        # 0:47.00 -> 0:47:00
-        s = re.sub(r"(?<!\d)(\d{1,2}):(\d{2})\.(\d{2})(?!\d)", r"\1:\2:\3", s)
-        # 0.47:00 -> 0:47:00
-        s = re.sub(r"(?<!\d)(\d{1,2})\.(\d{2}):(\d{2})(?!\d)", r"\1:\2:\3", s)
-        # 0-47.00 -> 0:47:00
-        s = re.sub(r"(?<!\d)(\d{1,2})-(\d{2})\.(\d{2})(?!\d)", r"\1:\2:\3", s)
-        # 9:00:00 -> 9:00:00 (не меняем, но чистим странные пробелы)
-        s = re.sub(r"(?<!\d)(\d{1,2})\s*:\s*(\d{2})\s*:\s*(\d{2})(?!\d)", r"\1:\2:\3", s)
+        # ---- время ----
+        s = re.sub(r"(?<!\d)(\d{1,2})-(\d{2}:\d{2})(?!\d)", r"\1:\2", s)  # 4-40:00 -> 4:40:00
+        s = re.sub(r"(?<!\d)(\d{1,2});(\d{2}:\d{2})(?!\d)", r"\1:\2", s)  # 4;40:00 -> 4:40:00
+        s = re.sub(r"(?<![\d.])(\d{1,2})\s+(\d{2}:\d{2})(?!\d)", r"\1:\2", s)  # 4 40:00 -> 4:40:00
+        s = re.sub(r"(?<!\d)(\d{1,2}):(\d{2})\.(\d{2})(?!\d)", r"\1:\2:\3", s)  # 0:47.00 -> 0:47:00
+        s = re.sub(r"(?<!\d)(\d{1,2})\.(\d{2}):(\d{2})(?!\d)", r"\1:\2:\3", s)  # 0.47:00 -> 0:47:00
+        s = re.sub(r"(?<!\d)(\d{1,2})-(\d{2})\.(\d{2})(?!\d)", r"\1:\2:\3", s)  # 0-47.00 -> 0:47:00
+        s = re.sub(r"(?<!\d)(\d{1,2})\s*:\s*(\d{2})\s*:\s*(\d{2})(?!\d)", r"\1:\2:\3", s)  # 9 : 00 : 00 -> 9:00:00
+
+        # ---- дата ----
+        s = re.sub(r"(?<!\d)(\d{2})\.(\d{2})\s+(20\d{2})(?!\d)", r"\1.\2.\3", s)  # 09.04 2026 -> 09.04.2026
+        s = re.sub(r"(?<!\d)(\d{2})\s+(\d{2})\.(20\d{2})(?!\d)", r"\1.\2.\3", s)  # 09 04.2026 -> 09.04.2026
+        s = re.sub(r"(?<!\d)(\d{2})\s+(\d{2})\s+(20\d{2})(?!\d)", r"\1.\2.\3", s)  # 09 04 2026 -> 09.04.2026
+
         return s
+
+    def _sanitize_finish_dt_year(self, dt: datetime, text: str) -> datetime:
+        """OCR иногда даёт 2028 вместо 2026. Если год слишком далеко, пытаемся поправить на ближайший"""
+        years_in_text = [int(y) for y in re.findall(r"\b(20\d{2})\b", text or "")]
+        candidates = set(years_in_text)
+
+        # добавим "разумные" годы вокруг текущего
+        now_year = datetime.now().year
+        for y in (now_year - 1, now_year, now_year + 1):
+            candidates.add(y)
+
+        if not candidates:
+            return dt
+
+        # если год нормальный — оставляем
+        if min(abs(dt.year - y) for y in candidates) <= 1:
+            return dt
+
+        # иначе пробуем тот же месяц/день/время, но с другим годом
+        best = dt
+        best_diff = 10 ** 9
+        for y in candidates:
+            try:
+                cand = dt.replace(year=y)
+            except ValueError:
+                continue
+            diff = min(abs(cand.year - yy) for yy in candidates)
+            if diff < best_diff:
+                best = cand
+                best_diff = diff
+
+        if best.year != dt.year:
+            self.log(f"⚠️ OCR year corrected: {dt:%d.%m.%Y %H:%M:%S} -> {best:%d.%m.%Y %H:%M:%S}")
+        return best
 
     def _extract_finish_dt(self, text: str) -> datetime | None:
         if not text:
@@ -167,12 +201,13 @@ class OneCErrorHandler:
                 ss = int(time_m.group(3))
                 try:
                     best = datetime.strptime(f"{date_part} {hh:02d}:{mm:02d}:{ss:02d}",
-                                             "%d.%m.%Y %H:%M:%S",)
-
-                    self.log(f"🧠 'выполнен': {best:%d.%m.%Y %H:%M:%S}")
+                                             "%d.%m.%Y %H:%M:%S",
+                                             )
+                    best = self._sanitize_finish_dt_year(best, norm)
+                    self.log(f"🧠 finish_dt extracted from 'выполнен': {best:%d.%m.%Y %H:%M:%S}")
                     return best
                 except Exception:
-                    pass
+                    self.log(f'Ошибка в best OneCErrorHandler._extract_finish_dt ')
 
             self.log(f"⚠️ Не удалось распарсить дату после слова 'выполнен'. tail={tail!r}")
             return None
@@ -183,9 +218,11 @@ class OneCErrorHandler:
         for s in matches:
             try:
                 s_norm = re.sub(r"[:\-.; ]", ":", s, count=2)
-                dts.append(datetime.strptime(s_norm, "%d.%m.%Y %H:%M:%S"))
+                dt = datetime.strptime(s_norm, "%d.%m.%Y %H:%M:%S")
+                dt = self._sanitize_finish_dt_year(dt, norm)
+                dts.append(dt)
             except Exception:
-                pass
+                self.log(f"Ошибка в best OneCErrorHandler for s in matches")
 
         if dts:
             best = max(dts)

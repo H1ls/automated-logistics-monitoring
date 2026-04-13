@@ -159,7 +159,7 @@ class OneCReportImporter:
                     if w:
                         return w[0]
         except Exception:
-            pass
+            self.log(f"❌ Не нашли удаленку, OneCReportImporter._find_rdp_window")
 
         return None
 
@@ -194,7 +194,7 @@ class OneCReportImporter:
         try:
             pyperclip.copy("")
         except Exception:
-            pass
+            self.log(f'❌ ошибка очиски буфера в OneCReportImporter._copy_table_text')
 
         # координаты центра RDP-окна
         w = self._rdp_win

@@ -3,12 +3,7 @@ import pyclip
 import keyboard
 from datetime import datetime
 from threading import Thread, Event
-from global_hotkeys import (
-    clear_hotkeys,
-    register_hotkeys,
-    start_checking_hotkeys,
-    stop_checking_hotkeys,
-)
+from global_hotkeys import (clear_hotkeys, register_hotkeys, start_checking_hotkeys, stop_checking_hotkeys, )
 
 
 class HotkeyManager:

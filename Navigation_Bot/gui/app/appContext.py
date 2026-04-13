@@ -7,7 +7,7 @@ from typing import Optional, Any
 @dataclass(slots=True)
 class AppContext:
     """
-    Контейнер зависимостей GUI. убирать доступ через gui.* и оставлять только gui.ctx.*.
+    Контейнер зависимостей GUI. Убрать доступ через gui.* и оставлять только gui.ctx.*.
     """
 
     # данные/интеграции

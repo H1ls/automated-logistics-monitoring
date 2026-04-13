@@ -30,7 +30,7 @@ class RowHighlighter:
     def _from_iso_utc(s: str) -> datetime:
         return datetime.fromisoformat(s.replace("Z", "+00:00"))
 
-    from datetime import datetime, timedelta
+
 
     def highlight_for(self, index_key: int, hours: int | None = None):
         """
@@ -80,7 +80,6 @@ class RowHighlighter:
 
         # поставить таймер на авто-снятие (если к тому моменту истечёт)
         QTimer.singleShot(hours * 60 * 60 * 1000, lambda: self._clear_if_expired(index_key))
-
 
     def reapply_from_json(self):
         """
@@ -182,7 +181,6 @@ class RowHighlighter:
     def highlight_expired_unloads(self):
         """Подсвечивает первую непройденную выгрузку, если её время уже меньше текущего."""
 
-
         data = self.data_context.get() or []
         now = datetime.now()
 
@@ -218,7 +216,6 @@ class RowHighlighter:
             except Exception as e:
                 self.log(f"⚠️ key_to_visual mapper error: {e}")
                 continue
-
 
             # первая НЕ обработанная точка
             for i, unload in enumerate(points, start=1):

@@ -7,6 +7,7 @@ __pycache__/
 *.so
 
 #  Virtual environment
+.env
 .venv/
 venv/
 venv311/

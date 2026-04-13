@@ -13,7 +13,7 @@ from PyQt6.QtWidgets import (
 )
 from openpyxl import load_workbook
 
-
+#TODO: Выводить одну машину  левой графе, и все карты в правой, убрать дубли с номеров карт, проверить ts = card
 @dataclass
 class PinRow:
     card: str  # столбец A "Номер" (номер карты)

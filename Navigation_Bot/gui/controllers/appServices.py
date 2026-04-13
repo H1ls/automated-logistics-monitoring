@@ -4,7 +4,7 @@ from Navigation_Bot.gui.app.appContext import AppContext
 from Navigation_Bot.bots.googleSheetsManager import GoogleSheetsManager
 from Navigation_Bot.core.dataContext import DataContext
 from Navigation_Bot.core.hotkeyManager import HotkeyManager
-from Navigation_Bot.core.navigationProcessor import NavigationProcessor
+from Navigation_Bot.core.NavigationProcessor.navigationProcessor import NavigationProcessor
 from Navigation_Bot.core.settings.SettingsController import SettingsController
 from Navigation_Bot.core.tasksService import TasksService
 from Navigation_Bot.gui.controllers.tableContextMenuController import TableContextMenuController
@@ -58,7 +58,7 @@ class AppServices:
                                            data_context=g.data_context,
                                            log=g.log,
                                            hours_default=2)
-        busy_callback = g.table_manager.set_row_busy
+        # busy_callback = g.table_manager.set_row_busy
 
         g.processor = NavigationProcessor(data_context=g.data_context,
                                           logger=g.log,
@@ -74,6 +74,7 @@ class AppServices:
 
         g.sort_controller = TableSortController(data_context=g.data_context, log=g.log)
         g.hotkeys = HotkeyManager(log_func=g.log)
+
         # --- Context menu ---
         g.table_context_menu = TableContextMenuController(gui=g, tasks_service=g.tasks_service)
         g.table_context_menu.install()
@@ -130,21 +131,12 @@ class AppServices:
         except Exception as e:
             g.log(f"⚠️ Не удалось остановить executor: {e}")
 
-        # 4) закрыть Selenium
+        # 4) закрыть Selenium через BrowserSession
         try:
-            wdm = getattr(g, "driver_manager", None)
+            proc = getattr(g, "processor", None)
+            browser_session = getattr(proc, "browser_session", None) if proc else None
 
-            if not wdm:
-                proc = getattr(g, "processor", None)
-                wdm = getattr(proc, "driver_manager", None) if proc else None
-
-            if wdm and hasattr(wdm, "stop_browser"):
-                wdm.stop_browser()
-            elif wdm and getattr(wdm, "driver", None):
-                try:
-                    wdm.driver.quit()
-                except Exception:
-                    pass
-                wdm.driver = None
+            if browser_session and hasattr(browser_session, "stop"):
+                browser_session.stop()
         except Exception as e:
             g.log(f"⚠️ Не удалось закрыть браузер: {e}")

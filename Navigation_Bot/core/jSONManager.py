@@ -2,6 +2,8 @@ import os
 import json
 from typing import Any
 from pathlib import Path
+import tempfile
+import hashlib
 
 
 class JSONManager:
@@ -9,6 +11,75 @@ class JSONManager:
         self.file_path = file_path
         self.log = log_func or print
         self.data = self.load_json(file_path)
+
+    def save_in_json(self, data, filepath=None):
+        """Атомарное сохранение с backup и валидацией"""
+        filepath = Path(filepath or self.file_path)
+
+        # 1. Убедимся что директория существует
+        filepath.parent.mkdir(parents=True, exist_ok=True)
+
+        # 2. Сначала пишем в temp файл в ТОЙ ЖЕ директории, чтобы гарантировать что это на том же диске
+        with tempfile.NamedTemporaryFile(mode='w',
+                                         dir=filepath.parent,
+                                         delete=False,
+                                         encoding='utf-8',
+                                         suffix='.tmp') as tmp_file:
+
+            tmp_path = Path(tmp_file.name)
+            try:
+                json.dump(data, tmp_file, ensure_ascii=False, indent=2)
+                tmp_file.flush()
+                os.fsync(tmp_file.fileno())
+            except Exception as e:
+                self.log(f"❌ Ошибка при записи в temp файл: {e}")
+                tmp_path.unlink()  # Удалим temp файл
+                raise
+
+        # 3. Проверяем что temp файл валиден
+        try:
+            with open(tmp_path, 'r', encoding='utf-8') as f:
+                json.load(f)  # Парсим, чтобы проверить валидность
+            # self.log(f"✅ Temp файл валиден: {tmp_path}")
+        except json.JSONDecodeError as e:
+            self.log(f"❌ Temp файл невалиден: {e}")
+            tmp_path.unlink()
+            raise ValueError(f"Generated JSON is invalid: {e}") from e
+
+        # 4. Если есть старый файл - делаем backup
+        backup_path = None
+        if filepath.exists():
+            backup_path = filepath.with_suffix('.json.backup')
+            try:
+                filepath.rename(backup_path)
+                # self.log(f"💾 Backup создан: {backup_path}")
+            except Exception as e:
+                self.log(f"⚠️ Не удалось создать backup: {e}")
+                tmp_path.unlink()
+                raise
+
+        # 5. Атомарный rename
+        try:
+            tmp_path.rename(filepath)
+            # self.log(f"✅ Сохранено: {filepath}")
+
+            # Удалим backup если сохранение успешно
+            if backup_path and backup_path.exists():
+                backup_path.unlink()
+        except Exception as e:
+            # Если rename не удался - восстанавливаем из backup
+            if backup_path and backup_path.exists():
+                try:
+                    backup_path.rename(filepath)
+                    self.log(f"⚠️ Восстановлено из backup")
+                except:
+                    pass
+            tmp_path.unlink()
+            raise RuntimeError(f"Cannot save {filepath}") from e
+
+    # def save(self):
+    #     """Простое сохранение"""
+    #     self.save_in_json(self.data, self.file_path)
 
     def load_json(self, file_path: str = None) -> Any:
         path = file_path or self.file_path
@@ -27,20 +98,6 @@ class JSONManager:
 
     def reload(self):
         self.data = self.load_json(self.file_path) or []
-
-    def save(self):
-        self.save_in_json(self.data, self.file_path)
-
-    def save_in_json(self, data, filepath=None):
-        filepath = Path(filepath or self.file_path)
-        filepath.parent.mkdir(parents=True, exist_ok=True)
-        try:
-            with filepath.open("w", encoding="utf-8") as f:
-                json.dump(data, f, ensure_ascii=False, indent=2)
-                f.flush()
-                os.fsync(f.fileno())
-        except Exception as e:
-            self.log(f"❌ Ошибка сохранения JSON: {e}")
 
     def update_json(self, new_data: Any, file_path: str = None) -> None:
         existing = self.load_json(file_path)

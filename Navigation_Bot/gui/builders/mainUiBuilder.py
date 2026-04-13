@@ -57,8 +57,8 @@ class MainUiBuilder:
         gui.table.setColumnCount(9)
 
         gui.table.setHorizontalHeaderLabels([
-            "", "id", "ТС", "КА", "Погрузка", "Выгрузка", "гео", "Время прибытия", "Запас"
-        ])
+            "", "id", "ТС", "КА", "Погрузка", "Выгрузка", "гео", "Время прибытия", "Запас"])
+
         gui.table.setHorizontalHeaderItem(0, QTableWidgetItem("🔍"))
 
         hdr = gui.table.horizontalHeader()

@@ -2,7 +2,7 @@ from PyQt6.QtCore import QObject, QTimer
 
 
 class SmoothScrollController(QObject):
-    def __init__(self, table, speed=0.18, parent=None):
+    def __init__(self, table, speed=0.16, parent=None):
         super().__init__(parent)
         self.table = table
         self.bar = table.verticalScrollBar()

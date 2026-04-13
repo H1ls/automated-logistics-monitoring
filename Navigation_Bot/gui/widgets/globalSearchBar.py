@@ -101,7 +101,7 @@ class GlobalSearchBar(QWidget):
 
     def _rebuild_hits(self):
         try:
-            # ✅ защита: table может быть None или sip-deleted
+            # защита: table может быть None или sip-deleted
             if not getattr(self, "table", None) or sip.isdeleted(self.table):
                 self._hits = []
                 self._idx = -1
@@ -119,7 +119,7 @@ class GlobalSearchBar(QWidget):
 
             rows = self.table.rowCount()
 
-            # ✅ локальная переменная, не self.*
+            # локальная переменная, не self.*
             cols_to_check = getattr(self, "cols_to_check", None) or list(range(self.table.columnCount()))
             
             for r in range(rows):
@@ -178,6 +178,5 @@ class GlobalSearchBar(QWidget):
 
         # Возвращаем фокус в строку поиска
         self.edit.setFocus()
-
         # if self.log:
-        # self.log(f"🔎 Совпадение {self._idx + 1}/{len(self._hits)} (строка {row + 1})")
+        #   self.log(f"🔎 Совпадение {self._idx + 1}/{len(self._hits)} (строка {row + 1})")

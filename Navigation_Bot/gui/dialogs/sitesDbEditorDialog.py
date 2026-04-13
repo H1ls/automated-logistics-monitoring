@@ -1,15 +1,8 @@
-import json
+﻿import json
 from pathlib import Path
 
-from PyQt6.QtWidgets import (
-    QDialog,
-    QHeaderView,
-    QMessageBox,
-    QPushButton,
-    QTableWidget,
-    QTableWidgetItem,
-    QVBoxLayout,
-)
+from PyQt6.QtWidgets import (QDialog, QHeaderView, QMessageBox, QPushButton, QTableWidget, QTableWidgetItem,
+                             QVBoxLayout, )
 
 from Navigation_Bot.gui.dialogs.aliasesEditorDialog import AliasesEditorDialog
 from Navigation_Bot.gui.dialogs.dialog_helpers import button_row_split
@@ -57,12 +50,8 @@ class SitesDbEditorDialog(QDialog):
         self.btn_del = QPushButton("🗑 Удалить")
         self.btn_save = QPushButton("💾 Сохранить")
         self.btn_close = QPushButton("Закрыть")
-        layout.addLayout(
-            button_row_split(
-                (self.btn_add, self.btn_del),
-                (self.btn_save, self.btn_close),
-            )
-        )
+        layout.addLayout(button_row_split((self.btn_add, self.btn_del),
+                                          (self.btn_save, self.btn_close),))
 
         self.btn_add.clicked.connect(self.add_row)
         self.btn_del.clicked.connect(self.delete_selected_rows)
@@ -100,7 +89,6 @@ class SitesDbEditorDialog(QDialog):
             item = QTableWidgetItem("")
             self.table.setItem(row, 4, item)
 
-        # item.setText("…" if new_list else "")
         item.setText("✎" if new_list else "")
 
     def on_cell_double_clicked(self, row: int, col: int):
@@ -146,8 +134,17 @@ class SitesDbEditorDialog(QDialog):
         # self.table.setItem(r, 4, QTableWidgetItem("…" if self._aliases_by_row[r] else ""))
         self.table.setItem(r, 4, QTableWidgetItem("✎" if self._aliases_by_row[r] else ""))
 
+    def _shift_alias_rows_down(self, start_row: int = 0):
+        shifted = {}
+        for row, aliases in self._aliases_by_row.items():
+            shifted[row + 1 if row >= start_row else row] = aliases
+        self._aliases_by_row = shifted
+
     def add_row(self, address: str = ""):
-        r = self.table.rowCount()
+        r = 0 if address else self.table.rowCount()
+
+        if address:
+            self._shift_alias_rows_down(start_row=r)
 
         self.table.insertRow(r)
         for c in range(len(HEADERS)):
@@ -157,6 +154,7 @@ class SitesDbEditorDialog(QDialog):
         self.table.item(r, 4).setText("")
         if address:
             self.table.item(r, 0).setText(address)
+            self.table.setCurrentCell(r, 0)
         self.table.resizeRowsToContents()
 
     def delete_selected_rows(self):
