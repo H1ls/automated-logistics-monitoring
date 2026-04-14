@@ -26,24 +26,29 @@ class AppServices:
         g = self.gui
 
         # --- DataContext ---
+        g.show_loading("Инициализация контекста данных…", "Загрузка JSON")
         json_path = g._get_sheet_json_path()
         g.data_context = DataContext(json_path, log_func=g.log)
         g.json_data = g.data_context.get()  # совместимость
 
         # --- Settings ---
+        g.show_loading("Инициализация настроек…", "Подготовка диалога настроек")
         g.settings_controller = SettingsController(g)
         g.settings_ui = CombinedSettingsDialog(g)
 
         # --- GoogleSheets ---
+        g.show_loading("Инициализация Google Sheets…", "Подготовка к загрузке")
         g.gsheet = GoogleSheetsManager(log_func=None)
         g.gsheet.started.connect(lambda: g.show_loading("Загрузка из Google Sheets…"))
         g.gsheet.finished.connect(lambda: g.hide_loading())
         g.gsheet.error.connect(lambda err: (g.hide_loading(), g.log(f"❌ {err}")))
 
         g.gsheet.log_message.connect(g.log)
+        g.show_loading("Инициализация сервиса задач…", "Подготовка")
         g.tasks_service = TasksService(data_context=g.data_context, gsheet=g.gsheet, log=g.log)
 
         # --- TableManager ---
+        g.show_loading("Инициализация таблицы…", "Создание менеджера таблицы")
         g.table_manager = TableManager(table_widget=g.table,
                                        data_context=g.data_context,
                                        log_func=g.log,
@@ -54,6 +59,7 @@ class AppServices:
                                        reload_callback=g.reload_and_show)
 
         # --- Highlighter / Processor / Sort ---
+        g.show_loading("Инициализация процессора…", "Подготовка браузера и обработчика")
         g.row_highlighter = RowHighlighter(table=g.table,
                                            data_context=g.data_context,
                                            log=g.log,
@@ -72,10 +78,12 @@ class AppServices:
                                           browser_rect=getattr(g, "browser_rect", None),
                                           ui_bridge=g.ui_bridge, )
 
+        g.show_loading("Инициализация контроллеров…", "Подготовка сортировки и горячих клавиш")
         g.sort_controller = TableSortController(data_context=g.data_context, log=g.log)
         g.hotkeys = HotkeyManager(log_func=g.log)
 
         # --- Context menu ---
+        g.show_loading("Инициализация меню…", "Подготовка контекстного меню")
         g.table_context_menu = TableContextMenuController(gui=g, tasks_service=g.tasks_service)
         g.table_context_menu.install()
 
@@ -90,6 +98,7 @@ class AppServices:
         g.table_manager.after_display = _after_display
 
         # Явный контекст зависимостей (чтобы дальше уходить от gui.* как глобального контейнера)
+        g.show_loading("Завершение инициализации…", "Создание контекста зависимостей")
         ctx = AppContext(data_context=g.data_context,
                          # простые операции над задачами/JSON
                          tasks_service=g.tasks_service,

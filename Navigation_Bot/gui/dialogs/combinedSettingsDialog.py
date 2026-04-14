@@ -4,12 +4,121 @@ from PyQt6.QtCore import pyqtSignal, QRect, Qt
 from PyQt6.QtGui import QPainter
 from PyQt6.QtWidgets import (QDialog, QTabWidget, QWidget, QVBoxLayout, QFormLayout, QStyledItemDelegate,
                              QLineEdit, QSpinBox, QCheckBox, QPushButton, QHBoxLayout, QMessageBox,
-                             QStyle, QStyleOptionViewItem, QApplication)
+                             QStyle, QStyleOptionViewItem, QApplication, QRadioButton, QGroupBox, QLabel)
 
 from Navigation_Bot.core.jSONManager import JSONManager as JM
 from Navigation_Bot.core.paths import CONFIG_JSON
 from Navigation_Bot.core.settings.settings_schema import SECTIONS
 from Navigation_Bot.gui.dialogs.dialog_helpers import button_row_trailing
+
+
+class LayoutModeTab(QWidget):
+    """Вкладка для выбора режима размещения окон Navigation Manager и WebDriver."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.current_mode = "vertical"  # по умолчанию
+        self.current_monitor = "second"  # по умолчанию использовать второй монитор
+        self._build_ui()
+
+    def _build_ui(self):
+        root = QVBoxLayout(self)
+
+        # Описание
+        desc = QLabel("Выберите монитор и режим расположения окон Navigation Manager и браузера (Wialon/Yandex).\n"
+                      "Оба окна занимают по 1/2 выбранного экрана."
+                      )
+        desc.setStyleSheet("color: #666; font-size: 10px; margin-bottom: 10px;")
+        root.addWidget(desc)
+
+        # ========== Группа 1: Выбор монитора ==========
+        monitor_layout = QVBoxLayout()
+        monitor_layout.setContentsMargins(0, 0, 0, 0)
+
+        self.rb_monitor_first = QRadioButton("📺 Первый монитор")
+        monitor_layout.addWidget(self.rb_monitor_first)
+
+        first_desc = QLabel("Использовать основной/первый монитор для размещения")
+        first_desc.setStyleSheet("color: #888; margin-left: 20px; font-size: 9px;")
+        monitor_layout.addWidget(first_desc)
+
+        self.rb_monitor_second = QRadioButton("📺 Второй монитор (рекомендуется)")
+        self.rb_monitor_second.setChecked(True)
+        monitor_layout.addWidget(self.rb_monitor_second)
+
+        second_desc = QLabel("Использовать дополнительный/второй монитор для размещения")
+        second_desc.setStyleSheet("color: #888; margin-left: 20px; font-size: 9px;")
+        monitor_layout.addWidget(second_desc)
+
+        monitor_box = QGroupBox("📺 Выбор монитора")
+        monitor_box.setLayout(monitor_layout)
+        root.addWidget(monitor_box)
+
+        # ========== Группа 2: Режим размещения ==========
+        mode_layout = QVBoxLayout()
+        mode_layout.setContentsMargins(0, 0, 0, 0)
+
+        # Вариант 1: Вертикальное разделение (верх/низ)
+        self.rb_vertical = QRadioButton("📊 Вертикальное разделение (верхний/нижний)")
+        self.rb_vertical.setChecked(True)
+        mode_layout.addWidget(self.rb_vertical)
+
+        vertical_desc = QLabel("Navigation Manager сверху (1/2 экрана)\n"
+                               "Браузер снизу (1/2 экрана)"
+                               )
+        vertical_desc.setStyleSheet("color: #888; margin-left: 20px; font-size: 9px;")
+        mode_layout.addWidget(vertical_desc)
+
+        # Вариант 2: Горизонтальное разделение (лево/право)
+        self.rb_horizontal = QRadioButton("📱 Горизонтальное разделение (левый/правый)")
+        mode_layout.addWidget(self.rb_horizontal)
+
+        horizontal_desc = QLabel("Браузер слева (1/2 экрана)\n"
+                                 "Navigation Manager справа (1/2 экрана)")
+        horizontal_desc.setStyleSheet("color: #888; margin-left: 20px; font-size: 9px;")
+        mode_layout.addWidget(horizontal_desc)
+
+        # Диаграмма
+        diagram = QLabel(
+            "┌─ Вертикально          ┌─ Горизонтально\n"
+            "├─ ┌──────────────┐    ├─ ┌────────┬────────┐\n"
+            "│  │ Navigation   │    │  │        │ Navi   │\n"
+            "│  ├──────────────┤    │  │Browser │Manager │\n"
+            "│  │  Browser     │    │  │        │        │\n"
+            "└─ └──────────────┘    └─ └────────┴────────┘"
+        )
+        diagram.setStyleSheet("font-family: monospace; color: #999; font-size: 8px; margin-top: 5px;")
+        mode_layout.addWidget(diagram)
+
+        mode_box = QGroupBox("🔄 Режим разделения")
+        mode_box.setLayout(mode_layout)
+        root.addWidget(mode_box)
+
+        root.addStretch()
+
+    def values(self) -> dict:
+        """Возвращает выбранные режим и монитор."""
+        mode = "horizontal" if self.rb_horizontal.isChecked() else "vertical"
+        monitor = "first" if self.rb_monitor_first.isChecked() else "second"
+        return {"mode": mode, "monitor": monitor}
+
+    def load_values(self, values: dict):
+        """Загружает значения из конфига."""
+        mode = values.get("mode", "vertical")
+        monitor = values.get("monitor", "second")
+
+        if mode == "horizontal":
+            self.rb_horizontal.setChecked(True)
+        else:
+            self.rb_vertical.setChecked(True)
+
+        if monitor == "first":
+            self.rb_monitor_first.setChecked(True)
+        else:
+            self.rb_monitor_second.setChecked(True)
+
+        self.current_mode = mode
+        self.current_monitor = monitor
 
 
 class CombinedSettingsDialog(QDialog):
@@ -20,23 +129,44 @@ class CombinedSettingsDialog(QDialog):
         super().__init__(parent)
         self.setWindowTitle("Настройки")
         self.resize(650, 350)
-        self._forms = {}  # section_key -> SectionForm
-        self._dirty = set()  # какие секции менялись с момента открытия
+        self._forms = {}   # section_key -> SectionForm
+        self._dirty = set()# какие секции менялись с момента открытия
+        self.gui = parent  # сохраняем ссылку на gui для удобства
 
         root = QVBoxLayout(self)
         self.tabs = QTabWidget()
         root.addWidget(self.tabs)
 
         for section_key, (title, fields) in SECTIONS.items():
-            form = SectionForm(section_key, title, fields, self)
-            # помечаем секцию при любом изменении
-            for w in form._widgets.values():
-                if hasattr(w, "textChanged"):
-                    w.textChanged.connect(lambda _=None, s=section_key: self._dirty.add(s))
-                elif hasattr(w, "stateChanged"):
-                    w.stateChanged.connect(lambda _=None, s=section_key: self._dirty.add(s))
-                elif hasattr(w, "valueChanged"):
-                    w.valueChanged.connect(lambda _=None, s=section_key: self._dirty.add(s))
+            # Специальная обработка для вкладки режима размещения окон
+            if section_key == "layout_mode":
+                form = LayoutModeTab(self)
+                # Загружаем текущее значение из gui.ui_settings (это же, что будет обновляться)
+                layout_config = parent.ui_settings.data.get("layout_mode", {})
+
+                # Поддерживаем оба формата: строка (legacy) и объект (новый)
+                if isinstance(layout_config, str):
+                    # Мигрируем старый формат
+                    load_values = {"mode": layout_config, "monitor": "second"}
+                else:
+                    load_values = layout_config
+
+                form.load_values(load_values)
+                # Отслеживаем изменения
+                form.rb_vertical.toggled.connect(lambda _=None, s=section_key: self._dirty.add(s))
+                form.rb_horizontal.toggled.connect(lambda _=None, s=section_key: self._dirty.add(s))
+                form.rb_monitor_first.toggled.connect(lambda _=None, s=section_key: self._dirty.add(s))
+                form.rb_monitor_second.toggled.connect(lambda _=None, s=section_key: self._dirty.add(s))
+            else:
+                form = SectionForm(section_key, title, fields, self)
+                # помечаем секцию при любом изменении
+                for w in form._widgets.values():
+                    if hasattr(w, "textChanged"):
+                        w.textChanged.connect(lambda _=None, s=section_key: self._dirty.add(s))
+                    elif hasattr(w, "stateChanged"):
+                        w.stateChanged.connect(lambda _=None, s=section_key: self._dirty.add(s))
+                    elif hasattr(w, "valueChanged"):
+                        w.valueChanged.connect(lambda _=None, s=section_key: self._dirty.add(s))
 
             self._forms[section_key] = form
             self.tabs.addTab(form, title)
@@ -68,8 +198,7 @@ class CombinedSettingsDialog(QDialog):
         reply = QMessageBox.question(self,
                                      "Подтверждение очистки",
                                      "Вы действительно хотите очистить все данные из JSON?\nЭто действие необратимо.",
-                                     QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
-                                     )
+                                     QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
 
         if reply != QMessageBox.StandardButton.Yes:
             return
@@ -100,9 +229,19 @@ class CombinedSettingsDialog(QDialog):
         for s_key in self._dirty:
             form = self._forms[s_key]
             val = form.values()
-            node = cfg.setdefault(s_key, {})
-            node.setdefault("default", node.get("default", {}))
-            node["custom"] = val
+
+            # Специальная обработка для layout_mode
+            if s_key == "layout_mode":
+                # Сохраняем напрямую в gui.ui_settings в формате {"mode": ..., "monitor": ...}
+                if self.gui and hasattr(self.gui, 'ui_settings'):
+                    self.gui.ui_settings.data["layout_mode"] = val
+                    self.gui.ui_settings._schedule_save()
+            else:
+                # Для остальных секций используем стандартный формат
+                node = cfg.setdefault(s_key, {})
+                node.setdefault("default", node.get("default", {}))
+                node["custom"] = val
+
             changed.add(s_key)
 
         _save_config(cfg)

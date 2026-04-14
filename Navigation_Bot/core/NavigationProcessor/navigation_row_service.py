@@ -130,13 +130,23 @@ class NavigationRowService:
             self.log(traceback.format_exc())
             return None
 
-    def _process_maps(self, *, row: int, car: dict, mapsbot, switch_tab: Callable[[str], bool], ) -> dict:
+    def _process_maps(self, *, row: int, car: dict, mapsbot, switch_tab: Callable[[str], bool]) -> dict:
         if not switch_tab("yandex"):
             return car
 
         active_unload = self.get_first_unprocessed_unload(car)
         if active_unload:
-            mapsbot.process_navigation_from_json(car, active_unload)
+            unload_idx, unload_point = active_unload
+            mapsbot.process_navigation_from_json(car, unload_point)
+
+            if car.get("гео") == "у выгрузки":
+                processed = car.get("processed", []) or []
+
+                if unload_idx >= len(processed):
+                    processed.extend([False] * (unload_idx + 1 - len(processed)))
+
+                processed[unload_idx] = True
+                car["processed"] = processed
 
         self._merge_row(row, car)
         return self.data_context.get()[row]
@@ -153,13 +163,13 @@ class NavigationRowService:
         self.log(f"✅ Завершено для ТС: {car.get('ТС')}")
 
     @staticmethod
-    def get_first_unprocessed_unload(car: dict) -> dict | None:
+    def get_first_unprocessed_unload(car: dict) -> tuple[int, dict] | None:
         processed = car.get("processed", [])
         unloads = car.get("Выгрузка", [])
 
         for i, done in enumerate(processed):
             if not done and i < len(unloads):
-                return unloads[i]
+                return i, unloads[i]
         return None
 
     def set_single_row_processing(self, enabled: bool) -> None:

@@ -30,6 +30,35 @@ class SettingsController:
             else:
                 self.log("ℹ️ MapsBot обновится при запуске драйвера")
 
+        # Обработка изменения режима размещения окон
+        if "layout_mode" in sections:
+            # Используем gui.ui_settings, который уже содержит обновленные данные
+            layout_config = gui.ui_settings.data.get("layout_mode", {})
+            
+            # Поддерживаем оба формата: строка (legacy) и объект (новый)
+            if isinstance(layout_config, str):
+                mode = layout_config
+                monitor_index = 1  # По умолчанию второй монитор
+            else:
+                mode = layout_config.get("mode", "vertical")
+                # Преобразуем монитор из строки в индекс
+                monitor_str = layout_config.get("monitor", "second")
+                monitor_index = 0 if monitor_str == "first" else 1
+            
+            try:
+                # Если монитор изменился, применяем его первым (он влияет на координаты браузера)
+                if gui.get_monitor_index() != monitor_index:
+                    gui.switch_monitor(monitor_index)
+                    monitor_name = "первый" if monitor_index == 0 else "второй"
+                    self.log(f"✅ Монитор изменен на: {monitor_name}")
+                
+                # Применяем режим размещения
+                gui.switch_layout_mode(mode)
+                mode_name = "Горизонтальный" if mode == "horizontal" else "Вертикальный"
+                self.log(f"✅ Режим размещения: '{mode_name}'")
+            except Exception as e:
+                self.log(f"❌ Ошибка смены режима размещения: {e}")
+
         # Если нужно обновлять селекторы, но драйвер ещё не запущен
         if {"wialon_selectors", "yandex_selectors"} & sections and not driver:
             self.log("ℹ️ Селекторы применятся при старте веб-драйвера")

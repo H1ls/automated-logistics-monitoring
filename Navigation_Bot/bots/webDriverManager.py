@@ -199,33 +199,35 @@ class WebDriverManager:
             self.log(f"❌ Ошибка при открытии Я.Карт:\n {e}")
 
     def switch_to_tab(self, name: str) -> bool:
-        """Если вкладка Яндекс.Карт закрыта — пытаемся открыть её заново"""
-
         try:
-            # Ищем среди уже открытых вкладок
+            wanted = (name or "").lower().strip()
+
+            is_wialon = wanted in {"wialon", "gps.skyglonass", "skyglonass", "rtmglonass"}
+            is_yandex = wanted == "yandex"
+
             for handle in self.driver.window_handles:
                 self.driver.switch_to.window(handle)
-                url = self.driver.current_url.lower()
+                url = (self.driver.current_url or "").lower()
+                title = (self.driver.title or "").lower()
 
-                if name == "wialon" and "wialon" in url:
+                if is_wialon and ("gps.skyglonass" in url
+                                  or "rtmglonass" in url
+                                  or "wialon" in title
+                                  or "skytelecom" in title):
                     return True
 
-                if name == "yandex" and "yandex" in url and "maps" in url:
+                if is_yandex and "yandex" in url and "maps" in url:
                     return True
 
-            # Если вкладка Я.Карт не найдена - пробуем открыть новую
-            if name == "yandex":
+            if is_yandex:
                 self.log("ℹ️ Вкладка 'yandex' не найдена, открываю Яндекс.Карты...")
                 self.open_yandex_maps()
-
-                # после открытия ещё раз ищем вкладку карт
                 for handle in self.driver.window_handles:
                     self.driver.switch_to.window(handle)
-                    url = self.driver.current_url.lower()
+                    url = (self.driver.current_url or "").lower()
                     if "yandex" in url and "maps" in url:
                         return True
 
-            # Если так и не нашли
             self.log(f"❌ Вкладка '{name}' не найдена.")
             return False
 

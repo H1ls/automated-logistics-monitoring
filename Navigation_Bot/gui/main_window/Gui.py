@@ -3,8 +3,9 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from threading import Lock
 
-from PyQt6.QtCore import QTimer
-from PyQt6.QtWidgets import (QWidget)
+from PyQt6.QtCore import QTimer, Qt
+from PyQt6.QtWidgets import (QWidget, QLabel, QVBoxLayout, QFrame)
+from PyQt6.QtGui import QFont, QColor
 
 from Navigation_Bot.core.paths import INPUT_FILEPATH
 from Navigation_Bot.core.paths import PIN_XLSX_FILEPATH, PIN_JSON_FILEPATH
@@ -15,7 +16,7 @@ from Navigation_Bot.gui.controllers.appServices import AppServices
 from Navigation_Bot.gui.controllers.sheetTabsController import SheetTabsController
 from Navigation_Bot.gui.controllers.signalsBinder import SignalsBinder
 from Navigation_Bot.gui.controllers.uiBridge import UiBridge
-from Navigation_Bot.gui.controllers.windowLayoutManager import WindowLayoutManager
+from Navigation_Bot.gui.controllers.windowLayoutManager import WindowLayoutManager, LayoutMode
 from Navigation_Bot.gui.dialogs.iDManagerDialog import IDManagerDialog
 from Navigation_Bot.gui.dialogs.trackingIdEditor import TrackingIdEditor
 from Navigation_Bot.gui.settings.uiSettings import UiSettingsManager
@@ -42,16 +43,44 @@ class NavigationGUI(QWidget):
         self.ui_settings = UiSettingsManager(log_func=self.log)
         self.init_ui()
 
+        # Создаем загрузочный экран до основной инициализации
+        self._create_loading_screen()
+        self.show_loading("Инициализация приложения…")
+
         self.ui_bridge = UiBridge(self)
         self.ui_settings.apply_window(self)
         self.ui_settings.apply_table(self.table)
 
-        self._layout_manager = WindowLayoutManager(titlebar_offset=30)
+        # Читаем режим размещения и выбор монитора из настроек
+        layout_config = self.ui_settings.data.get("layout_mode", {})
+
+        # Поддерживаем оба формата: строка (legacy) и объект (новый)
+        if isinstance(layout_config, str):
+            layout_mode_str = layout_config
+            monitor_index = 1  # По умолчанию второй монитор
+        else:
+            layout_mode_str = layout_config.get("mode", LayoutMode.VERTICAL_SPLIT.value)
+            # Преобразуем монитор из строки в индекс (0 для первого, 1 для второго)
+            monitor_str = layout_config.get("monitor", "second")
+            monitor_index = 0 if monitor_str == "first" else 1
+
+        self._layout_manager = WindowLayoutManager(titlebar_offset=30,
+                                                   layout_mode=layout_mode_str,
+                                                   monitor_index=monitor_index
+                                                   )
         self.browser_rect = self._layout_manager.apply_dual_screen_layout(self)
 
+        self.show_loading("Загрузка локальных данных…")
         self.local_page()
+
+        self.show_loading("Инициализация менеджеров…")
         self.init_managers()
+
+        self.show_loading("Привязка сигналов…")
         SignalsBinder(self).bind()
+
+        # Скрываем загрузочный экран когда все готово (быстро, чтобы не мешать)
+        QTimer.singleShot(200, self.hide_loading)
 
     def _open_wialon(self):
         self.show_loading("Запуск Wialon…")
@@ -98,6 +127,15 @@ class NavigationGUI(QWidget):
 
             super().closeEvent(event)
 
+    def resizeEvent(self, event):
+        """Обновить позицию splash screen когда окно меняет размер."""
+        super().resizeEvent(event)
+        if getattr(self, "loading_overlay", None) and self.loading_overlay.isVisible():
+            # Позиционируем splash screen в центре окна
+            x = (self.width() - 350) // 2
+            y = (self.height() - 180) // 2
+            self.loading_overlay.move(x, y)
+
     def _startup_reload(self):
         try:
             if getattr(self, "sheet_tabs_controller", None):
@@ -105,21 +143,109 @@ class NavigationGUI(QWidget):
         finally:
             self.hide_loading()
 
-    def resizeEvent(self, event):
-        super().resizeEvent(event)
+    def _create_loading_screen(self):
+        """Создать компактный splash screen для загрузки."""
+        # Основной фреймворк - компактный splash screen в центре
+        self.loading_overlay = QFrame(self)
+        self.loading_overlay.setStyleSheet("QFrame { "
+                                           "background-color: rgba(30, 30, 30, 240); "
+                                           "border: 2px solid #bcbcbc; "
+                                           "border-radius: 10px; "
+                                           "}")
 
-    def show_loading(self, text="Загрузка…"):
+        self.loading_overlay.setFrameShape(QFrame.Shape.StyledPanel)
+
+        # Фиксированный размер - компактный 350x180
+        self.loading_overlay.setFixedSize(350, 180)
+
+        # Контейнер с содержимым по центру
+        overlay_layout = QVBoxLayout(self.loading_overlay)
+        overlay_layout.setContentsMargins(20, 15, 20, 15)
+        overlay_layout.setSpacing(10)
+
+        # Иконка загрузки (ротирующиеся символы)
+        self.loading_spinner = QLabel("⠋")
+        self.loading_spinner.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        spinner_font = QFont()
+        spinner_font.setPointSize(28)
+        self.loading_spinner.setFont(spinner_font)
+        self.loading_spinner.setStyleSheet("color: #4CAF50;")
+        self.loading_spinner.setFixedHeight(40)
+
+        # Символы для анимации спиннера
+        self._spinner_frames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
+        self._spinner_index = 0
+
+        # Timer для анимации спиннера
+        self._spinner_timer = QTimer()
+        self._spinner_timer.timeout.connect(self._update_spinner)
+        self._spinner_timer.setInterval(80)
+
+        overlay_layout.addWidget(self.loading_spinner)
+
+        # Текст загрузки
+        self.loading_label = QLabel("Загрузка…")
+        self.loading_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        label_font = QFont()
+        label_font.setPointSize(11)
+        label_font.setBold(True)
+        self.loading_label.setFont(label_font)
+        self.loading_label.setStyleSheet("color: #ffffff;")
+        self.loading_label.setFixedHeight(20)
+
+        overlay_layout.addWidget(self.loading_label)
+
+        # Доп. сообщение (меньше)
+        self.loading_detail = QLabel("Пожалуйста, подождите…")
+        self.loading_detail.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        detail_font = QFont()
+        detail_font.setPointSize(8)
+        self.loading_detail.setFont(detail_font)
+        self.loading_detail.setStyleSheet("color: #aaaaaa;")
+        self.loading_detail.setFixedHeight(16)
+        self.loading_detail.setWordWrap(True)
+
+        overlay_layout.addWidget(self.loading_detail)
+
+        # Изначально скрыт
+        self.loading_overlay.hide()
+
+    def _update_spinner(self):
+        """Обновить спиннер на следующий кадр анимации."""
+        self._spinner_index = (self._spinner_index + 1) % len(self._spinner_frames)
+        self.loading_spinner.setText(self._spinner_frames[self._spinner_index])
+
+    def show_loading(self, text="Загрузка…", detail="Пожалуйста, подождите…"):
+        """Показать компактный splash screen с текстом в центре окна."""
         if getattr(self, "loading_label", None):
             self.loading_label.setText(text)
 
+        if getattr(self, "loading_detail", None):
+            self.loading_detail.setText(detail)
+
         if getattr(self, "loading_overlay", None):
-            self.loading_overlay.setGeometry(self.table.geometry())
+            # Позиционируем splash screen в центре окна
+            x = (self.width() - 350) // 2
+            y = (self.height() - 180) // 2
+            self.loading_overlay.move(x, y)
             self.loading_overlay.show()
             self.loading_overlay.raise_()
 
+            # Запускаем анимацию спиннера если не запущена
+            if getattr(self, "_spinner_timer", None) and not self._spinner_timer.isActive():
+                self._spinner_timer.start()
+
+            # Обновляем дисплей
+            self.update()
+
     def hide_loading(self):
+        """Скрыть загрузочный экран."""
         if getattr(self, "loading_overlay", None):
             self.loading_overlay.hide()
+
+        # Останавливаем анимацию
+        if getattr(self, "_spinner_timer", None):
+            self._spinner_timer.stop()
 
     # _____END
     def local_page(self):
@@ -196,10 +322,12 @@ class NavigationGUI(QWidget):
                 self.log(f"❌ LogistX ▶ ошибка: {e}")
 
     def init_managers(self):
+        self.show_loading("Инициализация сервисов…", "Создание таблицы и контроллеров")
         self.services = AppServices(self)
         # build() возвращает ctx и сохраняет его в self.ctx
         self.services.build()
 
+        self.show_loading("Инициализация вкладок…", "Подготовка к работе")
         self.sheet_tabs_controller = SheetTabsController(gui=self)
         self.sheet_tabs_controller.build()
 
@@ -293,3 +421,111 @@ class NavigationGUI(QWidget):
         if dlg.exec():
             self.reload_and_show()
             self.log("✅ Id_car.json перезаписан")
+
+    def switch_layout_mode(self, mode: LayoutMode | str):
+        """
+        Переключить режим размещения на двух мониторах
+        Args:
+            mode: LayoutMode.VERTICAL_SPLIT или LayoutMode.HORIZONTAL_SPLIT
+                  (или строковые эквиваленты: "vertical" или "horizontal")
+        """
+        try:
+            self._layout_manager.set_layout_mode(mode)
+
+            # Пересчитываем позицию окна NavigationGUI и браузера
+            self.browser_rect = self._layout_manager.apply_dual_screen_layout(self)
+
+            # Обновляем browser_rect в processor (для браузера, который ещё не запущен)
+            if hasattr(self, "processor") and self.processor:
+                self.processor.browser_rect = self.browser_rect
+
+            # Сохраняем выбранный режим в настройки
+            if isinstance(mode, LayoutMode):
+                mode_str = mode.value
+            else:
+                mode_str = mode
+
+            # Получаем текущий монитор
+            current_monitor_str = "first" if self._layout_manager.monitor_index == 0 else "second"
+
+            # Сохраняем оба параметра в объект
+            self.ui_settings.data["layout_mode"] = {
+                "mode": mode_str,
+                "monitor": current_monitor_str
+            }
+            self.ui_settings._schedule_save()
+
+            # Перепозиционируем браузер если он открыт
+            if self.browser_rect and hasattr(self, "processor") and self.processor.browser_session:
+                try:
+                    driver_manager = self.processor.browser_session.driver_manager
+                    if driver_manager and driver_manager.driver:
+                        driver_manager.driver.set_window_rect(self.browser_rect.get("x", 0),
+                                                              self.browser_rect.get("y", 0),
+                                                              self.browser_rect.get("width", 1024),
+                                                              self.browser_rect.get("height", 768)
+                                                              )
+                        self.log(f"✅ Режим размещения изменен на {mode_str}")
+                except Exception as e:
+                    self.log(f"⚠️ Ошибка переповиционирования браузера: {e}")
+            else:
+                self.log(f"✅ Режим размещения изменен на {mode_str}")
+
+        except ValueError as e:
+            self.log(f"❌ Ошибка переключения режима: {e}")
+
+    def switch_monitor(self, monitor_index: int):
+        """
+        Переключить монитор для размещения окон.
+        Args:
+            monitor_index: 0 для первого монитора, 1 для второго, и т.д.
+        """
+        try:
+            self._layout_manager.set_monitor_index(monitor_index)
+
+            # Пересчитываем позицию окна NavigationGUI и браузера
+            self.browser_rect = self._layout_manager.apply_dual_screen_layout(self)
+
+            # Обновляем browser_rect в processor (для браузера, который ещё не запущен)
+            if hasattr(self, "processor") and self.processor:
+                self.processor.browser_rect = self.browser_rect
+
+            # Сохраняем выбранный монитор в настройки
+            monitor_str = "first" if monitor_index == 0 else "second"
+            if "layout_mode" not in self.ui_settings.data:
+                self.ui_settings.data["layout_mode"] = {}
+            elif isinstance(self.ui_settings.data["layout_mode"], str):
+                # Миграция старого формата
+                mode_str = self.ui_settings.data["layout_mode"]
+                self.ui_settings.data["layout_mode"] = {"mode": mode_str,
+                                                        "monitor": "second"}
+
+            self.ui_settings.data["layout_mode"]["monitor"] = monitor_str
+            self.ui_settings._schedule_save()
+
+            # Перепозиционируем браузер если он открыт
+            if self.browser_rect and hasattr(self, "processor") and self.processor.browser_session:
+                try:
+                    driver_manager = self.processor.browser_session.driver_manager
+                    if driver_manager and driver_manager.driver:
+                        driver_manager.driver.set_window_rect(self.browser_rect.get("x", 0),
+                                                              self.browser_rect.get("y", 0),
+                                                              self.browser_rect.get("width", 1024),
+                                                              self.browser_rect.get("height", 768)
+                                                              )
+                        self.log(f"✅ Монитор изменен на {monitor_str}")
+                except Exception as e:
+                    self.log(f"⚠️ Ошибка переповиционирования браузера: {e}")
+            else:
+                self.log(f"✅ Монитор изменен на {monitor_str}")
+
+        except ValueError as e:
+            self.log(f"❌ Ошибка переключения монитора: {e}")
+
+    def get_layout_mode(self) -> str:
+        """Получить текущий режим размещения."""
+        return self._layout_manager.layout_mode.value
+
+    def get_monitor_index(self) -> int:
+        """Получить текущий индекс монитора."""
+        return self._layout_manager.monitor_index

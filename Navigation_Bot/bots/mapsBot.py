@@ -8,10 +8,11 @@ from selenium.webdriver.common.keys import Keys
 from Navigation_Bot.core.jSONManager import JSONManager
 from Navigation_Bot.core.paths import CONFIG_JSON
 
-"""TODO 1.MapsBot - запускает вспомогательные классы 
-        2.Вынести ввод и клики в MapsUIHelper
-        3.Вынести парсинг маршрутов в отдельный класс
-        4.Вынести address+datetime обработку"""
+
+# TODO 1.MapsBot - запускает вспомогательные классы
+# TODO 2.Вынести ввод и клики в MapsUIHelper
+# TODO 3.Вынести парсинг маршрутов в отдельный класс
+# TODO 4.Вынести address+datetime обработку
 
 
 class MapsBot:
@@ -119,8 +120,6 @@ class MapsBot:
         self._enter_from_coordinates(from_coords)
         self._enter_to_address(to_address)
 
-        self.driver_manager.find_all(self._by("route_item"), timeout=10)
-
         routes = self.get_route_info()
         if not routes:
             raise ValueError("❌ Нет маршрутов.")
@@ -155,7 +154,7 @@ class MapsBot:
             scroll_el = self.driver_manager.driver.find_element(By.CSS_SELECTOR, "div.scroll._width_narrow")
             class_value = scroll_el.get_attribute("class")
 
-            time.sleep(0.25)
+            time.sleep(0.35)
             if "_disabled" in class_value:
                 # открылся список подсказок
                 # self.log("🟡 Обнаружен список подсказок - выбираю первый элемент.")

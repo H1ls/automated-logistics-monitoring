@@ -33,4 +33,10 @@ SECTIONS = {
             "file_path": ("Путь к JSON-файлу", str, True),
         }
     ),
+    "layout_mode": (
+        "Размещение окон",
+        {
+            "mode": ("Режим размещения", str, False),
+        }
+    ),
 }
