@@ -5,18 +5,17 @@ from threading import Lock
 
 from PyQt6.QtCore import QTimer, Qt
 from PyQt6.QtWidgets import (QWidget, QLabel, QVBoxLayout, QFrame)
-from PyQt6.QtGui import QFont, QColor
+from PyQt6.QtGui import QFont
 
 from Navigation_Bot.core.paths import INPUT_FILEPATH
 from Navigation_Bot.core.paths import PIN_XLSX_FILEPATH, PIN_JSON_FILEPATH
-from Navigation_Bot.core.processedFlags import init_processed_flags
 from Navigation_Bot.gui.builders.mainUiBuilder import MainUiBuilder
-from Navigation_Bot.gui.controllers.sheet_tab_definitions import default_local_tabs
+from Navigation_Bot.gui.settings.sheet_tab_definitions import default_local_tabs
 from Navigation_Bot.gui.controllers.appServices import AppServices
 from Navigation_Bot.gui.controllers.sheetTabsController import SheetTabsController
 from Navigation_Bot.gui.controllers.signalsBinder import SignalsBinder
-from Navigation_Bot.gui.controllers.uiBridge import UiBridge
-from Navigation_Bot.gui.controllers.windowLayoutManager import WindowLayoutManager, LayoutMode
+from Navigation_Bot.gui.settings.uiBridge import UiBridge
+from Navigation_Bot.gui.settings.windowLayoutManager import WindowLayoutManager, LayoutMode
 from Navigation_Bot.gui.dialogs.iDManagerDialog import IDManagerDialog
 from Navigation_Bot.gui.dialogs.trackingIdEditor import TrackingIdEditor
 from Navigation_Bot.gui.settings.uiSettings import UiSettingsManager
@@ -349,13 +348,43 @@ class NavigationGUI(QWidget):
         try:
             json_path = self._get_sheet_json_path()
             self.data_context.set_filepath(json_path)
-            self.gsheet.pull_to_context_async(data_context=self.data_context,
-                                              input_filepath=json_path,
-                                              executor=self.executor)
-            self.reload_and_show()
+
+            if not getattr(self, "google_sync_service", None):
+                self.log("⚠️ GoogleSyncService не подключён")
+                return
+
+            self.google_sync_service.load_current_sheet_async(
+                executor=self.executor,
+                on_started=lambda: self.show_loading("Загрузка из Google Sheets…"),
+                on_success=lambda: self.ui_bridge.call.emit(self._on_google_load_success),
+                on_error=lambda err: self.ui_bridge.call.emit(
+                    lambda: self._on_google_load_error(err)
+                ),
+            )
 
         except Exception as e:
             self.log(f'❌ Ошибка в NavigationGUI._load_from_google\n {e}')
+
+    def _on_google_load_success(self):
+        self.hide_loading()
+        self.reload_and_show()
+
+    def _on_google_load_error(self, err: str):
+        self.hide_loading()
+        self.log(f"❌ Ошибка загрузки из Google: {err}")
+    # def _load_from_google(self):
+    #     # self._reload_after_gsheet = True
+    #
+    #     try:
+    #         json_path = self._get_sheet_json_path()
+    #         self.data_context.set_filepath(json_path)
+    #         self.gsheet.pull_to_context_async(data_context=self.data_context,
+    #                                           input_filepath=json_path,
+    #                                           executor=self.executor)
+    #         self.reload_and_show()
+    #
+    #     except Exception as e:
+    #         self.log(f'❌ Ошибка в NavigationGUI._load_from_google\n {e}')
 
     def _get_sheet_json_path(self) -> str:
         """
@@ -387,8 +416,6 @@ class NavigationGUI(QWidget):
         with self.json_lock:
             self.data_context.reload()
             self.json_data = self.data_context.get()
-            init_processed_flags(self.json_data, self.json_data, loads_key="Выгрузка")
-            self.data_context.save()
 
         view_order = self.sort_controller.build_view_order()
         self.table_manager.display(view_order=view_order)

@@ -1,18 +1,22 @@
 from __future__ import annotations
 
+from Navigation_Bot.core.application.services.google_sync_service import GoogleSyncService
+from Navigation_Bot.core.application.services.task_edit_service import TaskEditService
 from Navigation_Bot.gui.app.appContext import AppContext
 from Navigation_Bot.bots.googleSheetsManager import GoogleSheetsManager
 from Navigation_Bot.core.dataContext import DataContext
 from Navigation_Bot.core.hotkeyManager import HotkeyManager
 from Navigation_Bot.core.NavigationProcessor.navigationProcessor import NavigationProcessor
 from Navigation_Bot.core.settings.SettingsController import SettingsController
-from Navigation_Bot.core.tasksService import TasksService
+from Navigation_Bot.core.application.services.tasks_service import TasksService
 from Navigation_Bot.gui.controllers.tableContextMenuController import TableContextMenuController
 from Navigation_Bot.gui.dialogs.combinedSettingsDialog import CombinedSettingsDialog
 from Navigation_Bot.gui.widgets.rowHighlighter import RowHighlighter
-from Navigation_Bot.gui.widgets.tableManager import TableManager
+from Navigation_Bot.gui.widgets.table.tableManager import TableManager
 from Navigation_Bot.gui.widgets.tableSortController import TableSortController
-
+from Navigation_Bot.core.application.services.new_task_workflow_service import NewTaskWorkflowService
+from Navigation_Bot.core.application.services.editable_field_workflow_service import EditableFieldWorkflowService
+from Navigation_Bot.core.application.services.address_edit_workflow_service import AddressEditWorkflowService
 
 class AppServices:
     """
@@ -27,6 +31,7 @@ class AppServices:
 
         # --- DataContext ---
         g.show_loading("Инициализация контекста данных…", "Загрузка JSON")
+        # g.logger = AppLogger(log_func=g.log)
         json_path = g._get_sheet_json_path()
         g.data_context = DataContext(json_path, log_func=g.log)
         g.json_data = g.data_context.get()  # совместимость
@@ -45,8 +50,21 @@ class AppServices:
 
         g.gsheet.log_message.connect(g.log)
         g.show_loading("Инициализация сервиса задач…", "Подготовка")
-        g.tasks_service = TasksService(data_context=g.data_context, gsheet=g.gsheet, log=g.log)
-
+        g.tasks_service = TasksService(data_context=g.data_context, log=g.log, )
+        g.task_edit_service = TaskEditService(log=g.log, )
+        g.google_sync_service = GoogleSyncService(gsheet=g.gsheet,
+                                                  tasks_service=g.tasks_service,
+                                                  data_context=g.data_context,
+                                                  log=g.log, )
+        g.new_task_workflow_service = NewTaskWorkflowService(tasks_service=g.tasks_service,
+                                                             task_edit_service=g.task_edit_service,
+                                                             log=g.log, )
+        g.editable_field_workflow_service = EditableFieldWorkflowService(tasks_service=g.tasks_service,
+                                                                         log=g.log, )
+        g.address_edit_workflow_service = AddressEditWorkflowService(data_context=g.data_context,
+                                                                     tasks_service=g.tasks_service,
+                                                                     task_edit_service=g.task_edit_service,
+                                                                     log=g.log,)
         # --- TableManager ---
         g.show_loading("Инициализация таблицы…", "Создание менеджера таблицы")
         g.table_manager = TableManager(table_widget=g.table,
@@ -54,9 +72,10 @@ class AppServices:
                                        log_func=g.log,
                                        on_row_click=None,
                                        on_edit_id_click=g.open_id_editor,
-                                       gsheet=g.gsheet,
-                                       tasks_service=g.tasks_service,
-                                       reload_callback=g.reload_and_show)
+                                       new_task_workflow=g.new_task_workflow_service,
+                                       editable_field_workflow=g.editable_field_workflow_service,
+                                       address_edit_workflow=g.address_edit_workflow_service,
+                                       reload_callback=g.reload_and_show, )
 
         # --- Highlighter / Processor / Sort ---
         g.show_loading("Инициализация процессора…", "Подготовка браузера и обработчика")
@@ -64,8 +83,8 @@ class AppServices:
                                            data_context=g.data_context,
                                            log=g.log,
                                            hours_default=2)
-        # busy_callback = g.table_manager.set_row_busy
 
+        # busy_callback = g.table_manager.set_row_busy
         g.processor = NavigationProcessor(data_context=g.data_context,
                                           logger=g.log,
                                           gsheet=g.gsheet,
@@ -79,17 +98,21 @@ class AppServices:
                                           ui_bridge=g.ui_bridge, )
 
         g.show_loading("Инициализация контроллеров…", "Подготовка сортировки и горячих клавиш")
-        g.sort_controller = TableSortController(data_context=g.data_context, log=g.log)
+        g.sort_controller = TableSortController(data_context=g.data_context,
+                                                log=g.log)
         g.hotkeys = HotkeyManager(log_func=g.log)
 
         # --- Context menu ---
         g.show_loading("Инициализация меню…", "Подготовка контекстного меню")
-        g.table_context_menu = TableContextMenuController(gui=g, tasks_service=g.tasks_service)
+        g.table_context_menu = TableContextMenuController(gui=g,
+                                                          tasks_service=g.tasks_service,
+                                                          google_sync_service=g.google_sync_service, )
         g.table_context_menu.install()
 
         # связи
         g.row_highlighter.set_key_to_visual_mapper(g.table_manager.visual_row_by_index_key)
         g.table_manager.on_row_click = g.processor.on_row_click
+        g.table_manager.row_renderer.on_row_click = g.processor.on_row_click
 
         def _after_display():
             g.row_highlighter.reapply_from_json()
@@ -111,7 +134,7 @@ class AppServices:
                          sort_controller=g.sort_controller,
                          hotkeys=g.hotkeys,
                          table_context_menu=g.table_context_menu,
-                         ui_bridge=getattr(g, "ui_bridge", None),)
+                         ui_bridge=getattr(g, "ui_bridge", None), )
 
         # сохранить на gui для удобного доступа
         g.ctx = ctx

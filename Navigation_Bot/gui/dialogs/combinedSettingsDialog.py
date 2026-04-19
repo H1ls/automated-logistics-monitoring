@@ -79,15 +79,16 @@ class LayoutModeTab(QWidget):
         mode_layout.addWidget(horizontal_desc)
 
         # Диаграмма
-        diagram = QLabel(
-            "┌─ Вертикально          ┌─ Горизонтально\n"
-            "├─ ┌──────────────┐    ├─ ┌────────┬────────┐\n"
-            "│  │ Navigation   │    │  │        │ Navi   │\n"
-            "│  ├──────────────┤    │  │Browser │Manager │\n"
-            "│  │  Browser     │    │  │        │        │\n"
-            "└─ └──────────────┘    └─ └────────┴────────┘"
-        )
-        diagram.setStyleSheet("font-family: monospace; color: #999; font-size: 8px; margin-top: 5px;")
+        diagram = QLabel("""
+    ┌─ Вертикально        ┌─ Горизонтально
+    ├─ ┌────────────┐     ├─ ┌───────┬───────┐
+    │  │ Навигация  │     │  │       │       │
+    │  ├────────────┤     │  │Браузер│ Нави  │
+    │  │  Браузер   │     │  │       │       │
+    └─ └────────────┘     └─ └───────┴───────┘""")
+
+        # diagram.setStyleSheet("font-family: monospace; color: #999; font-size: 8px; margin-top: 5px;")
+        diagram.setStyleSheet("""font-family: Consolas, Courier New, monospace;font-size: 12px;""")
         mode_layout.addWidget(diagram)
 
         mode_box = QGroupBox("🔄 Режим разделения")
@@ -129,8 +130,8 @@ class CombinedSettingsDialog(QDialog):
         super().__init__(parent)
         self.setWindowTitle("Настройки")
         self.resize(650, 350)
-        self._forms = {}   # section_key -> SectionForm
-        self._dirty = set()# какие секции менялись с момента открытия
+        self._forms = {}  # section_key -> SectionForm
+        self._dirty = set()  # какие секции менялись с момента открытия
         self.gui = parent  # сохраняем ссылку на gui для удобства
 
         root = QVBoxLayout(self)

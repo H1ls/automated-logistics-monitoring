@@ -370,8 +370,7 @@ class AddressEditDialog(QDialog):
                 break
 
     #  Сохранение / архив
-    def _accept(self) -> None:
-        """Нажатие на 'Сохранить' внутри диалога."""
+    def _accept(self):
         try:
             if hasattr(self, "status_editor"):
                 processed = self.status_editor.get_processed()
@@ -380,20 +379,10 @@ class AddressEditDialog(QDialog):
             if hasattr(self, "raw_edit") and hasattr(self, "raw_key"):
                 self.row_data[self.raw_key] = self.raw_edit.toPlainText().strip()
 
-            if not self.disable_save and self.data_context is not None:
-                json_data = self.data_context.get()
-                row_index = json_data.index(self.row_data) if self.row_data in json_data else None
-                if row_index is not None:
-                    json_data[row_index] = self.row_data
-
-                # пересоздаём processedFlags только для этой строки
-                init_processed_flags([self.row_data], [self.row_data], loads_key=self.prefix)
-
-                self.data_context.save()
-
             super().accept()
+
         except Exception as e:
-            self.log(f"[DEBUG] ❌ Ошибка в _accept(): {e}")
+            self.log(f"[DEBUG] ❌ Ошибка в accept(): {e}")
 
     def get_result(self):
         """

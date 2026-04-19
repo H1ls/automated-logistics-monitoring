@@ -1,14 +1,14 @@
 from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import QMenu
 
-from Navigation_Bot.bots.dataCleaner import DataCleaner
-
 
 class TableContextMenuController:
-    def __init__(self, gui, tasks_service=None):
+    def __init__(self, gui, tasks_service=None, google_sync_service=None):
         self.gui = gui
         self.table = gui.table
         self.tasks = tasks_service
+        self.google_sync = google_sync_service
+        # self.google_sync = getattr(gui, "google_sync_service", None)
 
     def install(self):
         self.table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
@@ -54,16 +54,15 @@ class TableContextMenuController:
             return None
 
     def _delete_row(self, real_idx: int):
-        if self.tasks:
-            item = self.tasks.delete_row(real_idx)
-        else:
-            data = self.gui.data_context.get() or []
-            if not (0 <= real_idx < len(data)):
-                return
-            item = data.pop(real_idx)
-            self.gui.data_context.save()
-        if not item:
+        if not self.tasks:
+            self.gui.log("⚠️ TasksService не подключён")
             return
+
+        ok, item, err = self.tasks.delete_row(real_idx)
+        if not ok:
+            self.gui.log(f"❌ Не удалось удалить строку: {err}")
+            return
+
         self.gui.log(f"🗑 Удалено: ТС={item.get('ТС')} index={item.get('index')}")
         self.gui.reload_and_show()
 
@@ -78,30 +77,17 @@ class TableContextMenuController:
                 self.gui.log("⚠️ В строке нет 'index'")
                 return
 
-            if not getattr(self.gui.gsheet, "sheet", None):
-                self.gui.log("⚠️ Google Sheets не инициализирован")
+            if not self.google_sync:
+                self.gui.log("⚠️ GoogleSyncService не подключён")
                 return
 
-            rng = f"D{index_key}:H{index_key}"
-            rows = self.gui.gsheet.sheet.get(rng)
-            if not rows:
-                self.gui.log(f"❌ Пусто в Google для {index_key}")
+            ok, updated_task, err = self.google_sync.refresh_row_by_index(index_key)
+            if not ok:
+                self.gui.log(f"❌ Ошибка точечного обновления: {err}")
                 return
 
-            dh = rows[0]
-            while len(dh) < 5:
-                dh.append("")
-
-            # 1 обновляем JSON
-            self.gui.gsheet.refresh_name({index_key: dh}, update_existing=True)
-
-            # 2 чистим ТОЛЬКО эту строку
-            DataCleaner(data_context=self.gui.data_context, log_func=self.gui.log).start_clean(only_indexes={index_key})
-
-            # 3 ОДИН раз обновляем UI
             self.gui.reload_and_show()
-
-            self.gui.log(f"✅ Точечное обновление выполнено: index={index_key}")
+            self.gui.log(f"✅ Точечное обновление выполнено: строки ={index_key} в Goggle.")
 
         except Exception as e:
             self.gui.log(f"❌ Ошибка точечного обновления: {e}")

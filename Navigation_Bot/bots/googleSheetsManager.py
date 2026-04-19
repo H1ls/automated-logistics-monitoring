@@ -7,12 +7,15 @@ from datetime import datetime, date
 from PyQt6.QtCore import QObject, pyqtSignal
 from oauth2client.service_account import ServiceAccountCredentials
 
-from Navigation_Bot.bots.dataCleaner import DataCleaner
 from Navigation_Bot.core.dataContext import DataContext
 from Navigation_Bot.core.jSONManager import JSONManager
 from Navigation_Bot.core.paths import INPUT_FILEPATH, CONFIG_JSON
-from Navigation_Bot.core.processedFlags import init_processed_flags
 
+
+# TODO: 1.знает про локальный JSON - исправить
+# TODO: 2.пишет в DataContext - отвязать от GoogleSheetsManager
+# TODO: ✅ 3.запускает DataCleaner - передать в TasksService
+# TODO: ✅ 4.дергает init_processed_flags - делегировать
 
 class GoogleSheetsManager(QObject):
     started = pyqtSignal()
@@ -285,48 +288,6 @@ class GoogleSheetsManager(QObject):
         except Exception as e:
             self._log(f"❌ GoogleSheetsManager.set_active_worksheet: {e}")
 
-    def pull_to_context(self, data_context, input_filepath: str | None = None):
-        try:
-            rows = self.load_data()
-
-            if not rows:
-                msg = "Загрузка отменена: нет данных из Google (ошибка/пусто)."
-                self._log(f"⚠️ {msg}")
-                return False, msg
-
-            self.data_context = data_context or self.data_context
-            self.refresh_name(rows, update_existing=False)
-
-            cleaner = DataCleaner(data_context=data_context, log_func=self._log)
-            cleaner.start_clean()
-
-            if self.data_context:
-                self.data_context.reload()
-                clean_data = self.data_context.get() or []
-                init_processed_flags(clean_data, clean_data, loads_key="Выгрузка")
-                self.data_context.set(clean_data)
-            return True, None
-
-        except Exception as e:
-            self._log(f"❌ GoogleSheetsManager.pull_to_context: {e}")
-            return False, str(e)
-
-    def pull_to_context_async(self, data_context, input_filepath: str, executor):
-        try:
-            # self._log("📥 Загрузка данных из Google Sheets...")
-            self.started.emit()
-
-            def task():
-                ok, err = self.pull_to_context(data_context, input_filepath)
-                if ok:
-                    self.finished.emit()
-                else:
-                    self.error.emit(err or "Unknown error")
-
-            executor.submit(task)
-        except Exception as e:
-            self._log(f"❌ GoogleSheetsManager.pull_to_context_async: {e}")
-
     def load_data(self):
         """
         Грузим только строки, где:
@@ -389,134 +350,135 @@ class GoogleSheetsManager(QObject):
             self._log(f"️❌ Ошибка загрузки данных с листа: {e}")
             return None
 
-    def refresh_name(self, rows, file_path=None, update_existing: bool = False):
-        updated_count = 0
-
-        try:
-            if not rows:
-                self._log("↩️ Обновление отменено: нет данных (ошибка/пустой лист). Текущее состояние сохранено")
-                return
-
-            ctx = self.data_context
-            existing_data = (ctx.get() or []) if ctx else (JSONManager().load_json(file_path or self.file_path) or [])
-            existing_indexes = {entry.get("index") for entry in existing_data if isinstance(entry, dict)}
-            by_index = {entry.get("index"): entry for entry in existing_data if isinstance(entry, dict)}
-            active_indexes, new_entries = set(), []
-
-            # если rows пришёл как dict {row_index: [D,E,F,G,H]}
-            if isinstance(rows, dict):
-                for i, dh in rows.items():
-                    # dh = [D, E, F, G, H]
-                    d = dh[0] if len(dh) > 0 else ""
-                    e = dh[1] if len(dh) > 1 else ""
-                    f = dh[2] if len(dh) > 2 else ""
-                    g = dh[3] if len(dh) > 3 else ""
-                    h = dh[4] if len(dh) > 4 else ""
-
-                    raw_ts = re.sub(r"\s+", "", d)  # ТС+телефон
-                    number, phone = raw_ts[:9], raw_ts[9:]
-                    formatted_ts = number[:6] + ' ' + number[6:] if len(number) >= 9 else number
-
-                    fio = e
-                    load = g
-                    unload = h
-
-                    # Доп. защита: пропускаем полностью пустые строки
-                    if not any([formatted_ts, phone, fio, load, unload]):
-                        continue
-
-                    active_indexes.add(i)
-
-                    fresh = {"index": i,
-                             "ТС": formatted_ts,
-                             "Телефон": phone,
-                             "ФИО": fio,
-                             "КА": f,
-                             "Погрузка": load,
-                             "Выгрузка": unload, }
-
-                    if i in existing_indexes:
-                        if update_existing:
-                            old = by_index.get(i)
-                            updated_count += 1
-                            if old is not None:
-                                old.update(fresh)
-                                old["raw_load"] = load
-                                old["raw_unload"] = unload
-                                old["Погрузка"] = load
-                                old["Выгрузка"] = unload
-
-                    else:
-                        new_entries.append(fresh)
-
-
-
-            # старый режим - если load_data ещё вернёт полный лист
-            else:
-                for i, row in enumerate(rows[2:], start=3):
-                    if len(row) < self.column_index or row[self.column_index - 1].strip() == "Готов":
-                        continue
-
-                    raw_ts = re.sub(r"\s+", "", row[3])  # убираем все пробелы из ТС
-                    number, phone = raw_ts[:9], raw_ts[9:]
-                    formatted_ts = number[:6] + ' ' + number[6:] if len(number) >= 9 else number
-
-                    fio = row[4] if len(row) > 4 else ""
-                    load = row[6] if len(row) > 6 else ""
-                    unload = row[7] if len(row) > 7 else ""
-
-                    if not any([formatted_ts, phone, fio, load, unload]):
-                        continue
-
-                    active_indexes.add(i)
-
-                    fresh = {"index": i,
-                             "ТС": formatted_ts,
-                             "Телефон": phone,
-                             "ФИО": fio,
-                             "КА": row[5] if len(row) > 5 else "",
-                             "Погрузка": load,
-                             "Выгрузка": unload, }
-
-                    if i in existing_indexes:
-                        old = by_index.get(i)
-                        if old is not None:
-                            old.update(fresh)
-                            old["raw_load"] = load
-                            old["raw_unload"] = unload
-                            old["Погрузка"] = load
-                            old["Выгрузка"] = unload
-                        self._log(f"✅ Обновил существующую строку index={i}")
-
-                    else:
-                        new_entries.append(fresh)
-
-            if not active_indexes and not new_entries:
-                self._log("↩️ В листе не найдено активных строк. Обновление пропущено, данные не изменены.")
-                return
-
-            # update_existing=True означает "точечный overwrite", а не "синхронизация списка".
-            if update_existing:
-                # existing_data уже обновлён "на месте" через old.update(...)
-                # поэтому просто сохраняем весь массив + добавляем новые (если вдруг index не существовал)
-                result_data = existing_data + new_entries
-                deleted_count = 0
-            else:
-                # режим синхронизации (как раньше)
-                filtered_data = [e for e in existing_data if e.get("index") in active_indexes]
-                result_data = filtered_data + new_entries
-                deleted_count = len(existing_data) - len(filtered_data)
-
-            if ctx:
-                ctx.set(result_data)
-            else:
-                JSONManager().save_in_json(result_data, file_path or self.file_path)
-
-            self._log(
-                f"🔄 Обновление: обновлено {updated_count}, добавлено {len(new_entries)}, удалено {deleted_count} строк.")
-
-        except Exception as e:
-            self._log(f"❌ refresh_name error: {e}")
+    # TODO: refresh_name() временный bridge, подшаге 1.2 или 1.3 вытащить из него логику в отдельный mapper/adapter
+    # def refresh_name(self, rows, file_path=None, update_existing: bool = False):
+    #     updated_count = 0
+    #
+    #     try:
+    #         if not rows:
+    #             self._log("↩️ Обновление отменено: нет данных (ошибка/пустой лист). Текущее состояние сохранено")
+    #             return
+    #
+    #         ctx = self.data_context
+    #         existing_data = (ctx.get() or []) if ctx else (JSONManager().load_json(file_path or self.file_path) or [])
+    #         existing_indexes = {entry.get("index") for entry in existing_data if isinstance(entry, dict)}
+    #         by_index = {entry.get("index"): entry for entry in existing_data if isinstance(entry, dict)}
+    #         active_indexes, new_entries = set(), []
+    #
+    #         # если rows пришёл как dict {row_index: [D,E,F,G,H]}
+    #         if isinstance(rows, dict):
+    #             for i, dh in rows.items():
+    #                 # dh = [D, E, F, G, H]
+    #                 d = dh[0] if len(dh) > 0 else ""
+    #                 e = dh[1] if len(dh) > 1 else ""
+    #                 f = dh[2] if len(dh) > 2 else ""
+    #                 g = dh[3] if len(dh) > 3 else ""
+    #                 h = dh[4] if len(dh) > 4 else ""
+    #
+    #                 raw_ts = re.sub(r"\s+", "", d)  # ТС+телефон
+    #                 number, phone = raw_ts[:9], raw_ts[9:]
+    #                 formatted_ts = number[:6] + ' ' + number[6:] if len(number) >= 9 else number
+    #
+    #                 fio = e
+    #                 load = g
+    #                 unload = h
+    #
+    #                 # Доп. защита: пропускаем полностью пустые строки
+    #                 if not any([formatted_ts, phone, fio, load, unload]):
+    #                     continue
+    #
+    #                 active_indexes.add(i)
+    #
+    #                 fresh = {"index": i,
+    #                          "ТС": formatted_ts,
+    #                          "Телефон": phone,
+    #                          "ФИО": fio,
+    #                          "КА": f,
+    #                          "Погрузка": load,
+    #                          "Выгрузка": unload, }
+    #
+    #                 if i in existing_indexes:
+    #                     if update_existing:
+    #                         old = by_index.get(i)
+    #                         updated_count += 1
+    #                         if old is not None:
+    #                             old.update(fresh)
+    #                             old["raw_load"] = load
+    #                             old["raw_unload"] = unload
+    #                             old["Погрузка"] = load
+    #                             old["Выгрузка"] = unload
+    #
+    #                 else:
+    #                     new_entries.append(fresh)
+    #
+    #
+    #
+    #         # старый режим - если load_data ещё вернёт полный лист
+    #         else:
+    #             for i, row in enumerate(rows[2:], start=3):
+    #                 if len(row) < self.column_index or row[self.column_index - 1].strip() == "Готов":
+    #                     continue
+    #
+    #                 raw_ts = re.sub(r"\s+", "", row[3])  # убираем все пробелы из ТС
+    #                 number, phone = raw_ts[:9], raw_ts[9:]
+    #                 formatted_ts = number[:6] + ' ' + number[6:] if len(number) >= 9 else number
+    #
+    #                 fio = row[4] if len(row) > 4 else ""
+    #                 load = row[6] if len(row) > 6 else ""
+    #                 unload = row[7] if len(row) > 7 else ""
+    #
+    #                 if not any([formatted_ts, phone, fio, load, unload]):
+    #                     continue
+    #
+    #                 active_indexes.add(i)
+    #
+    #                 fresh = {"index": i,
+    #                          "ТС": formatted_ts,
+    #                          "Телефон": phone,
+    #                          "ФИО": fio,
+    #                          "КА": row[5] if len(row) > 5 else "",
+    #                          "Погрузка": load,
+    #                          "Выгрузка": unload, }
+    #
+    #                 if i in existing_indexes:
+    #                     old = by_index.get(i)
+    #                     if old is not None:
+    #                         old.update(fresh)
+    #                         old["raw_load"] = load
+    #                         old["raw_unload"] = unload
+    #                         old["Погрузка"] = load
+    #                         old["Выгрузка"] = unload
+    #                     self._log(f"✅ Обновил существующую строку index={i}")
+    #
+    #                 else:
+    #                     new_entries.append(fresh)
+    #
+    #         if not active_indexes and not new_entries:
+    #             self._log("↩️ В листе не найдено активных строк. Обновление пропущено, данные не изменены.")
+    #             return
+    #
+    #         # update_existing=True означает "точечный overwrite", а не "синхронизация списка".
+    #         if update_existing:
+    #             # existing_data уже обновлён "на месте" через old.update(...)
+    #             # поэтому просто сохраняем весь массив + добавляем новые (если вдруг index не существовал)
+    #             result_data = existing_data + new_entries
+    #             deleted_count = 0
+    #         else:
+    #             # режим синхронизации (как раньше)
+    #             filtered_data = [e for e in existing_data if e.get("index") in active_indexes]
+    #             result_data = filtered_data + new_entries
+    #             deleted_count = len(existing_data) - len(filtered_data)
+    #
+    #         if ctx:
+    #             ctx.set(result_data)
+    #         else:
+    #             JSONManager().save_in_json(result_data, file_path or self.file_path)
+    #
+    #         self._log(
+    #             f"🔄 Обновление: обновлено {updated_count}, добавлено {len(new_entries)}, удалено {deleted_count} строк.")
+    #
+    #     except Exception as e:
+    #         self._log(f"❌ refresh_name error: {e}")
 
     def append_to_cell(self, data, column=12):
         # self._log(f"GSHEET append => sheet_id={self.sheet_id}, ws_index={self.worksheet_index}, col={column}")
@@ -566,13 +528,13 @@ class GoogleSheetsManager(QObject):
         except Exception as e:
             self._log(f"❌ Ошибка при записи строки {item.get('ТС')}: {e}")
 
-    def is_row_empty(self, row_index: int) -> bool:
-        """Проверяет, пустая ли строка в колонках 1–7"""
-        try:
-            values = self.sheet.row_values(row_index)
-            return all((i >= len(values) or not values[i].strip()) for i in range(7))
-        except Exception:
-            return True  # если ошибки чтения - считаем пустой
+    # def is_row_empty(self, row_index: int) -> bool:
+    #     """Проверяет, пустая ли строка в колонках 1–7"""
+    #     try:
+    #         values = self.sheet.row_values(row_index)
+    #         return all((i >= len(values) or not values[i].strip()) for i in range(7))
+    #     except Exception:
+    #         return True  # если ошибки чтения - считаем пустой
 
     def upload_new_row(self, entry: dict):
         """Выгружает новую запись в Google Sheets"""
@@ -586,11 +548,11 @@ class GoogleSheetsManager(QObject):
             unload_str = "; ".join(f"{blk.get(f'Время {i + 1}', '')} {blk.get(f'Выгрузка {i + 1}', '')}".strip()
                                    for i, blk in enumerate(entry.get("Выгрузка", [])))
 
-            row_data = [ts_with_phone,         # col D (ТС + телефон)
+            row_data = [ts_with_phone,  # col D (ТС + телефон)
                         entry.get("ФИО", ""),  # col E (ФИО)
-                        entry.get("КА", ""),   # col F (КА)
-                        load_str,              # col G (Погрузка)
-                        unload_str]            # col H (Выгрузка)
+                        entry.get("КА", ""),  # col F (КА)
+                        load_str,  # col G (Погрузка)
+                        unload_str]  # col H (Выгрузка)
 
             self.sheet.update(f"D{row_index}:H{row_index}", [row_data])
             self._log(f"📤 Новая запись отправлена в Google Sheets (row={row_index})")

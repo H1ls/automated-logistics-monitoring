@@ -187,7 +187,7 @@ class SheetTabsController:
 
             if page:
                 gui.stack.setCurrentWidget(page)
-                # ✅ если у страницы нет table или это не QTableWidget — просто отключаем привязку поиска
+                # если у страницы нет table или это не QTableWidget — просто отключаем привязку поиска
                 tbl = getattr(page, "table", None)
                 if isinstance(tbl, QTableWidget):
                     gui.search_bar.set_table(tbl)
@@ -214,9 +214,19 @@ class SheetTabsController:
             gui.search_bar._rebuild_hits()
 
         ws_index = tab.get("ws_index", 0)
-        gui.gsheet.set_active_worksheet(ws_index)
+
+        if not getattr(gui, "google_sync_service", None):
+            gui.log("⚠️ GoogleSyncService не подключён")
+            return
+
+        ok, err = gui.google_sync_service.switch_worksheet(ws_index)
+        if not ok:
+            gui.log(f"❌ Не удалось переключить лист: {err}")
+            return
 
         json_path = gui._get_sheet_json_path()
+        if getattr(gui, "gsheet", None):
+            gui.gsheet.data_context = gui.data_context
         gui.data_context.set_filepath(json_path)
 
         gui.reload_and_show()
