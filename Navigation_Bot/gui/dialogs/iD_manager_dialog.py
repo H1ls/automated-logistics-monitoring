@@ -4,7 +4,7 @@ from PyQt6.QtWidgets import (
     QTableWidget, QTableWidgetItem, QPushButton
 )
 
-from Navigation_Bot.core.dataContext import DataContext
+from Navigation_Bot.core.data_context import DataContext
 from Navigation_Bot.core.paths import ID_FILEPATH
 from Navigation_Bot.gui.dialogs.dialog_helpers import button_row_trailing
 

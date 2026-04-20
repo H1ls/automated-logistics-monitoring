@@ -1,4 +1,4 @@
-# logistxPage.py
+# logistx_page.py
 import json
 import re
 from pathlib import Path
@@ -8,8 +8,8 @@ from PyQt6.QtGui import QColor
 from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QTableWidget, QTableWidgetItem,
                              QAbstractItemView)
 
-from LogistX.controllers.oneCReportImporter import OneCReportImporter
-from Navigation_Bot.gui.dialogs.sitesDbEditorDialog import SitesDbEditorDialog
+from LogistX.controllers.oneC_report_importer import OneCReportImporter
+from Navigation_Bot.gui.dialogs.sites_Db_editor_dialog import SitesDbEditorDialog
 
 
 class LogistXPage(QWidget):

@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from Navigation_Bot.bots.mapsBot import MapsBot
+from Navigation_Bot.bots.maps_bot import MapsBot
 from Navigation_Bot.bots.scenarios.NavigationBot import NavigationBot
-from Navigation_Bot.bots.webDriverManager import WebDriverManager
+from Navigation_Bot.bots.web_driver_manager import WebDriverManager
 from Navigation_Bot.bots.scenarios.ReportsBot import WialonReportsBot
 
 

@@ -1,4 +1,4 @@
-# Navigation_Bot\gui\controllers\sheetTabsController.py
+# Navigation_Bot\gui\controllers\sheet_tabs_controller.py
 from __future__ import annotations
 
 from PyQt6.QtGui import QAction
@@ -180,7 +180,10 @@ class SheetTabsController:
             # создание страницы — обязанность GUI/composition root (чтобы не тянуть зависимости сюда)
             page = None
             try:
-                if hasattr(gui, "get_or_create_local_page"):
+                controller = getattr(gui, "local_pages_controller", None)
+                if controller:
+                    page = controller.get_or_create_page(key)
+                elif hasattr(gui, "get_or_create_local_page"):
                     page = gui.get_or_create_local_page(key)
             except Exception:
                 page = None

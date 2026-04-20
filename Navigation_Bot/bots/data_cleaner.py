@@ -3,7 +3,7 @@ import re
 from pathlib import Path
 from typing import List, Dict, Any
 
-from Navigation_Bot.core.dataContext import DataContext
+from Navigation_Bot.core.data_context import DataContext
 from Navigation_Bot.core.paths import INPUT_FILEPATH, ID_FILEPATH
 
 """2. Очистка данных"""

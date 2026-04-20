@@ -1,4 +1,4 @@
-# Navigation_Bot\core\navigationProcessor.py
+# Navigation_Bot\core\navigation_processor.py
 import threading
 import traceback
 from concurrent.futures import ThreadPoolExecutor

@@ -122,10 +122,10 @@ class WindowLayoutManager:
             raise ValueError(f"Монитор {index} не найден (всего мониторов: {len(screens)})")
         self.monitor_index = index
 
-    def get_monitor_index(self) -> int:
-        """Получить текущий индекс монитора."""
-        return self.monitor_index
+    # def get_monitor_index(self) -> int:
+    #     """Получить текущий индекс монитора."""
+    #     return self.monitor_index
 
-    def get_layout_mode(self) -> LayoutMode:
-        """Получить текущий режим размещения."""
-        return self.layout_mode
+    # def get_layout_mode(self) -> LayoutMode:
+    #     """Получить текущий режим размещения."""
+    #     return self.layout_mode

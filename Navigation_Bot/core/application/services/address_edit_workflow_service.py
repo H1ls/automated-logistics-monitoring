@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Callable
 
-from Navigation_Bot.gui.dialogs.AddressEditDialog import AddressEditDialog
+from Navigation_Bot.gui.dialogs.address_edit_dialog import AddressEditDialog
 
 
 @dataclass(slots=True)

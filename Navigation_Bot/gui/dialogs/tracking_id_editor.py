@@ -1,6 +1,6 @@
 from PyQt6.QtWidgets import QDialog, QLabel, QLineEdit, QPushButton, QVBoxLayout
 
-from Navigation_Bot.core.jSONManager import JSONManager
+from Navigation_Bot.core.json_manager import JSONManager
 from Navigation_Bot.core.paths import ID_FILEPATH
 
 """TODO 1.Логика self.car_data["id"] = int(new_id) 

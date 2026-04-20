@@ -42,7 +42,7 @@ class GoogleSyncService:
     def _get_cleaner(self):
         if self.cleaner is not None:
             return self.cleaner
-        from Navigation_Bot.bots.dataCleaner import DataCleaner
+        from Navigation_Bot.bots.data_cleaner import DataCleaner
         return DataCleaner(data_context=self.data_context, log_func=self._log)
 
     def refresh_row_by_index(self, index_key: int) -> tuple[bool, dict | None, str | None]:

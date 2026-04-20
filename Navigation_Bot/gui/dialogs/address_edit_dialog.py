@@ -8,10 +8,10 @@ from PyQt6.QtWidgets import (
     QLineEdit, QPushButton, QScrollArea, QWidget, QTextEdit
 )
 
-from Navigation_Bot.core.datasetArchive import DatasetArchive
-from Navigation_Bot.core.processedFlags import StatusEditorWidget, init_processed_flags
+from Navigation_Bot.core.dataset_archive import DatasetArchive
+from Navigation_Bot.core.processed_flags import StatusEditorWidget, init_processed_flags
 from Navigation_Bot.gui.dialogs.dialog_helpers import button_row_split
-from Navigation_Bot.gui.dialogs.sitesDbEditorDialog import SitesDbEditorDialog
+from Navigation_Bot.gui.dialogs.sites_Db_editor_dialog import SitesDbEditorDialog
 
 
 class AddressEditDialog(QDialog):

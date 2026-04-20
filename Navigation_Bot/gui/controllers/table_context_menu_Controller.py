@@ -45,9 +45,6 @@ class TableContextMenuController:
     def _visual_to_real(self, visual_row: int) -> int | None:
         if visual_row < 0:
             return None
-        # последняя строка "➕"
-        if visual_row >= self.table.rowCount() - 1:
-            return None
         try:
             return self.gui.table_manager.view_order[visual_row]
         except Exception:

@@ -3,13 +3,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta
 
 from PyQt6.QtGui import QColor
-from PyQt6.QtWidgets import (
-    QTableWidgetItem,
-    QPushButton,
-    QWidget,
-    QHBoxLayout,
-    QLabel,
-)
+from PyQt6.QtWidgets import (QTableWidgetItem, QPushButton, QWidget, QHBoxLayout, QLabel, )
 from PyQt6.QtCore import Qt
 
 
@@ -19,7 +13,7 @@ class TableRowRenderer:
     Не знает про сохранение данных и workflow.
     """
 
-    def __init__(self,*,table,log_func,formatter,row_action_controller,on_row_click,on_edit_id_click,):
+    def __init__(self, *, table, log_func, formatter, row_action_controller, on_row_click, on_edit_id_click, ):
 
         self.table = table
         self.log = log_func

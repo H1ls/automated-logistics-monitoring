@@ -4,7 +4,7 @@ from pathlib import Path
 from PyQt6.QtWidgets import (QDialog, QHeaderView, QMessageBox, QPushButton, QTableWidget, QTableWidgetItem,
                              QVBoxLayout, )
 
-from Navigation_Bot.gui.dialogs.aliasesEditorDialog import AliasesEditorDialog
+from Navigation_Bot.gui.dialogs.aliases_editor_dialog import AliasesEditorDialog
 from Navigation_Bot.gui.dialogs.dialog_helpers import button_row_split
 
 SITES_DB_PATH = Path("LogistX/config") / "sites_db.json"

@@ -5,7 +5,7 @@ from datetime import datetime, timedelta
 from selenium.webdriver.common.by import By
 from selenium.webdriver.common.keys import Keys
 
-from Navigation_Bot.core.jSONManager import JSONManager
+from Navigation_Bot.core.json_manager import JSONManager
 from Navigation_Bot.core.paths import CONFIG_JSON
 
 

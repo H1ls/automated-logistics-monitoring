@@ -4,7 +4,7 @@ import re
 from dataclasses import dataclass
 from typing import Any, Callable
 
-from Navigation_Bot.core.processedFlags import init_processed_flags
+from Navigation_Bot.core.processed_flags import init_processed_flags
 
 
 @dataclass(slots=True)

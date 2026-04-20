@@ -1,5 +1,4 @@
 import os
-import re
 import sys
 import gspread
 
@@ -7,8 +6,8 @@ from datetime import datetime, date
 from PyQt6.QtCore import QObject, pyqtSignal
 from oauth2client.service_account import ServiceAccountCredentials
 
-from Navigation_Bot.core.dataContext import DataContext
-from Navigation_Bot.core.jSONManager import JSONManager
+from Navigation_Bot.core.data_context import DataContext
+from Navigation_Bot.core.json_manager import JSONManager
 from Navigation_Bot.core.paths import INPUT_FILEPATH, CONFIG_JSON
 
 
@@ -147,90 +146,6 @@ class GoogleSheetsManager(QObject):
             self._log(f"❌ Ошибка поиска листа '{title}' в таблице аккаунтов: {e}")
             return None
 
-    def check_user_credentials(self,
-                               login: str,
-                               password: str,
-                               account_sheet_title: str = "Account",
-                               sheet_id: str | None = None) -> tuple[bool, str]:
-        """
-        Проверяет логин/пароль по листу Account в таблице аккаунтов.
-
-        sheet_id:
-          - если передан явно -> использовать его
-          - иначе берется self.auth_sheet_id (из config.json)
-          - если и его нет, то self.sheet_id
-
-        Также проверяет поле 'Time able' (если есть):
-        - если дата в прошлом — доступ запрещён.
-        """
-        login = (login or "").strip()
-        password = (password or "").strip()
-
-        if not login or not password:
-            return False, "Введите логин и пароль."
-
-        ws = self._get_account_sheet(account_sheet_title, sheet_id=sheet_id)
-        if ws is None:
-            return False, f"Лист '{account_sheet_title}' не найден или нет доступа к таблице аккаунтов."
-
-        try:
-            rows = ws.get_all_values()
-            if not rows or len(rows) < 2:
-                return False, "Лист аккаунтов пуст или слишком короткий."
-
-            header = [c.strip().lower() for c in rows[0]]
-            try:
-                login_idx = header.index("login")
-                pass_idx = header.index("password")
-            except ValueError:
-                return False, "В листе аккаунтов нет колонок 'login'/'password'."
-
-            # индекс колонки с датой доступа (Time able), если она есть
-            time_idx = header.index("time able") if "time able" in header else None
-
-            for row in rows[1:]:
-                if len(row) <= max(login_idx, pass_idx):
-                    continue
-
-                row_login = row[login_idx].strip()
-                row_pass = row[pass_idx].strip()
-
-                if row_login == login and row_pass == password:
-                    #  1 проверка Time able
-                    if time_idx is not None and time_idx < len(row):
-                        time_val = (row[time_idx] or "").strip()
-                        if time_val:
-                            parsed_date = None
-                            # поддерживаем несколько форматов дат
-                            for fmt in ("%d.%m.%Y", "%Y-%m-%d", "%d/%m/%Y"):
-                                try:
-                                    parsed_date = datetime.strptime(time_val, fmt).date()
-                                    break
-                                except ValueError:
-                                    continue
-
-                            if parsed_date is None:
-                                return False, f"Некорректный формат даты доступа: '{time_val}'."
-
-                            today = date.today()
-                            if today > parsed_date:
-                                return False, f"Время доступа истекло ({time_val})."
-
-                    #  2 проверка active
-                    active_idx = header.index("active") if "active" in header else None
-                    if active_idx is not None and active_idx < len(row):
-                        active_val = (row[active_idx] or "").strip()
-                        if active_val and active_val not in ("1", "true", "True", "да", "Да"):
-                            return False, "Учетная запись отключена."
-
-                    self._log(f"✅ Успешный вход: {login}")
-                    return True, ""
-
-            return False, "Неверный логин или пароль."
-        except Exception as e:
-            self._log(f"❌ Ошибка проверки логина: {e}")
-            return False, f"Ошибка доступа к таблице аккаунтов: {e}"
-
     def _open_spreadsheet_by_id(self, sheet_id: str):
         """Открыть любую таблицу по ее ID, используя тот же creds_file."""
         if not sheet_id:
@@ -261,6 +176,7 @@ class GoogleSheetsManager(QObject):
             self._log(f"⚠️ Не удалось получить список листов: {e}")
             return []
 
+    # TODO: Решить проблему с двойным вызовом
     def set_active_worksheet(self, index: int):
         """Быстро переключает активный лист, без обращений к Google"""
         try:
@@ -528,14 +444,6 @@ class GoogleSheetsManager(QObject):
         except Exception as e:
             self._log(f"❌ Ошибка при записи строки {item.get('ТС')}: {e}")
 
-    # def is_row_empty(self, row_index: int) -> bool:
-    #     """Проверяет, пустая ли строка в колонках 1–7"""
-    #     try:
-    #         values = self.sheet.row_values(row_index)
-    #         return all((i >= len(values) or not values[i].strip()) for i in range(7))
-    #     except Exception:
-    #         return True  # если ошибки чтения - считаем пустой
-
     def upload_new_row(self, entry: dict):
         """Выгружает новую запись в Google Sheets"""
         try:
@@ -543,7 +451,7 @@ class GoogleSheetsManager(QObject):
             ts_with_phone = f"{entry.get('ТС', '')} {entry.get('Телефон', '')}".strip()
 
             load_str = "; ".join(f"{blk.get(f'Время {i + 1}', '')} {blk.get(f'Погрузка {i + 1}', '')}".strip()
-                                 for i, blk in enumerate(entry.get("Погрузка", [])))
+                for i, blk in enumerate(entry.get("Погрузка", [])))
 
             unload_str = "; ".join(f"{blk.get(f'Время {i + 1}', '')} {blk.get(f'Выгрузка {i + 1}', '')}".strip()
                                    for i, blk in enumerate(entry.get("Выгрузка", [])))
@@ -556,8 +464,10 @@ class GoogleSheetsManager(QObject):
 
             self.sheet.update(f"D{row_index}:H{row_index}", [row_data])
             self._log(f"📤 Новая запись отправлена в Google Sheets (row={row_index})")
+
         except Exception as e:
             self._log(f"❌ Ошибка выгрузки новой строки: {e}")
+            raise
 
     def write_all(self, items: list):
         if not items:
@@ -569,3 +479,87 @@ class GoogleSheetsManager(QObject):
             self._log(f"📤 Обновлены все строки в Google Sheets ({len(items)} шт.)")
         except Exception as e:
             self._log(f"❌ Ошибка при записи в Google Sheets: {e}")
+
+    def check_user_credentials(self,
+                               login: str,
+                               password: str,
+                               account_sheet_title: str = "Account",
+                               sheet_id: str | None = None) -> tuple[bool, str]:
+        """
+        Проверяет логин/пароль по листу Account в таблице аккаунтов.
+
+        sheet_id:
+          - если передан явно -> использовать его
+          - иначе берется self.auth_sheet_id (из config.json)
+          - если и его нет, то self.sheet_id
+
+        Также проверяет поле 'Time able' (если есть):
+        - если дата в прошлом — доступ запрещён.
+        """
+        login = (login or "").strip()
+        password = (password or "").strip()
+
+        if not login or not password:
+            return False, "Введите логин и пароль."
+
+        ws = self._get_account_sheet(account_sheet_title, sheet_id=sheet_id)
+        if ws is None:
+            return False, f"Лист '{account_sheet_title}' не найден или нет доступа к таблице аккаунтов."
+
+        try:
+            rows = ws.get_all_values()
+            if not rows or len(rows) < 2:
+                return False, "Лист аккаунтов пуст или слишком короткий."
+
+            header = [c.strip().lower() for c in rows[0]]
+            try:
+                login_idx = header.index("login")
+                pass_idx = header.index("password")
+            except ValueError:
+                return False, "В листе аккаунтов нет колонок 'login'/'password'."
+
+            # индекс колонки с датой доступа (Time able), если она есть
+            time_idx = header.index("time able") if "time able" in header else None
+
+            for row in rows[1:]:
+                if len(row) <= max(login_idx, pass_idx):
+                    continue
+
+                row_login = row[login_idx].strip()
+                row_pass = row[pass_idx].strip()
+
+                if row_login == login and row_pass == password:
+                    #  1 проверка Time able
+                    if time_idx is not None and time_idx < len(row):
+                        time_val = (row[time_idx] or "").strip()
+                        if time_val:
+                            parsed_date = None
+                            # поддерживаем несколько форматов дат
+                            for fmt in ("%d.%m.%Y", "%Y-%m-%d", "%d/%m/%Y"):
+                                try:
+                                    parsed_date = datetime.strptime(time_val, fmt).date()
+                                    break
+                                except ValueError:
+                                    continue
+
+                            if parsed_date is None:
+                                return False, f"Некорректный формат даты доступа: '{time_val}'."
+
+                            today = date.today()
+                            if today > parsed_date:
+                                return False, f"Время доступа истекло ({time_val})."
+
+                    #  2 проверка active
+                    active_idx = header.index("active") if "active" in header else None
+                    if active_idx is not None and active_idx < len(row):
+                        active_val = (row[active_idx] or "").strip()
+                        if active_val and active_val not in ("1", "true", "True", "да", "Да"):
+                            return False, "Учетная запись отключена."
+
+                    self._log(f"✅ Успешный вход: {login}")
+                    return True, ""
+
+            return False, "Неверный логин или пароль."
+        except Exception as e:
+            self._log(f"❌ Ошибка проверки логина: {e}")
+            return False, f"Ошибка доступа к таблице аккаунтов: {e}"

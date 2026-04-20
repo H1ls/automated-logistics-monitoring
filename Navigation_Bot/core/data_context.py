@@ -1,7 +1,7 @@
 import json
 from pathlib import Path
 from Navigation_Bot.core.exceptions import (DataContextError, FileOperationError, JSONFormatError)
-from Navigation_Bot.core.jSONManager import JSONManager
+from Navigation_Bot.core.json_manager import JSONManager
 
 
 class DataContext:

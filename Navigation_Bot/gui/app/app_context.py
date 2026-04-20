@@ -10,12 +10,21 @@ class AppContext:
     Контейнер зависимостей GUI. Убрать доступ через gui.* и оставлять только gui.ctx.*.
     """
 
-    # данные/интеграции
+    # --- данные / интеграции ---
     data_context: Any
-    tasks_service: Any
     gsheet: Any
 
-    # сервисы/контроллеры
+    # --- базовые application services ---
+    tasks_service: Any
+    task_edit_service: Any
+    google_sync_service: Any
+
+    # --- workflow services ---
+    new_task_workflow_service: Any
+    editable_field_workflow_service: Any
+    address_edit_workflow_service: Any
+
+    # --- UI / controllers ---
     settings_controller: Any
     settings_ui: Any
     table_manager: Any
@@ -25,5 +34,5 @@ class AppContext:
     hotkeys: Any
     table_context_menu: Any
 
-    # опционально
+    # --- опционально ---
     ui_bridge: Optional[Any] = None

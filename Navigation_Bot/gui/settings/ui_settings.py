@@ -3,7 +3,7 @@ from typing import Dict, Any
 from PyQt6.QtCore import QPoint, QSize, QTimer
 from PyQt6.QtWidgets import QWidget, QTableWidget
 from Navigation_Bot.core.paths import UI_SETTINGS_FILE
-from Navigation_Bot.core.jSONManager import JSONManager
+from Navigation_Bot.core.json_manager import JSONManager
 
 
 class UiSettingsManager:
