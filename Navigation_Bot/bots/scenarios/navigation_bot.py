@@ -1,4 +1,4 @@
-# Navigation_Bot\bots\scenarios\NavigationBot.py
+# Navigation_Bot\bots\scenarios\navigation_bot.py
 import re
 import time
 
@@ -8,10 +8,11 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import WebDriverWait
-
+from Navigation_Bot.core.domain.value_objects.navigation_read_result import NavigationReadResult
 from Navigation_Bot.bots.navi_bot_base import NaviBase
 
 
+# TODO: подумать о рефакторинге NavigationBot
 class NavigationBot(NaviBase):
     # --- настройки поведения ---
     SELECTOR_SECTION = "wialon_selectors"
@@ -201,7 +202,7 @@ class NavigationBot(NaviBase):
         # иначе — последняя непустая строка
         return lines[-1]
 
-    def _pasre_age_seconds(self, fix_line: str) -> int | None:
+    def _parse_age_seconds(self, fix_line: str) -> int | None:
         if not fix_line:
             return None
         pairs = re.findall(r"(\d+)\s*(дн\.?|д\.?|ч\.?|час|часа|часов|мин\.?|м\.?|с\.?)", fix_line.lower())
@@ -232,7 +233,7 @@ class NavigationBot(NaviBase):
 
             text = (tooltip_el.text or "").strip()
             fix_line = self._extract_fix_line(text)
-            age_seconds = self._pasre_age_seconds(fix_line) if fix_line else None
+            age_seconds = self._parse_age_seconds(fix_line) if fix_line else None
 
             if fix_line:
                 self.log(f"📡 {fix_line}")
@@ -249,82 +250,78 @@ class NavigationBot(NaviBase):
         return age_second >= self.STALE_GPS_SECONDS
 
     # --- E. Orchestrator
-    def get_coordinates_from_wialon(self, car_data: dict) -> dict:
-        """ Главный сценарий обработки одной машины"""
+    # TODO: исправить 5 пункт с получением Координаты,
+    #       сейчас ошибка при последовательном повторном вызове одной и той же ТС
+    def read_navigation_state(self, car_data: dict) -> NavigationReadResult | None:
         car_number = car_data.get("ТС")
         car_id = car_data.get("id")
+
         self.log(f"🚗 Обработка ТС {car_number} (ID: {car_id})...")
 
         # 1) Ввести номер ТС в поиск
         if not self._type_in_search(car_number):
-            return car_data
+            return None
 
         # 2) Найти элемент машины
         element = self._find_car_element(car_id)
         if not element:
             self.log(f"⚠️ ТС {car_number} не найден.")
-            return car_data
+            return None
 
         # 3) Проверка ID элемента
         try:
             el_id = element.get_attribute("id") or ""
             if not el_id.endswith(str(car_id)):
                 self.log(f"⚠️ ID элемента не совпадает с ожидаемым: {car_id}")
-                return car_data
+                return None
         except StaleElementReferenceException:
             self.log("⚠️ stale при проверке id элемента — пропуск проверки")
 
         # 4) GPS tooltip age
         gps_text, gps_age = self._read_gps_fix_age(car_id)
-        if gps_text:
-            car_data["gps_fix_age"] = {"text": gps_text, "age_second": gps_age}
+        is_stale = self._is_navigation_stale(gps_age)
 
-        # 5) Если навигация устарела — выставить маркеры и выйти
-        if self._is_navigation_stale(gps_age):
+        if is_stale:
             self.log(f"⛔ Навигация устарела (>{self.STALE_GPS_SECONDS} сек): {gps_text}")
-            car_data["гео"] = "нет навигации"
-            car_data["коор"] = "!"
-            car_data["скорость"] = 0
-            car_data["_новые_координаты"] = False
-            return car_data
+            return NavigationReadResult(gps_fix_text=gps_text or "",
+                                        gps_fix_age_seconds=gps_age,
+                                        geo_text="нет навигации",
+                                        coordinates="!",
+                                        speed_kmh=0,
+                                        has_fresh_coordinates=False,
+                                        is_navigation_stale=True, )
 
-        # 2.1) Найти элемент машины
+        # 5) Повторно берём элемент и читаем панель
         element = self._find_car_element(car_id)
         if not element:
             self.log(f"⚠️ ТС {car_number} не найден.")
-            return car_data
+            return None
 
-        # 6) Навести на машину, чтобы обновились панель/адрес
         self._hover(element)
 
-        # 7) Прочитать адрес/координаты/скорость
         geo, coor, speed = self._read_location_coordinates_speed()
-        car_data["гео"] = geo
-        car_data["коор"] = coor
-        car_data["скорость"] = speed
 
-        if coor:
-            car_data["_новые_координаты"] = True
+        return NavigationReadResult(gps_fix_text=gps_text or "",
+                                    gps_fix_age_seconds=gps_age,
+                                    geo_text=geo or "",
+                                    coordinates=coor if coor else None,
+                                    speed_kmh=speed,
+                                    has_fresh_coordinates=bool(coor),
+                                    is_navigation_stale=False, )
 
-        if not coor:
-            car_data["_новые_координаты"] = False
-            car_data["коор"] = None
-        self.log(f"✅ Обработка завершена: {car_number}")
-        return car_data
-
-    def process_row(self, car_data: dict) -> dict | None:
+    def process_vehicle_row(self, car_data: dict) -> dict | None:
         try:
 
             self._ensure_monitoring_open()
-            updated = self.get_coordinates_from_wialon(car_data)
+            updated = self.read_navigation_state(car_data)
 
             # чистим строку поиска всегда
             self._clear_search()
 
-            if not updated.get("коор"):
-                self.log(f"⚠️ Координаты не получены у ТС: {updated.get('ТС')}")
+            if not updated.coordinates:
+                self.log(f"⚠️ Координаты не получены у ТС: {car_data.get('ТС')}")
             return updated
 
         except Exception as e:
             self.log(f"❌ Ошибка в process_row: {self._short_err(e)}")
-            return car_data
+        return None

@@ -1,5 +1,4 @@
-from PyQt6.QtCore import Qt, QTimer
-from PyQt6.QtWidgets import (QTableWidgetItem, QPushButton)
+from PyQt6.QtCore import QTimer
 
 from Navigation_Bot.gui.dialogs.combined_settings_dialog import VerticalTextDelegate
 from Navigation_Bot.gui.widgets.table.row_action_controller import RowActionController
@@ -9,15 +8,13 @@ from Navigation_Bot.gui.widgets.table.table_row_renderer import TableRowRenderer
 
 class TableManager:
     def __init__(self, table_widget, data_context, log_func, on_row_click, on_edit_id_click,
-                 new_task_workflow=None, editable_field_workflow=None,
-                 address_edit_workflow=None, reload_callback=None):
+                 editable_field_workflow=None, address_edit_workflow=None, reload_callback=None):
 
         self.data_context = data_context
         self.table = table_widget
         self.log = log_func
         self.on_row_click = on_row_click
         self.on_edit_id_click = on_edit_id_click
-        self.new_task_workflow = new_task_workflow
         self.address_edit_workflow = address_edit_workflow
         self.editable_field_workflow = editable_field_workflow
         self.reload_callback = reload_callback
@@ -124,14 +121,28 @@ class TableManager:
                 self.log("⚠️ AddressEditWorkflowService не подключён")
                 return
 
-            col_name = header_item.text()
-            prefix = self.address_edit_workflow.resolve_prefix(col_name)
-            if not prefix:
+            real_idx = self._visual_to_real(row)
+            if real_idx is None:
                 return
 
-        except Exception as e:
-            self.log(f"❌ Table.Manager.edit_cell_content: {e}")
+            ok, updated_row, err = self.address_edit_workflow.edit_address(
+                real_idx=real_idx,
+                col_name=header_item.text(),
+                parent=self.table,
+            )
 
+            if not ok:
+                if err not in ("unsupported_column", "cancelled"):
+                    self.log(f"⚠️ Не удалось обновить адрес в строке {row + 1}: {err}")
+                return
+
+            if callable(self.reload_callback):
+                self.reload_callback()
+            else:
+                self.display()
+
+        except Exception as e:
+            self.log(f"❌ TableManager.edit_cell_content: {e}")
 
     def save_to_json_on_edit(self, item):
         QTimer.singleShot(0, lambda: self._save_item(item))
@@ -142,7 +153,6 @@ class TableManager:
 
     def set_all_rows_busy(self, busy: bool):
         self.row_action_controller.set_all_rows_busy(busy)
-
 
     def _restore_scroll(self, scroll_value, selected_row):
         try:

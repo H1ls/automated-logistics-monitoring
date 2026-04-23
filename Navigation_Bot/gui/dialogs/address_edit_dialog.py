@@ -3,13 +3,11 @@ import re
 from datetime import datetime, timedelta
 from pathlib import Path
 
-from PyQt6.QtWidgets import (
-    QDialog, QVBoxLayout, QHBoxLayout, QLabel, QSpinBox,
-    QLineEdit, QPushButton, QScrollArea, QWidget, QTextEdit
-)
+from PyQt6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLabel, QSpinBox,
+                             QLineEdit, QPushButton, QScrollArea, QWidget, QTextEdit)
 
 from Navigation_Bot.core.dataset_archive import DatasetArchive
-from Navigation_Bot.core.processed_flags import StatusEditorWidget, init_processed_flags
+from Navigation_Bot.core.processed_flags import StatusEditorWidget
 from Navigation_Bot.gui.dialogs.dialog_helpers import button_row_split
 from Navigation_Bot.gui.dialogs.sites_Db_editor_dialog import SitesDbEditorDialog
 

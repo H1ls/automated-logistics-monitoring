@@ -379,7 +379,7 @@ class LogistXPage(QWidget):
     def import_from_1c_rdp(self):
         importer = OneCReportImporter(log_func=self.log)
         count = importer.run()
-        self.log(f"🧪 OneC import result: count={count}")
+        # self.log(f"🧪 OneC import result: count={count}")
 
         # временно: всегда перечитываем файл
         self.load_sample()

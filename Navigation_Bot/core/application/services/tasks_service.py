@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any, Callable
 
+from Navigation_Bot.core.domain.entities.task import Task
+from Navigation_Bot.core.domain.mappers.task_mapper import TaskMapper
 from Navigation_Bot.core.processed_flags import init_processed_flags
-
+from Navigation_Bot.core.application.mappers.google_row_mapper import GoogleRowMapper
 
 @dataclass(slots=True)
 class TasksService:
@@ -15,6 +17,43 @@ class TasksService:
     def _log(self, msg: str) -> None:
         if self.log:
             self.log(msg)
+
+    def get_task(self, real_idx: int) -> Task | None:
+        row = self.get_row(real_idx)
+        if not row:
+            return None
+
+        try:
+            return TaskMapper.from_dict(row)
+        except Exception as e:
+            self._log(f"⚠️ TasksService.get_task: {e}")
+            return None
+
+    # TODO:  save_task() не пересчитывает processed
+    # либо валидировать Task перед сохранением
+    # либо нормализовать processed под число выгрузок
+    # либо вспомогательный метод _normalize_task_before_save(task)
+    # ---
+    # Полностью заменяет строку данными из TaskMapper.to_dict(task).
+    # Использовать только там, где нужна полная пересборка строки.
+    def save_task(self, real_idx: int, task: Task) -> tuple[bool, Task | None, str | None]:
+        data, err = self._get_data()
+        if err:
+            return False, None, err
+
+        if not (0 <= real_idx < len(data)):
+            return False, None, "row_out_of_range"
+
+        if not isinstance(task, Task):
+            return False, None, "task_invalid"
+
+        try:
+            data[real_idx] = TaskMapper.to_dict(task)
+            self.data_context.save()
+            return True, task, None
+        except Exception as e:
+            self._log(f"❌ TasksService.save_task: {e}")
+            return False, None, str(e)
 
     def _get_data(self) -> tuple[list | None, str | None]:
         data = self.data_context.get()
@@ -62,15 +101,6 @@ class TasksService:
         removed = data.pop(real_idx)
         self.data_context.save()
         return True, removed, None
-
-    def sync_processed(self) -> tuple[bool, str | None]:
-        data, err = self._get_data()
-        if err:
-            return False, err
-
-        init_processed_flags(data, data, loads_key="Выгрузка")
-        self.data_context.save()
-        return True, None
 
     def apply_patch(self, real_idx: int, patch: dict) -> tuple[bool, dict | None, str | None]:
         data, err = self._get_data()
@@ -135,114 +165,9 @@ class TasksService:
 
         return True, new_task, None
 
+    # TODO:В перспективе вынести либо в:GoogleSyncService, отдельный mapper типа GoogleRowMapper
     def build_row_from_google_dh(self, index_key: int, dh: list[str]) -> dict:
-        d = dh[0] if len(dh) > 0 else ""
-        e = dh[1] if len(dh) > 1 else ""
-        f = dh[2] if len(dh) > 2 else ""
-        g = dh[3] if len(dh) > 3 else ""
-        h = dh[4] if len(dh) > 4 else ""
-
-        raw_ts = re.sub(r"\s+", "", d)
-        number, phone = raw_ts[:9], raw_ts[9:]
-        formatted_ts = number[:6] + " " + number[6:] if len(number) >= 9 else number
-
-        return {"index": index_key,
-                "ТС": formatted_ts,
-                "Телефон": phone,
-                "ФИО": e,
-                "КА": f,
-                "Погрузка": g,
-                "Выгрузка": h,
-                "raw_load": g,
-                "raw_unload": h, }
-
-    def sync_rows_from_google(self, rows_map: dict[int, list[str]]) -> tuple[bool, dict | None, str | None]:
-        """
-        Массовая синхронизация локального data_context из данных Google.
-        rows_map:
-            {row_index: [D, E, F, G, H],
-                ...}
-        Поведение:
-        - обновляет существующие строки по index
-        - добавляет новые строки
-        - удаляет локальные строки, которых нет среди активных Google rows
-        - пересчитывает processed
-        - сохраняет data_context
-
-        Возвращает:
-            (ok, stats, err)
-        где stats = {"updated": int, "added": int, "deleted": int}
-        """
-        data, err = self._get_data()
-        if err:
-            return False, None, err
-
-        if not isinstance(rows_map, dict):
-            return False, None, "rows_map_invalid"
-
-        existing_data = [row for row in data if isinstance(row, dict)]
-        existing_indexes = {row.get("index") for row in existing_data if row.get("index") is not None}
-        by_index = {row.get("index"): row
-                    for row in existing_data
-                    if row.get("index") is not None}
-
-        active_indexes: set[int] = set()
-        new_entries: list[dict] = []
-        updated_count = 0
-
-        for index_key, dh in rows_map.items():
-            if not isinstance(index_key, int):
-                continue
-
-            if not isinstance(dh, list):
-                continue
-
-            fresh = self.build_row_from_google_dh(index_key, dh)
-
-            # защита от полностью пустой строки
-            if not any([fresh.get("ТС"),
-                        fresh.get("Телефон"),
-                        fresh.get("ФИО"),
-                        fresh.get("КА"),
-                        fresh.get("Погрузка"),
-                        fresh.get("Выгрузка"), ]):
-                continue
-
-            active_indexes.add(index_key)
-
-            if index_key in existing_indexes:
-                old = by_index.get(index_key)
-                if old is None:
-                    continue
-
-                changed = False
-                for k, v in fresh.items():
-                    if old.get(k) != v:
-                        old[k] = v
-                        changed = True
-
-                if changed:
-                    updated_count += 1
-            else:
-                new_entries.append(dict(fresh))
-
-        if not active_indexes and not new_entries:
-            return False, None, "no_active_rows"
-
-        filtered_data = [row for row in existing_data if row.get("index") in active_indexes]
-        deleted_count = len(existing_data) - len(filtered_data)
-
-        result_data = filtered_data + new_entries
-
-        init_processed_flags(result_data, existing_data, loads_key="Выгрузка")
-        self.data_context.set(result_data)
-
-        stats = {
-            "updated": updated_count,
-            "added": len(new_entries),
-            "deleted": deleted_count,
-        }
-        return True, stats, None
+        return GoogleRowMapper.build_row(index_key, dh)
 
     def add_only_missing_rows_from_google(self, rows_map: dict[int, list[str]]) -> tuple[bool, dict | None, str | None]:
         """
@@ -261,11 +186,10 @@ class TasksService:
         if not isinstance(rows_map, dict):
             return False, None, "rows_map_invalid"
 
-        existing_indexes = {
-            row.get("index")
-            for row in data
-            if isinstance(row, dict) and row.get("index") is not None
-        }
+        existing_indexes = {row.get("index")
+                            for row in data
+                            if isinstance(row, dict) and row.get("index") is not None
+                            }
 
         added_count = 0
         skipped_existing = 0
@@ -283,14 +207,12 @@ class TasksService:
             fresh = self.build_row_from_google_dh(index_key, dh)
 
             # защита от полностью пустой строки
-            if not any([
-                fresh.get("ТС"),
-                fresh.get("Телефон"),
-                fresh.get("ФИО"),
-                fresh.get("КА"),
-                fresh.get("Погрузка"),
-                fresh.get("Выгрузка"),
-            ]):
+            if not any([fresh.get("ТС"),
+                        fresh.get("Телефон"),
+                        fresh.get("ФИО"),
+                        fresh.get("КА"),
+                        fresh.get("Погрузка"),
+                        fresh.get("Выгрузка"), ]):
                 continue
 
             data.append(fresh)
@@ -300,10 +222,9 @@ class TasksService:
         init_processed_flags(data, data, loads_key="Выгрузка")
         self.data_context.save()
 
-        return True, {
-            "added": added_count,
-            "skipped_existing": skipped_existing,
-        }, None
+        return (True, {"added": added_count,
+                       "skipped_existing": skipped_existing, },
+                None)
 
     def remove_completed_tasks(self, active_google_indexes: set[int]) -> tuple[bool, dict | None, str | None]:
         """
@@ -338,3 +259,60 @@ class TasksService:
             self.data_context.set(filtered)
 
         return True, {"deleted": deleted_count}, None
+
+    def mark_unload_processed(self, index_key: int, unload_idx: int) -> tuple[bool, Task | None, str | None]:
+        real_idx = self.find_real_idx_by_index_key(index_key)
+        if real_idx is None:
+            return False, None, "row_not_found"
+
+        task = self.get_task(real_idx)
+        if task is None:
+            return False, None, "task_not_found"
+
+        unloads_count = len(task.route_plan.unloads)
+        if unload_idx < 0:
+            return False, None, "invalid_unload_idx"
+        if unload_idx >= unloads_count:
+            return False, None, "unload_idx_out_of_range"
+
+        processed = list(task.processing.processed_unloads)
+        if len(processed) < unloads_count:
+            processed.extend([False] * (unloads_count - len(processed)))
+
+        processed[unload_idx] = True
+
+        ok, _, err = self.apply_patch(real_idx, {"processed": processed})
+        if not ok:
+            return False, None, err
+
+        saved_task = self.get_task(real_idx)
+        return True, saved_task, None
+
+    # для NavigationProcessor
+    def exists_row(self, real_idx: int) -> bool:
+        data, err = self._get_data()
+        if err:
+            return False
+        return 0 <= real_idx < len(data) and isinstance(data[real_idx], dict)
+
+    def get_processible_rows(self) -> list[tuple[int, int | None]]:
+        data, err = self._get_data()
+        if err:
+            return []
+
+        result: list[tuple[int, int | None]] = []
+
+        for row_idx, row in enumerate(data):
+            if not isinstance(row, dict):
+                continue
+            if not row.get("id") or not row.get("ТС"):
+                continue
+            result.append((row_idx, row.get("index")))
+
+        return result
+
+    def get_index_key_by_row(self, real_idx: int) -> int | None:
+        row = self.get_row(real_idx)
+        if not row:
+            return None
+        return row.get("index")

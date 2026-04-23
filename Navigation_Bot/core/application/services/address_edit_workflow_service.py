@@ -8,15 +8,6 @@ from Navigation_Bot.gui.dialogs.address_edit_dialog import AddressEditDialog
 
 @dataclass(slots=True)
 class AddressEditWorkflowService:
-    """
-    Сценарий редактирования Погрузки/Выгрузки:
-    - открывает AddressEditDialog
-    - собирает patch через TaskEditService
-    - сохраняет через TasksService
-
-    Для новой строки возвращает preview-данные, но не сохраняет задачу.
-    """
-
     data_context: Any
     tasks_service: Any
     task_edit_service: Any
@@ -28,58 +19,45 @@ class AddressEditWorkflowService:
 
     @staticmethod
     def resolve_prefix(col_name: str) -> str | None:
-        if col_name in ["Погрузка", "Время погрузки"]:
+        col_name = (col_name or "").strip()
+        if "Погрузка" in col_name:
             return "Погрузка"
-        if col_name in ["Выгрузка", "Время выгрузки"]:
+        if "Выгрузка" in col_name:
             return "Выгрузка"
         return None
 
-    def edit_new_entry_block(self, *, prefix: str, parent, ) -> tuple[bool, dict | None, str | None]:
+    def edit_address(self, *, real_idx: int, col_name: str, parent=None) -> tuple[bool, dict | None, str | None]:
+        prefix = self.resolve_prefix(col_name)
+        if not prefix:
+            return False, None, "unsupported_column"
 
-        temp_entry = {"Погрузка": [], "Выгрузка": []}
+        if not self.tasks_service:
+            return False, None, "tasks_service_missing"
 
-        dialog = AddressEditDialog(row_data=temp_entry,
-                                   full_data=[],
-                                   prefix=prefix,
-                                   parent=parent,
-                                   disable_save=True,
-                                   data_context=self.data_context,
-                                   log_func=self.log, )
+        if not self.task_edit_service:
+            return False, None, "task_edit_service_missing"
 
-        if not dialog.exec():
-            return False, None, "dialog_cancelled"
+        row_data = self.tasks_service.get_row(real_idx)
+        if not row_data:
+            return False, None, "row_not_found"
 
-        data_block, meta = dialog.get_result()
-        if not data_block:
-            return False, None, "empty_block"
+        full_data = self.data_context.get() or []
 
-        result = {"prefix": prefix,
-                  "data_block": data_block,
-                  "meta": meta or {},
-                  }
-        return True, result, None
-
-    def edit_existing_entry_block(self,
-                                  *,
-                                  real_idx: int,
-                                  prefix: str,
-                                  parent, ) -> tuple[bool, dict | None, str | None]:
-
-        json_data = self.data_context.get() or []
-        if not (0 <= real_idx < len(json_data)):
-            return False, None, "row_out_of_range"
-
-        dialog = AddressEditDialog(row_data=json_data[real_idx],
-                                   full_data=json_data,
+        dialog = AddressEditDialog(row_data=row_data,
+                                   full_data=full_data,
                                    prefix=prefix,
                                    parent=parent,
                                    data_context=self.data_context,
-                                   log_func=self.log, )
+                                   log_func=self.log,)
 
         if not dialog.exec():
-            return False, None, "dialog_cancelled"
+            return False, None, "cancelled"
 
-        data_block, meta = dialog.get_result()
+        result = dialog.get_result()
+        if not result:
+            return False, None, "empty_result"
+
+        data_block, meta = result
         if not data_block:
             return False, None, "empty_block"
 
@@ -89,13 +67,13 @@ class AddressEditWorkflowService:
             ok, patch, err = self.task_edit_service.build_unload_patch(data_block, meta)
 
         if not ok:
+            self._log(f"❌ build_patch error: {err}")
             return False, None, err
 
         ok, updated_row, err = self.tasks_service.apply_patch(real_idx, patch)
         if not ok:
+            self._log(f"❌ apply_patch error: {err}")
             return False, None, err
 
-        return (True, {"updated_row": updated_row,
-                       "prefix": prefix,
-                       "patch": patch, },
-                None)
+        return True, updated_row, None
+

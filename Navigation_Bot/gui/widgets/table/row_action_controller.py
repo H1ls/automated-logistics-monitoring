@@ -48,6 +48,8 @@ class RowActionController:
         else:
             self._stop_spinner(index_key)
             if btn:
+                #TODO: Когда busy=False, текст кнопки всегда сбрасывается в "▶":
+                # если по какой-то причине busy когда-то поставят на строку без id, текст логически уже не совпадёт
                 btn.setEnabled(True)
                 btn.setText("▶")
 

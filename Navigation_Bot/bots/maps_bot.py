@@ -5,6 +5,7 @@ from datetime import datetime, timedelta
 from selenium.webdriver.common.by import By
 from selenium.webdriver.common.keys import Keys
 
+from Navigation_Bot.core.domain.value_objects.route_point import RoutePoint
 from Navigation_Bot.core.json_manager import JSONManager
 from Navigation_Bot.core.paths import CONFIG_JSON
 
@@ -16,6 +17,8 @@ from Navigation_Bot.core.paths import CONFIG_JSON
 
 
 class MapsBot:
+    SHORT_ROUTE_KM = 1.0
+
     def __init__(self, driver_manager, sheets_manager=None, log_func=None):
         self.driver_manager = driver_manager
         self.sheets_manager = sheets_manager
@@ -48,7 +51,7 @@ class MapsBot:
             time.sleep(0.3)
             return True
         except Exception as e:
-            self.log(f"⚠️ Не удалось нажать '{label or key}': {e}")
+            self.log(f"⚠️ Не удалось нажать '{label or key}'")
             return False
 
     def prepare_route_interface(self):
@@ -56,49 +59,6 @@ class MapsBot:
             return True
         self._try_click("close_route", "Закрыть маршрут")
         return self._try_click("route_button", "Маршруты")
-
-    def process_navigation_from_json(self, car: dict, unload_point: dict):
-        if not self.prepare_route_interface():
-            return
-
-        from_coords = car.get("коор", "")
-        if not from_coords:
-            self.log("⚠️ Пропуск: нет координат.")
-            return
-
-        address, unload_dt = self._parse_unload_block(unload_point)
-        if not address or not unload_dt:
-            return
-
-        avg_minutes, avg_distance = self._build_route_and_get_distance(from_coords, address)
-
-        if avg_distance < 1:
-            self._handle_short_route(car)
-            return
-
-        arrival_time = datetime.now() + timedelta(hours=avg_distance / 66)
-        result = self._get_arrival_result_from_datetime(arrival_time, unload_dt)
-
-        self._finalize_result(car, result, avg_distance, avg_minutes)
-
-    def _parse_unload_block(self, unload_point: dict) -> tuple[str, datetime | None]:
-        for key in unload_point:
-            if key.startswith("Выгрузка "):
-                idx = key.split(" ")[1]
-                break
-        else:
-            idx = "1"
-
-        address = unload_point.get(f"Выгрузка {idx}", "").strip()
-        date_str = unload_point.get(f"Дата {idx}", "").strip()
-        time_str = unload_point.get(f"Время {idx}", "").strip()
-
-        if not address or not date_str or not time_str:
-            self.log("⚠️ Пропуск: неполные данные о выгрузке.")
-            return "", None
-
-        unload_dt = self._parse_datetime(date_str, time_str)
-        return address, unload_dt
 
     def _handle_short_route(self, car: dict):
         """обработка выгрузки без маршрута"""
@@ -181,6 +141,7 @@ class MapsBot:
             from_input.send_keys(Keys.CONTROL + "a", Keys.BACKSPACE)
             from_input.send_keys(coord)
             from_input.send_keys(Keys.ENTER)
+            time.sleep(1)
             # self.log("✅ Координаты 'Откуда' введены.")
 
         except Exception as e:
@@ -325,3 +286,44 @@ class MapsBot:
                 "on_time": bool(unload_dt and arrival_time <= unload_dt),
                 "time_buffer": f"{buf_hours}ч {buf_minutes}м",
                 "buffer_minutes": total_minutes}
+
+    # TODO: Переход на Task и домен RoutePoint
+    def process_navigation_from_point(self, car: dict, unload_point: RoutePoint):
+        if not self.prepare_route_interface():
+            return
+
+        from_coords = car.get("коор", "")
+        if not from_coords:
+            self.log("⚠️ Пропуск: нет координат.")
+            return
+
+        address, unload_dt = self._parse_route_point(unload_point)
+        if not address or not unload_dt:
+            return
+
+        avg_minutes, avg_distance = self._build_route_and_get_distance(from_coords, address)
+
+        if avg_distance < self.SHORT_ROUTE_KM:
+            self._handle_short_route(car)
+            return
+
+        arrival_time = datetime.now() + timedelta(hours=avg_distance / 66)
+        result = self._get_arrival_result_from_datetime(arrival_time, unload_dt)
+
+        self._finalize_result(car, result, avg_distance, avg_minutes)
+
+    def _parse_route_point(self, point: RoutePoint) -> tuple[str, datetime | None]:
+        if point is None:
+            self.log("⚠️ Пропуск: unload_point отсутствует.")
+            return "", None
+
+        address = (point.address or "").strip()
+        date_str = (point.date or "").strip()
+        time_str = (point.time or "").strip()
+
+        if not address or not date_str or not time_str:
+            self.log("⚠️ Пропуск: неполные данные о выгрузке.")
+            return "", None
+
+        unload_dt = self._parse_datetime(date_str, time_str)
+        return address, unload_dt

@@ -1,4 +1,4 @@
-# Navigation_Bot\bots\scenarios\ReportsBot.py
+# Navigation_Bot\bots\scenarios\reports_bot.py
 
 import re
 import time

@@ -1,4 +1,4 @@
-# pet.project\Navigation_Bot\gui\controllers\app_services.py
+# pet.project\Navigation_Bot\core\application\services\app_services.py
 from __future__ import annotations
 
 from Navigation_Bot.core.application.services.google_sync_service import GoogleSyncService
@@ -95,7 +95,7 @@ class AppServices:
                                        log_func=g.log,
                                        on_row_click=None,
                                        on_edit_id_click=g.open_id_editor,
-                                       new_task_workflow=g.new_task_workflow_service,
+                                       # new_task_workflow=g.new_task_workflow_service,
                                        editable_field_workflow=g.editable_field_workflow_service,
                                        address_edit_workflow=g.address_edit_workflow_service,
                                        reload_callback=g.reload_and_show, )
@@ -109,14 +109,15 @@ class AppServices:
         g.processor = NavigationProcessor(data_context=g.data_context,
                                           logger=g.log,
                                           gsheet=g.gsheet,
-                                          filepath=str(g.INPUT_FILEPATH),
                                           display_callback=g.reload_and_show,
                                           single_row=g._single_row_processing,
                                           updated_rows=g.updated_rows,
                                           executor=g.executor,
                                           highlight_callback=g.row_highlighter.highlight_for,
                                           browser_rect=getattr(g, "browser_rect", None),
-                                          ui_bridge=g.ui_bridge, )
+                                          ui_bridge=g.ui_bridge,
+                                          tasks_service=g.tasks_service,
+                                          )
 
     def _build_ui_controllers(self) -> None:
         g = self.gui
