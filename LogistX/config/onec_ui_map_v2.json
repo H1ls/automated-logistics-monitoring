@@ -13,11 +13,11 @@
     ],
     "race_params_tab": [
       235,
-      547
+      536
     ],
     "driver_rating_tab": [
       511,
-      546
+      535
     ],
     "cargo_tab": [
       183,
@@ -25,15 +25,15 @@
     ],
     "departure_label": [
       235,
-      584
+      573
     ],
     "departure_date_field": [
       308,
-      584
+      573
     ],
     "departure_time_field": [
       437,
-      584
+      573
     ]
   },
   "regions": {

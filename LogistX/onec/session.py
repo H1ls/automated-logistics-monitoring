@@ -8,7 +8,7 @@ import pyautogui
 import pydirectinput as pdi
 import pyperclip
 
-from LogistX.controllers.visionLocator import VisionLocator
+from LogistX.controllers.vision_locator import VisionLocator
 from .uimap import UiMap
 
 

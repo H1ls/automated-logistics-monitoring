@@ -1,0 +1,199 @@
+from PyQt6.QtCore import QTimer
+
+from Navigation_Bot.gui.dialogs.combined_settings_dialog import VerticalTextDelegate
+from Navigation_Bot.gui.widgets.table.row_action_controller import RowActionController
+from Navigation_Bot.gui.widgets.table.table_display_formatter import TableDisplayFormatter
+from Navigation_Bot.gui.widgets.table.table_row_renderer import TableRowRenderer
+
+
+class TableManager:
+    def __init__(self, table_widget, data_context, log_func, on_row_click, on_edit_id_click,
+                 editable_field_workflow=None, address_edit_workflow=None, reload_callback=None):
+
+        self.data_context = data_context
+        self.table = table_widget
+        self.log = log_func
+        self.on_row_click = on_row_click
+        self.on_edit_id_click = on_edit_id_click
+        self.address_edit_workflow = address_edit_workflow
+        self.editable_field_workflow = editable_field_workflow
+        self.reload_callback = reload_callback
+
+        self.formatter = TableDisplayFormatter()
+        self._editable_headers = {"Телефон", "ФИО", "КА", "id"}
+        self.after_display = None
+        self.view_order = []
+
+        # Делегат для вертикального текста в колонке "КА" (индекс 3)
+        self._vertical_delegate = VerticalTextDelegate(self.table)
+        self.table.setItemDelegateForColumn(3, self._vertical_delegate)
+
+        self.row_action_controller = RowActionController()
+        self.row_renderer = TableRowRenderer(table=self.table,
+                                             log_func=self.log,
+                                             formatter=self.formatter,
+                                             row_action_controller=self.row_action_controller,
+                                             on_row_click=self.on_row_click,
+                                             on_edit_id_click=self.on_edit_id_click, )
+
+    # ---- A. display orchestration
+    def display(self, reload_from_file=True, view_order=None):
+        self._reload_context(reload_from_file)
+        json_data = self.data_context.get() or []
+
+        # стопаем все спиннеры перед перерисовкой таблицы (иначе они "висят" между display)
+        self.row_action_controller.clear()
+
+        if view_order is None:
+            view_order = list(range(len(json_data)))
+        self.view_order = view_order or list(range(len(json_data)))
+        self._index_to_visual = {}
+
+        for visual_row, real_idx in enumerate(self.view_order):
+            try:
+                key = (json_data[real_idx] or {}).get("index")
+            except Exception:
+                key = None
+            if key is not None:
+                self._index_to_visual[key] = visual_row
+
+        scroll_value, selected_row = self._capture_view_state()
+
+        try:
+            self.table.blockSignals(True)
+            self.table.setRowCount(0)
+            self._render_all_rows(json_data, view_order)
+            self.table.resizeRowsToContents()
+
+        finally:
+            self.table.blockSignals(False)
+            QTimer.singleShot(0, lambda: self._restore_scroll(scroll_value, selected_row))
+
+        if callable(self.after_display):
+            self.after_display()
+
+    def _reload_context(self, reload_from_file: bool):
+        # Вспомогательные методы для display()
+        """Перечитывает DataContext при необходимости"""
+        if not reload_from_file:
+            return
+        try:
+            self.data_context.reload()
+        except Exception as e:
+            self.log(f"❌ Ошибка при загрузке JSON: {e}")
+
+    def _capture_view_state(self):
+        """Запоминает положение скролла и выделенную строку"""
+        try:
+            scroll_value = self.table.verticalScrollBar().value()
+            selected_row = self.table.currentRow()
+        except Exception as e:
+            self.log(f"{e}")
+            scroll_value, selected_row = 0, -1
+        return scroll_value, selected_row
+
+    def _render_all_rows(self, json_data: list[dict], view_order):
+        """Передает отрисовывать все обычные строки таблицы в TableRowRenderer"""
+        for visual_row, real_idx in enumerate(view_order):
+            if not (0 <= real_idx < len(json_data)):
+                continue
+
+            row = json_data[real_idx]
+            self.row_renderer.render_row(row_idx=visual_row, row=row, real_idx=real_idx, )
+
+    def _visual_to_real(self, visual_row: int) -> int | None:
+        if visual_row < 0 or visual_row >= len(self.view_order):
+            return None
+        real_idx = self.view_order[visual_row]
+        return real_idx if real_idx >= 0 else None
+
+    def visual_row_by_index_key(self, key):
+        return self._index_to_visual.get(key, -1)
+
+    # ---- B. table event entrypoints
+    def edit_cell_content(self, row, col):
+        try:
+            header_item = self.table.horizontalHeaderItem(col)
+            if not header_item:
+                return
+
+            if not self.address_edit_workflow:
+                self.log("⚠️ AddressEditWorkflowService не подключён")
+                return
+
+            real_idx = self._visual_to_real(row)
+            if real_idx is None:
+                return
+
+            ok, updated_row, err = self.address_edit_workflow.edit_address(
+                real_idx=real_idx,
+                col_name=header_item.text(),
+                parent=self.table,
+            )
+
+            if not ok:
+                if err not in ("unsupported_column", "cancelled"):
+                    self.log(f"⚠️ Не удалось обновить адрес в строке {row + 1}: {err}")
+                return
+
+            if callable(self.reload_callback):
+                self.reload_callback()
+            else:
+                self.display()
+
+        except Exception as e:
+            self.log(f"❌ TableManager.edit_cell_content: {e}")
+
+    def save_to_json_on_edit(self, item):
+        QTimer.singleShot(0, lambda: self._save_item(item))
+
+    # ---- D.facades to child helpers
+    def set_row_busy(self, index_key: int, busy: bool):
+        self.row_action_controller.set_row_busy(index_key, busy)
+
+    def set_all_rows_busy(self, busy: bool):
+        self.row_action_controller.set_all_rows_busy(busy)
+
+    def _restore_scroll(self, scroll_value, selected_row):
+        try:
+            self.table.verticalScrollBar().setValue(scroll_value)
+            if 0 <= selected_row < self.table.rowCount():
+                self.table.selectRow(selected_row)
+        except Exception as e:
+            self.log(f"❌ Ошибка при восстановлении позиции: {e}")
+
+    def _save_item(self, item):
+        if getattr(self, "_block_item_save", False):
+            return
+
+        row = item.row()
+        col = item.column()
+
+        header_item = self.table.horizontalHeaderItem(col)
+        if not header_item:
+            return
+        header = header_item.text()
+
+        if header not in self._editable_headers:
+            return
+
+        if not self.editable_field_workflow:
+            self.log("⚠️ EditableFieldWorkflowService не подключён")
+            return
+
+        real_idx = self._visual_to_real(row)
+        if real_idx is None:
+            return
+
+        ok, updated_row, err = self.editable_field_workflow.save_field(real_idx=real_idx,
+                                                                       header=header,
+                                                                       value=item.text(), )
+        if ok:
+            return
+
+        if err == "invalid_id":
+            self.log(f"⚠️ Неверный ID в строке {row + 1}")
+        elif err == "empty_id":
+            self.log(f"⚠️ Пустой ID в строке {row + 1}")
+        else:
+            self.log(f"⚠️ Не удалось сохранить изменение в строке {row + 1}: {err}")

@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-from Navigation_Bot.bots.mapsBot import MapsBot
-from Navigation_Bot.bots.scenarios.NavigationBot import NavigationBot
-from Navigation_Bot.bots.webDriverManager import WebDriverManager
-from Navigation_Bot.bots.scenarios.ReportsBot import WialonReportsBot
+from Navigation_Bot.bots.maps_bot import MapsBot
+from Navigation_Bot.bots.scenarios.navigation_bot import NavigationBot
+from Navigation_Bot.bots.web_driver_manager import WebDriverManager
+from Navigation_Bot.bots.scenarios.reports_bot import WialonReportsBot
 
 
 class BrowserSession:
@@ -34,6 +34,7 @@ class BrowserSession:
         else:
             self.log(msg)
 
+    # TODO: Исправить на асинхроное открытие Wailon и Yandex вкладок
     def ensure_ready(self) -> None:
         """
         Готовим браузер и основных ботов:

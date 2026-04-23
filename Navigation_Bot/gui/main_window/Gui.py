@@ -3,30 +3,34 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from threading import Lock
 
-from PyQt6.QtCore import QTimer, Qt
-from PyQt6.QtWidgets import (QWidget, QLabel, QVBoxLayout, QFrame)
-from PyQt6.QtGui import QFont, QColor
-
+from PyQt6.QtCore import QTimer
+from PyQt6.QtWidgets import QApplication, QWidget
 from Navigation_Bot.core.paths import INPUT_FILEPATH
 from Navigation_Bot.core.paths import PIN_XLSX_FILEPATH, PIN_JSON_FILEPATH
-from Navigation_Bot.core.processedFlags import init_processed_flags
-from Navigation_Bot.gui.builders.mainUiBuilder import MainUiBuilder
-from Navigation_Bot.gui.controllers.sheet_tab_definitions import default_local_tabs
-from Navigation_Bot.gui.controllers.appServices import AppServices
-from Navigation_Bot.gui.controllers.sheetTabsController import SheetTabsController
-from Navigation_Bot.gui.controllers.signalsBinder import SignalsBinder
-from Navigation_Bot.gui.controllers.uiBridge import UiBridge
-from Navigation_Bot.gui.controllers.windowLayoutManager import WindowLayoutManager, LayoutMode
-from Navigation_Bot.gui.dialogs.iDManagerDialog import IDManagerDialog
-from Navigation_Bot.gui.dialogs.trackingIdEditor import TrackingIdEditor
-from Navigation_Bot.gui.settings.uiSettings import UiSettingsManager
+from Navigation_Bot.gui.builders.main_ui_builder import MainUiBuilder
+from Navigation_Bot.core.application.services.app_services import AppServices
+from Navigation_Bot.gui.controllers.sheet_tabs_controller import SheetTabsController
+from Navigation_Bot.gui.controllers.local_pages_controller import LocalPagesController
+from Navigation_Bot.gui.controllers.signals_binder import SignalsBinder
+from Navigation_Bot.gui.settings.ui_bridge import UiBridge
+from Navigation_Bot.gui.settings.window_layout_manager import WindowLayoutManager, LayoutMode
+from Navigation_Bot.gui.settings.window_layout_manager import LayoutMode
+from Navigation_Bot.gui.controllers.layout_controller import LayoutController
+from Navigation_Bot.gui.dialogs.iD_manager_dialog import IDManagerDialog
+from Navigation_Bot.gui.dialogs.tracking_id_editor import TrackingIdEditor
+from Navigation_Bot.gui.settings.ui_settings import UiSettingsManager
+from Navigation_Bot.gui.dialogs.create_race_dialog import CreateRaceDialog
+from Navigation_Bot.gui.controllers.loading_overlay_controller import LoadingOverlayController
 
 
 class NavigationGUI(QWidget):
     def __init__(self):
         super().__init__()
+
         self.log = lambda msg: print(msg)
         self.INPUT_FILEPATH = INPUT_FILEPATH
+        self.PIN_XLSX_FILEPATH = PIN_XLSX_FILEPATH
+        self.PIN_JSON_FILEPATH = PIN_JSON_FILEPATH
 
         self.setWindowTitle("Navigation Manager")
         self.setMinimumSize(800, 600)
@@ -43,47 +47,58 @@ class NavigationGUI(QWidget):
         self.ui_settings = UiSettingsManager(log_func=self.log)
         self.init_ui()
 
-        # Создаем загрузочный экран до основной инициализации
-        self._create_loading_screen()
-        self.show_loading("Инициализация приложения…")
+        self.loading = LoadingOverlayController(self)
+        self.show()
+        self.loading.show("Инициализация приложения…", "Подготовка интерфейса")
 
+        QApplication.processEvents()
         self.ui_bridge = UiBridge(self)
         self.ui_settings.apply_window(self)
         self.ui_settings.apply_table(self.table)
 
         # Читаем режим размещения и выбор монитора из настроек
-        layout_config = self.ui_settings.data.get("layout_mode", {})
+        self.layout_controller = LayoutController(self)
+        self.layout_controller.setup()
 
-        # Поддерживаем оба формата: строка (legacy) и объект (новый)
-        if isinstance(layout_config, str):
-            layout_mode_str = layout_config
-            monitor_index = 1  # По умолчанию второй монитор
-        else:
-            layout_mode_str = layout_config.get("mode", LayoutMode.VERTICAL_SPLIT.value)
-            # Преобразуем монитор из строки в индекс (0 для первого, 1 для второго)
-            monitor_str = layout_config.get("monitor", "second")
-            monitor_index = 0 if monitor_str == "first" else 1
+        self.local_pages_controller = LocalPagesController(self)
 
-        self._layout_manager = WindowLayoutManager(titlebar_offset=30,
-                                                   layout_mode=layout_mode_str,
-                                                   monitor_index=monitor_index
-                                                   )
-        self.browser_rect = self._layout_manager.apply_dual_screen_layout(self)
+        QTimer.singleShot(0, self._startup_step_local_pages)
 
-        self.show_loading("Загрузка локальных данных…")
-        self.local_page()
+    def _startup_step_local_pages(self):
+        try:
+            self.loading.show("Загрузка локальных данных…", "Подготовка локальных страниц")
+            self.local_pages_controller.setup()
+        except Exception as e:
+            self.log(f"❌ Ошибка startup(local_pages): {e}")
+        finally:
+            QTimer.singleShot(0, self._startup_step_managers)
 
-        self.show_loading("Инициализация менеджеров…")
-        self.init_managers()
+    def _startup_step_managers(self):
+        try:
+            self.loading.show("Инициализация сервисов…", "Создание таблицы и контроллеров")
+            self.init_managers()
+        except Exception as e:
+            self.log(f"❌ Ошибка startup(managers): {e}")
+        finally:
+            QTimer.singleShot(0, self._startup_step_signals)
 
-        self.show_loading("Привязка сигналов…")
-        SignalsBinder(self).bind()
+    def _startup_step_signals(self):
+        try:
+            self.loading.show("Привязка сигналов…", "Подготовка событий интерфейса")
+            SignalsBinder(self).bind()
+        except Exception as e:
+            self.log(f"❌ Ошибка startup(signals): {e}")
+        finally:
+            QTimer.singleShot(0, self._startup_finish)
 
-        # Скрываем загрузочный экран когда все готово (быстро, чтобы не мешать)
-        QTimer.singleShot(200, self.hide_loading)
+    def _startup_finish(self):
+        try:
+            self.loading.show("Готово", "Приложение готово к работе")
+        finally:
+            QTimer.singleShot(150, self.loading.hide)
 
     def _open_wialon(self):
-        self.show_loading("Запуск Wialon…")
+        self.loading.show("Запуск Wialon…")
 
         def job():
             try:
@@ -97,8 +112,7 @@ class NavigationGUI(QWidget):
                 else:
                     self.log(f"❌ Ошибка запуска Wialon: {e}")
             finally:
-
-                QTimer.singleShot(0, self.hide_loading)
+                self.ui_bridge.call.emit(lambda: self.loading.hide())
 
         self.executor.submit(job)
 
@@ -130,204 +144,18 @@ class NavigationGUI(QWidget):
     def resizeEvent(self, event):
         """Обновить позицию splash screen когда окно меняет размер."""
         super().resizeEvent(event)
-        if getattr(self, "loading_overlay", None) and self.loading_overlay.isVisible():
-            # Позиционируем splash screen в центре окна
-            x = (self.width() - 350) // 2
-            y = (self.height() - 180) // 2
-            self.loading_overlay.move(x, y)
-
-    def _startup_reload(self):
-        try:
-            if getattr(self, "sheet_tabs_controller", None):
-                self.sheet_tabs_controller.activate_saved_tab()
-        finally:
-            self.hide_loading()
-
-    def _create_loading_screen(self):
-        """Создать компактный splash screen для загрузки."""
-        # Основной фреймворк - компактный splash screen в центре
-        self.loading_overlay = QFrame(self)
-        self.loading_overlay.setStyleSheet("QFrame { "
-                                           "background-color: rgba(30, 30, 30, 240); "
-                                           "border: 2px solid #bcbcbc; "
-                                           "border-radius: 10px; "
-                                           "}")
-
-        self.loading_overlay.setFrameShape(QFrame.Shape.StyledPanel)
-
-        # Фиксированный размер - компактный 350x180
-        self.loading_overlay.setFixedSize(350, 180)
-
-        # Контейнер с содержимым по центру
-        overlay_layout = QVBoxLayout(self.loading_overlay)
-        overlay_layout.setContentsMargins(20, 15, 20, 15)
-        overlay_layout.setSpacing(10)
-
-        # Иконка загрузки (ротирующиеся символы)
-        self.loading_spinner = QLabel("⠋")
-        self.loading_spinner.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        spinner_font = QFont()
-        spinner_font.setPointSize(28)
-        self.loading_spinner.setFont(spinner_font)
-        self.loading_spinner.setStyleSheet("color: #4CAF50;")
-        self.loading_spinner.setFixedHeight(40)
-
-        # Символы для анимации спиннера
-        self._spinner_frames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
-        self._spinner_index = 0
-
-        # Timer для анимации спиннера
-        self._spinner_timer = QTimer()
-        self._spinner_timer.timeout.connect(self._update_spinner)
-        self._spinner_timer.setInterval(80)
-
-        overlay_layout.addWidget(self.loading_spinner)
-
-        # Текст загрузки
-        self.loading_label = QLabel("Загрузка…")
-        self.loading_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        label_font = QFont()
-        label_font.setPointSize(11)
-        label_font.setBold(True)
-        self.loading_label.setFont(label_font)
-        self.loading_label.setStyleSheet("color: #ffffff;")
-        self.loading_label.setFixedHeight(20)
-
-        overlay_layout.addWidget(self.loading_label)
-
-        # Доп. сообщение (меньше)
-        self.loading_detail = QLabel("Пожалуйста, подождите…")
-        self.loading_detail.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        detail_font = QFont()
-        detail_font.setPointSize(8)
-        self.loading_detail.setFont(detail_font)
-        self.loading_detail.setStyleSheet("color: #aaaaaa;")
-        self.loading_detail.setFixedHeight(16)
-        self.loading_detail.setWordWrap(True)
-
-        overlay_layout.addWidget(self.loading_detail)
-
-        # Изначально скрыт
-        self.loading_overlay.hide()
-
-    def _update_spinner(self):
-        """Обновить спиннер на следующий кадр анимации."""
-        self._spinner_index = (self._spinner_index + 1) % len(self._spinner_frames)
-        self.loading_spinner.setText(self._spinner_frames[self._spinner_index])
-
-    def show_loading(self, text="Загрузка…", detail="Пожалуйста, подождите…"):
-        """Показать компактный splash screen с текстом в центре окна."""
-        if getattr(self, "loading_label", None):
-            self.loading_label.setText(text)
-
-        if getattr(self, "loading_detail", None):
-            self.loading_detail.setText(detail)
-
-        if getattr(self, "loading_overlay", None):
-            # Позиционируем splash screen в центре окна
-            x = (self.width() - 350) // 2
-            y = (self.height() - 180) // 2
-            self.loading_overlay.move(x, y)
-            self.loading_overlay.show()
-            self.loading_overlay.raise_()
-
-            # Запускаем анимацию спиннера если не запущена
-            if getattr(self, "_spinner_timer", None) and not self._spinner_timer.isActive():
-                self._spinner_timer.start()
-
-            # Обновляем дисплей
-            self.update()
-
-    def hide_loading(self):
-        """Скрыть загрузочный экран."""
-        if getattr(self, "loading_overlay", None):
-            self.loading_overlay.hide()
-
-        # Останавливаем анимацию
-        if getattr(self, "_spinner_timer", None):
-            self._spinner_timer.stop()
-
-    # _____END
-    def local_page(self):
-        self.local_tabs = default_local_tabs()
-        self._local_pages_by_key = {}
-
-        self.pincodes_xlsx_path = PIN_XLSX_FILEPATH
-        self.pincodes_json_path = PIN_JSON_FILEPATH
-
-        # фабрики локальных страниц по ключу (убираем прямые импорты из SheetTabsController)
-        self._local_page_factories = {"local:pincodes": self._build_page_pincodes,
-                                      "local:logistx": self._build_page_logistx, }
+        if getattr(self, "loading", None):
+            self.loading.reposition()
 
     def get_or_create_local_page(self, key: str):
-        """Создать страницу по ключу (если ещё нет) и вернуть её."""
-        if not hasattr(self, "_local_pages_by_key"):
-            self._local_pages_by_key = {}
-
-        if key in self._local_pages_by_key:
-            return self._local_pages_by_key[key]
-
-        factory = getattr(self, "_local_page_factories", {}).get(key)
-        if not factory:
+        if not getattr(self, "local_pages_controller", None):
             return None
-
-        page = factory()
-        if page:
-            self._local_pages_by_key[key] = page
-        return page
-
-    def _build_page_pincodes(self):
-        # локальный импорт, чтобы не создавать жёсткую зависимость при импорте модулей
-        from Navigation_Bot.gui.main_window.PinCodesPage import PinCodesPage
-
-        page = PinCodesPage(xlsx_path=self.pincodes_xlsx_path,
-                            json_path=self.pincodes_json_path,
-                            log_func=self.log,
-                            parent=self.stack, )
-        self.stack.addWidget(page)
-        return page
-
-    def _build_page_logistx(self):
-        # локальный импорт, чтобы убрать прямую зависимость из контроллера вкладок
-        from LogistX.gui.logistxPage import LogistXPage
-
-        page = LogistXPage(log_func=self.log, parent=self.stack)
-        page.fact_clicked.connect(lambda row: self._on_logistx_fact_clicked(page, row))
-        self.stack.addWidget(page)
-        return page
-
-    def _on_logistx_fact_clicked(self, page, row: int):
-        """
-        Обработчик кнопки ▶ на странице LogistX.
-        UI сам формирует job_data (читает таблицу), а processor не зависит от QWidget.
-        """
-        try:
-            job_data = page.build_close_race_job(row)
-            if not job_data:
-                return
-
-            def _on_done(ctx, result: dict, _job: dict):
-                page.apply_close_race_result(row=row, ctx=ctx, result=result)
-                race_no = getattr(ctx, "race_name", "") or _job.get("race_no", "")
-                if result.get("ok"):
-                    self.ui_bridge.log.emit(f"✅ {race_no}: {result.get('message')}")
-                else:
-                    self.ui_bridge.log.emit(f"❌ {race_no}: {result.get('message')}")
-
-            self.processor.logistx_race_service.close_race_async(job_data, on_done=_on_done)
-        except Exception as e:
-            if getattr(self, "ui_bridge", None):
-                self.ui_bridge.log.emit(f"❌ LogistX ▶ ошибка: {e}")
-            else:
-                self.log(f"❌ LogistX ▶ ошибка: {e}")
+        return self.local_pages_controller.get_or_create_page(key)
 
     def init_managers(self):
-        self.show_loading("Инициализация сервисов…", "Создание таблицы и контроллеров")
         self.services = AppServices(self)
-        # build() возвращает ctx и сохраняет его в self.ctx
         self.services.build()
 
-        self.show_loading("Инициализация вкладок…", "Подготовка к работе")
         self.sheet_tabs_controller = SheetTabsController(gui=self)
         self.sheet_tabs_controller.build()
 
@@ -349,13 +177,55 @@ class NavigationGUI(QWidget):
         try:
             json_path = self._get_sheet_json_path()
             self.data_context.set_filepath(json_path)
-            self.gsheet.pull_to_context_async(data_context=self.data_context,
-                                              input_filepath=json_path,
-                                              executor=self.executor)
-            self.reload_and_show()
+
+            if not getattr(self, "google_sync_service", None):
+                self.log("⚠️ GoogleSyncService не подключён")
+                return
+
+            self.google_sync_service.load_current_sheet_async(
+                executor=self.executor,
+                on_started=lambda: self.loading.show("Загрузка из Google Sheets", "Получение данных"),
+                on_success=lambda: self.ui_bridge.call.emit(self._on_google_load_success),
+                on_error=lambda err: self.ui_bridge.call.emit(lambda: self._on_google_load_error(err)), )
 
         except Exception as e:
             self.log(f'❌ Ошибка в NavigationGUI._load_from_google\n {e}')
+
+    def _open_create_race_dialog(self):
+        try:
+            dialog = CreateRaceDialog(data_context=self.data_context, log_func=self.log, parent=self, )
+
+            if not dialog.exec():
+                return
+
+            payload = dialog.get_payload()
+
+            if not getattr(self, "new_task_workflow_service", None):
+                self.log("⚠️ NewTaskWorkflowService не подключён")
+                return
+
+            ok, new_task, err = self.new_task_workflow_service.create_from_dialog_payload(payload,
+                                                                                          upload_to_google=True, )
+
+            if not ok:
+                self.log(f"❌ Не удалось создать рейс: {err}")
+                return
+
+            self.reload_and_show()
+            self.log(f"✅ Рейс создан (index={new_task.get('index')})")
+
+        except Exception as e:
+            self.log(f"❌ Ошибка в _open_create_race_dialog: {e}")
+
+    def _on_google_load_success(self):
+        if getattr(self, "loading", None):
+            self.loading.hide()
+        self.reload_and_show()
+
+    def _on_google_load_error(self, err: str):
+        if getattr(self, "loading", None):
+            self.loading.hide()
+        self.log(f"❌ Ошибка загрузки из Google: {err}")
 
     def _get_sheet_json_path(self) -> str:
         """
@@ -387,8 +257,6 @@ class NavigationGUI(QWidget):
         with self.json_lock:
             self.data_context.reload()
             self.json_data = self.data_context.get()
-            init_processed_flags(self.json_data, self.json_data, loads_key="Выгрузка")
-            self.data_context.save()
 
         view_order = self.sort_controller.build_view_order()
         self.table_manager.display(view_order=view_order)
@@ -421,111 +289,3 @@ class NavigationGUI(QWidget):
         if dlg.exec():
             self.reload_and_show()
             self.log("✅ Id_car.json перезаписан")
-
-    def switch_layout_mode(self, mode: LayoutMode | str):
-        """
-        Переключить режим размещения на двух мониторах
-        Args:
-            mode: LayoutMode.VERTICAL_SPLIT или LayoutMode.HORIZONTAL_SPLIT
-                  (или строковые эквиваленты: "vertical" или "horizontal")
-        """
-        try:
-            self._layout_manager.set_layout_mode(mode)
-
-            # Пересчитываем позицию окна NavigationGUI и браузера
-            self.browser_rect = self._layout_manager.apply_dual_screen_layout(self)
-
-            # Обновляем browser_rect в processor (для браузера, который ещё не запущен)
-            if hasattr(self, "processor") and self.processor:
-                self.processor.browser_rect = self.browser_rect
-
-            # Сохраняем выбранный режим в настройки
-            if isinstance(mode, LayoutMode):
-                mode_str = mode.value
-            else:
-                mode_str = mode
-
-            # Получаем текущий монитор
-            current_monitor_str = "first" if self._layout_manager.monitor_index == 0 else "second"
-
-            # Сохраняем оба параметра в объект
-            self.ui_settings.data["layout_mode"] = {
-                "mode": mode_str,
-                "monitor": current_monitor_str
-            }
-            self.ui_settings._schedule_save()
-
-            # Перепозиционируем браузер если он открыт
-            if self.browser_rect and hasattr(self, "processor") and self.processor.browser_session:
-                try:
-                    driver_manager = self.processor.browser_session.driver_manager
-                    if driver_manager and driver_manager.driver:
-                        driver_manager.driver.set_window_rect(self.browser_rect.get("x", 0),
-                                                              self.browser_rect.get("y", 0),
-                                                              self.browser_rect.get("width", 1024),
-                                                              self.browser_rect.get("height", 768)
-                                                              )
-                        self.log(f"✅ Режим размещения изменен на {mode_str}")
-                except Exception as e:
-                    self.log(f"⚠️ Ошибка переповиционирования браузера: {e}")
-            else:
-                self.log(f"✅ Режим размещения изменен на {mode_str}")
-
-        except ValueError as e:
-            self.log(f"❌ Ошибка переключения режима: {e}")
-
-    def switch_monitor(self, monitor_index: int):
-        """
-        Переключить монитор для размещения окон.
-        Args:
-            monitor_index: 0 для первого монитора, 1 для второго, и т.д.
-        """
-        try:
-            self._layout_manager.set_monitor_index(monitor_index)
-
-            # Пересчитываем позицию окна NavigationGUI и браузера
-            self.browser_rect = self._layout_manager.apply_dual_screen_layout(self)
-
-            # Обновляем browser_rect в processor (для браузера, который ещё не запущен)
-            if hasattr(self, "processor") and self.processor:
-                self.processor.browser_rect = self.browser_rect
-
-            # Сохраняем выбранный монитор в настройки
-            monitor_str = "first" if monitor_index == 0 else "second"
-            if "layout_mode" not in self.ui_settings.data:
-                self.ui_settings.data["layout_mode"] = {}
-            elif isinstance(self.ui_settings.data["layout_mode"], str):
-                # Миграция старого формата
-                mode_str = self.ui_settings.data["layout_mode"]
-                self.ui_settings.data["layout_mode"] = {"mode": mode_str,
-                                                        "monitor": "second"}
-
-            self.ui_settings.data["layout_mode"]["monitor"] = monitor_str
-            self.ui_settings._schedule_save()
-
-            # Перепозиционируем браузер если он открыт
-            if self.browser_rect and hasattr(self, "processor") and self.processor.browser_session:
-                try:
-                    driver_manager = self.processor.browser_session.driver_manager
-                    if driver_manager and driver_manager.driver:
-                        driver_manager.driver.set_window_rect(self.browser_rect.get("x", 0),
-                                                              self.browser_rect.get("y", 0),
-                                                              self.browser_rect.get("width", 1024),
-                                                              self.browser_rect.get("height", 768)
-                                                              )
-                        self.log(f"✅ Монитор изменен на {monitor_str}")
-                except Exception as e:
-                    self.log(f"⚠️ Ошибка переповиционирования браузера: {e}")
-            else:
-                self.log(f"✅ Монитор изменен на {monitor_str}")
-
-        except ValueError as e:
-            self.log(f"❌ Ошибка переключения монитора: {e}")
-
-    def get_layout_mode(self) -> str:
-        """Получить текущий режим размещения."""
-        return self._layout_manager.layout_mode.value
-
-    def get_monitor_index(self) -> int:
-        """Получить текущий индекс монитора."""
-        return self._layout_manager.monitor_index

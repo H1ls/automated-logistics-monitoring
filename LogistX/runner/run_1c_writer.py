@@ -7,7 +7,7 @@ from pathlib import Path
 
 from LogistX.onec.bot import OneCBot
 from LogistX.onec.context import RaceContext
-from Navigation_Bot.bots.webDriverManager import WebDriverManager
+from Navigation_Bot.bots.web_driver_manager import WebDriverManager
 from Navigation_Bot.bots.wialonReportsBot import WialonReportsBot
 
 

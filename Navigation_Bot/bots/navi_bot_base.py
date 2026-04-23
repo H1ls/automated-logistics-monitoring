@@ -5,7 +5,7 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.common.action_chains import ActionChains
 from selenium.common.exceptions import NoSuchElementException
 
-from Navigation_Bot.core.jSONManager import JSONManager
+from Navigation_Bot.core.json_manager import JSONManager
 from Navigation_Bot.core.paths import CONFIG_JSON
 from pathlib import Path
 
