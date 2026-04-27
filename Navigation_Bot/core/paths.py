@@ -1,6 +1,18 @@
 from pathlib import Path
+import sys
 import os
-ROOT_DIR = Path(__file__).resolve().parent.parent.parent
+
+
+def app_root() -> Path:
+    # если запущено как exe
+    if getattr(sys, "frozen", False):
+        return Path(sys.executable).resolve().parent
+
+    # если из PyCharm
+    return Path(__file__).resolve().parent.parent.parent
+
+
+ROOT_DIR = app_root()
 CONFIG_DIR = ROOT_DIR / "config"
 
 
@@ -21,4 +33,4 @@ PIN_XLSX_FILEPATH = os.path.join(CONFIG_DIR,"Обновленный РЕЕСТР
 PIN_JSON_FILEPATH = os.path.join(CONFIG_DIR,"pincodes_cache.json")
 
 
-VERSION = "21042026"
+VERSION = "27042026"

@@ -13,14 +13,13 @@ from Navigation_Bot.gui.controllers.sheet_tabs_controller import SheetTabsContro
 from Navigation_Bot.gui.controllers.local_pages_controller import LocalPagesController
 from Navigation_Bot.gui.controllers.signals_binder import SignalsBinder
 from Navigation_Bot.gui.settings.ui_bridge import UiBridge
-from Navigation_Bot.gui.settings.window_layout_manager import WindowLayoutManager, LayoutMode
-from Navigation_Bot.gui.settings.window_layout_manager import LayoutMode
 from Navigation_Bot.gui.controllers.layout_controller import LayoutController
 from Navigation_Bot.gui.dialogs.iD_manager_dialog import IDManagerDialog
 from Navigation_Bot.gui.dialogs.tracking_id_editor import TrackingIdEditor
 from Navigation_Bot.gui.settings.ui_settings import UiSettingsManager
 from Navigation_Bot.gui.dialogs.create_race_dialog import CreateRaceDialog
 from Navigation_Bot.gui.controllers.loading_overlay_controller import LoadingOverlayController
+from Navigation_Bot.gui.dialogs.navigation_history_dialog import NavigationHistoryDialog
 
 
 class NavigationGUI(QWidget):
@@ -152,9 +151,18 @@ class NavigationGUI(QWidget):
             return None
         return self.local_pages_controller.get_or_create_page(key)
 
+    def _apply_runtime_settings(self):
+        try:
+            if getattr(self, "row_highlighter", None):
+                self.row_highlighter.apply_settings(self.ui_settings.data)
+        except Exception as e:
+            self.log(f"⚠️ Не удалось применить runtime-настройки: {e}")
+
     def init_managers(self):
         self.services = AppServices(self)
         self.services.build()
+
+        self._apply_runtime_settings()
 
         self.sheet_tabs_controller = SheetTabsController(gui=self)
         self.sheet_tabs_controller.build()
@@ -289,3 +297,55 @@ class NavigationGUI(QWidget):
         if dlg.exec():
             self.reload_and_show()
             self.log("✅ Id_car.json перезаписан")
+
+    # TODO: Урезать оставить минимум
+    def _open_navigation_history_dialog(self):
+        try:
+            row = self.table.currentRow()
+            if row < 0:
+                self.log("⚠️ Выбери строку для просмотра истории навигации")
+                return
+
+            real_idx = self.table_manager._visual_to_real(row)
+            if real_idx is None:
+                self.log("⚠️ Не удалось определить реальную строку")
+                return
+
+            data = self.data_context.get() or []
+            if not (0 <= real_idx < len(data)):
+                self.log("⚠️ Строка не найдена")
+                return
+
+            task_index = data[real_idx].get("index")
+            if not task_index:
+                self.log("⚠️ У строки нет index")
+                return
+
+            nav_service = getattr(self, "navigation_history_service", None)
+            route_service = getattr(self, "route_estimate_history_service", None)
+
+            if not nav_service:
+                self.log("⚠️ NavigationHistoryService не подключён")
+                return
+
+            nav_rows = nav_service.get_by_task_index(task_index)
+
+            route_rows = []
+            if route_service:
+                route_rows = route_service.get_by_task_index(task_index)
+
+            note_rows = []
+            note_service = getattr(self, "note_history_service", None)
+            if note_service:
+                note_rows = note_service.get_by_task_index(task_index)
+
+            dlg = NavigationHistoryDialog(task_index=task_index,
+                                          nav_rows=nav_rows,
+                                          route_rows=route_rows,
+                                          note_rows=note_rows,
+                                          note_history_service=note_service,
+                                          parent=self, )
+            dlg.exec()
+
+        except Exception as e:
+            self.log(f"❌ Ошибка открытия истории навигации: {e}")

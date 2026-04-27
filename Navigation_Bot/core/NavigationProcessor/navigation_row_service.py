@@ -3,6 +3,8 @@ from __future__ import annotations
 import traceback
 from typing import Callable, Any
 from Navigation_Bot.core.domain.mappers.task_mapper import TaskMapper
+from Navigation_Bot.core.domain.entities.navigation_snapshot import NavigationSnapshot
+from Navigation_Bot.core.domain.entities.route_estimate import RouteEstimate
 
 
 class NavigationRowService:
@@ -18,7 +20,10 @@ class NavigationRowService:
                  ui_bridge=None,
                  display_callback: Callable[[], None] | None = None,
                  single_row_processing: bool = True,
-                 updated_rows: list | None = None, ):
+                 updated_rows: list | None = None,
+                 navigation_history_service=None,
+                 route_estimate_history_service=None,
+                 ):
 
         self.data_context = data_context
         self.log = logger
@@ -28,6 +33,55 @@ class NavigationRowService:
         self.display_callback = display_callback
         self._single_row_processing = single_row_processing
         self.updated_rows = updated_rows if updated_rows is not None else []
+        self.navigation_history_service = navigation_history_service
+        self.route_estimate_history_service = route_estimate_history_service
+
+    # TODO: Найти нормальное место для _save_route_estimate
+    def _save_route_estimate(self, task, unload_idx: int) -> None:
+        try:
+            if not self.route_estimate_history_service:
+                return
+
+            forecast = task.forecast
+
+            estimate = RouteEstimate(task_index=task.index,
+                                     target_sequence=unload_idx + 1,
+                                     distance_km=forecast.distance_km,
+                                     duration_minutes=forecast.duration_minutes,
+                                     arrival_time=forecast.arrival_time,
+                                     on_time=forecast.on_time,
+                                     buffer_minutes=forecast.buffer_minutes,
+                                     time_buffer_text=forecast.time_buffer_text,
+                                     )
+
+            self.route_estimate_history_service.append(estimate)
+        except Exception as e:
+            self.log(f"❌ Ошибка в NavigationRowService._save_route_estimate: {e}")
+
+    # TODO: Найти нормальное место для _save_navigation_snapshot
+    def _save_navigation_snapshot(self, task) -> None:
+        try:
+            if not self.navigation_history_service:
+                return
+
+            nav = task.navigation
+
+            snapshot = NavigationSnapshot(task_index=task.index,
+                                          vehicle_plate=task.vehicle.plate_number,
+                                          vehicle_monitoring_id=task.vehicle.monitoring_id,
+                                          geo_text=nav.geo_text or "",
+                                          coordinates=nav.coordinates or "",
+                                          speed_kmh=nav.speed_kmh,
+                                          gps_fix_text=nav.gps_fix_text or "",
+                                          gps_fix_age_seconds=nav.gps_fix_age_seconds,
+                                          has_fresh_coordinates=bool(nav.has_fresh_coordinates),
+                                          is_navigation_stale=bool(nav.gps_fix_age_seconds is not None
+                                                                   and nav.gps_fix_age_seconds >= 3600),
+                                          )
+
+            self.navigation_history_service.append(snapshot)
+        except Exception as e:
+            self.log(f"❌ Ошибка в NavigationRowService._save_navigation_snapshot: {e}")
 
     def _build_runtime_patch_from_task(self, task) -> dict:
         nav = task.navigation
@@ -37,7 +91,8 @@ class NavigationRowService:
                  "коор": nav.coordinates or "",
                  "скорость": nav.speed_kmh if nav.speed_kmh is not None else 0,
                  "_новые_координаты": bool(nav.has_fresh_coordinates),
-                 "processed": list(processing.processed_unloads), }
+                 "processed": list(processing.processed_unloads),
+                 }
 
         legacy = self._task_to_legacy_row(task)
 
@@ -100,6 +155,7 @@ class NavigationRowService:
             if not updated_task:
                 return None, index_key
 
+            self._save_navigation_snapshot(updated_task)
             should_maps = self._should_process_maps(updated_task)
 
             if should_maps:
@@ -116,8 +172,9 @@ class NavigationRowService:
             return merged, index_key
 
         except Exception as e:
-            self.log(f"❌ Ошибка в NavigationRowService.process_row: {e}")
-            self.log(traceback.format_exc())
+            self.log(f"❌ Ошибка в NavigationRowService.process_row: ")
+            # self.log(e)
+            # self.log(traceback.format_exc())
             return None, index_key
 
     # TODO: Не делать _reload_json для batch mode, разгрузит
@@ -213,6 +270,7 @@ class NavigationRowService:
         mapsbot.process_navigation_from_point(legacy_row, unload_point)
         task = self._apply_legacy_row_to_task(task, legacy_row)
 
+        self._save_route_estimate(task, unload_idx)
         if task.navigation.geo_text == "у выгрузки":
             index_key = task.index
             if index_key is None:
@@ -243,3 +301,26 @@ class NavigationRowService:
 
     def set_single_row_processing(self, enabled: bool) -> None:
         self._single_row_processing = enabled
+
+    def _format_buffer(self, minutes: int) -> str:
+        if minutes is None:
+            return ""
+
+        hours = minutes // 60
+        mins = minutes % 60
+
+        if hours and mins:
+            return f"{hours}ч {mins}м"
+        if hours:
+            return f"{hours}ч"
+        return f"{mins}м"
+
+    def _format_route_estimate_text(self, estimate: dict) -> str:
+        buffer_text = self._format_buffer(estimate.get("buffer_minutes", 0))
+
+        return (f"{estimate.get('calculated_at', '')} | "
+                f"Едет к выгрузке #{estimate.get('target_sequence', '')} | "
+                f"Осталось {estimate.get('distance_km', 0)} км | "
+                f"ETA {estimate.get('arrival_time', '')} | "
+                f"Запас {buffer_text}"
+                )

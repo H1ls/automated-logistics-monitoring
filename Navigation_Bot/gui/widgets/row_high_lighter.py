@@ -2,15 +2,73 @@ from PyQt6.QtCore import QTimer, Qt
 from datetime import datetime, timedelta, timezone
 from PyQt6.QtGui import QColor, QBrush
 
+
 class RowHighlighter:
     def __init__(self, table, data_context, log, hours_default=2):
         self.table = table
         self.data_context = data_context
         self.log = log
         self.hours_default = hours_default
-        self.until_map = {}  # row_idx -> datetime(UTC)
+        self.duration_minutes = hours_default * 60
+        self.until_map = {}
         self.key_to_visual = None  # callable: key -> visual_row
 
+    def apply_settings(self, settings: dict):
+        highlight = settings.get("highlight", {}) or {}
+
+        minutes = highlight.get("duration_minutes", self.duration_minutes)
+
+        try:
+            self.duration_minutes = max(1, int(minutes))
+        except Exception:
+            self.duration_minutes = 120  # fallback 2 часа
+
+    def clear_all_highlight_until(self):
+        data = self.data_context.get() or []
+        changed = False
+
+        for row in data:
+            if isinstance(row, dict) and "highlight_until" in row:
+                row.pop("highlight_until", None)
+                changed = True
+
+        self.until_map.clear()
+
+        if changed:
+            self.data_context.save()
+
+        return changed
+
+    def toggle_highlight(self, index_key: int):
+        data = self.data_context.get() or []
+
+        rec = None
+        for r in data:
+            if r.get("index") == index_key:
+                rec = r
+                break
+
+        if not rec:
+            self.log(f"⚠️ toggle_highlight: не найдена запись index={index_key}")
+            return False
+
+        # если уже есть → убрать
+        if rec.get("highlight_until"):
+            rec.pop("highlight_until", None)
+            self.until_map.pop(index_key, None)
+
+            # снять подсветку
+            if callable(self.key_to_visual):
+                visual_row = self.key_to_visual(index_key)
+                if 0 <= visual_row < self.table.rowCount():
+                    self._paint_row(visual_row, enabled=False)
+
+            self.data_context.save()
+            return False  # выключили
+
+        # если нет → включить
+        self.highlight_for(index_key)
+        return True  # включили
     def set_view_order(self, view_order: list[int] | None):
         self.view_order = view_order
         self.real_to_visual = {}
@@ -30,8 +88,6 @@ class RowHighlighter:
     def _from_iso_utc(s: str) -> datetime:
         return datetime.fromisoformat(s.replace("Z", "+00:00"))
 
-
-
     def highlight_for(self, index_key: int, hours: int | None = None):
         """
         Подсветить запись (и строку в таблице) по стабильному ключу index_key.
@@ -42,8 +98,8 @@ class RowHighlighter:
             self.log("⚠️ highlight_for: index_key=None")
             return
 
-        hours = hours if hours is not None else self.hours_default
-        until_dt = datetime.now() + timedelta(hours=hours)
+        minutes = self.duration_minutes if hours is None else int(hours * 60)
+        until_dt = datetime.now() + timedelta(minutes=minutes)
         until_iso = until_dt.strftime("%Y-%m-%d %H:%M:%S")
 
         data = self.data_context.get() or []
@@ -79,7 +135,7 @@ class RowHighlighter:
             self._paint_row(visual_row, enabled=True)
 
         # поставить таймер на авто-снятие (если к тому моменту истечёт)
-        QTimer.singleShot(hours * 60 * 60 * 1000, lambda: self._clear_if_expired(index_key))
+        QTimer.singleShot(minutes * 60 * 1000, lambda: self._clear_if_expired(index_key))
 
     def reapply_from_json(self):
         """

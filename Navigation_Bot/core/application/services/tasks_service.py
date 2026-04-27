@@ -8,11 +8,14 @@ from Navigation_Bot.core.domain.entities.task import Task
 from Navigation_Bot.core.domain.mappers.task_mapper import TaskMapper
 from Navigation_Bot.core.processed_flags import init_processed_flags
 from Navigation_Bot.core.application.mappers.google_row_mapper import GoogleRowMapper
+from Navigation_Bot.core.domain.entities.status_event import StatusEvent
+
 
 @dataclass(slots=True)
 class TasksService:
     data_context: Any
     log: Callable[[str], None] | None = None
+    status_event_service: Any | None = None
 
     def _log(self, msg: str) -> None:
         if self.log:
@@ -261,6 +264,7 @@ class TasksService:
         return True, {"deleted": deleted_count}, None
 
     def mark_unload_processed(self, index_key: int, unload_idx: int) -> tuple[bool, Task | None, str | None]:
+        self._log(f"🧪 mark_unload_processed вызван: index={index_key}, unload_idx={unload_idx}")
         real_idx = self.find_real_idx_by_index_key(index_key)
         if real_idx is None:
             return False, None, "row_not_found"
@@ -275,20 +279,31 @@ class TasksService:
         if unload_idx >= unloads_count:
             return False, None, "unload_idx_out_of_range"
 
-        processed = list(task.processing.processed_unloads)
-        if len(processed) < unloads_count:
-            processed.extend([False] * (unloads_count - len(processed)))
+        # сохрани старое состояние ДО изменения
+        old_processed = list(task.processing.processed_unloads)
 
-        processed[unload_idx] = True
+        # изменение
+        task.mark_unload_processed(unload_idx)
 
-        ok, _, err = self.apply_patch(real_idx, {"processed": processed})
+        # сохранить
+        ok, saved_task, err = self.save_task(real_idx, task)
         if not ok:
             return False, None, err
 
-        saved_task = self.get_task(real_idx)
+        # новое состояние ПОСЛЕ
+        new_processed = list(task.processing.processed_unloads)
+
+        # записать событие
+        # TODO: Временно не используется, вернутся после FastApi, для отслеживания действия Users
+        self._save_status_event(task_index=index_key,
+                                event_type="unload_done",
+                                field_name=f"processed[{unload_idx}]",
+                                old_value=str(old_processed),
+                                new_value=str(new_processed),
+                                message=f"Выгрузка #{unload_idx + 1} отмечена обработанной",
+                                source="maps", )
         return True, saved_task, None
 
-    # для NavigationProcessor
     def exists_row(self, real_idx: int) -> bool:
         data, err = self._get_data()
         if err:
@@ -316,3 +331,30 @@ class TasksService:
         if not row:
             return None
         return row.get("index")
+    #TODO: Временно на паузе
+    def _save_status_event(self,
+                           *,
+                           task_index: int,
+                           event_type: str,
+                           field_name: str = "",
+                           old_value: str = "",
+                           new_value: str = "",
+                           message: str = "",
+                           source: str = "system", ) -> None:
+        self._log(f"🧪 _save_status_event вызван: {event_type}, task_index={task_index}")
+        if not self.status_event_service:
+            self._log("⚠️ status_event_service не подключён")
+            return
+
+        try:
+            event = StatusEvent(task_index=task_index,
+                                event_type=event_type,
+                                field_name=field_name,
+                                old_value=str(old_value or ""),
+                                new_value=str(new_value or ""),
+                                message=message,
+                                source=source, )
+            self._log(f"📝 StatusEvent сохранён: {event_type} / {message}")
+            self.status_event_service.append(event)
+        except Exception as e:
+            self._log(f"⚠️ Не удалось сохранить StatusEvent: {e}")

@@ -56,7 +56,8 @@ class WebDriverManager:
             self.log(f"❌ Ошибка credentials: {e}")
             raise
         except Exception as e:
-            self.log(f"❌ Ошибка при логине в Wialon:\n {e}")
+            self.log(f"❌ Ошибка при логине в Wialon ")
+            # self.log(f"❌ Ошибка при логине в Wialon:\n {e}")
 
     def stop_browser(self):
         """Остановка браузера"""
@@ -196,7 +197,8 @@ class WebDriverManager:
             self.log("🗺️ Новая вкладка Я.Карт открыта")
 
         except Exception as e:
-            self.log(f"❌ Ошибка при открытии Я.Карт:\n {e}")
+            self.log(f"❌ Ошибка при открытии Я.Карт: ")
+            # self.log(f"❌ {e}")
 
     def switch_to_tab(self, name: str) -> bool:
         try:
@@ -232,7 +234,8 @@ class WebDriverManager:
             return False
 
         except Exception as e:
-            self.log(f"❌ Ошибка переключения на вкладку {name}: {e}")
+            self.log(f"❌ Ошибка переключения на вкладку {name}")
+            # self.log(f"❌ {e}")
             return False
 
     def find(self, locator, timeout=10, condition="presence"):

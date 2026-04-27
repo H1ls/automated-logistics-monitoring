@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from Navigation_Bot.core.application.services.google_sync_service import GoogleSyncService
+from Navigation_Bot.core.application.services.json_history_service import JsonHistoryService
 from Navigation_Bot.core.application.services.task_edit_service import TaskEditService
 from Navigation_Bot.gui.app.app_context import AppContext
 from Navigation_Bot.bots.google_sheets_manager import GoogleSheetsManager
@@ -65,15 +66,30 @@ class AppServices:
         g.gsheet.log_message.connect(g.log)
 
         g.loading.show("Инициализация сервисов задач…", "Подготовка")
-
-        g.tasks_service = TasksService(data_context=g.data_context,
-                                       log=g.log, )
         g.task_edit_service = TaskEditService(log=g.log, )
+        g.status_event_service = JsonHistoryService(filepath="config/status_events.json",
+                                                    time_field="created_at",
+                                                    log=g.log, )
+        g.tasks_service = TasksService(data_context=g.data_context,
+                                       log=g.log,
+                                       status_event_service=g.status_event_service, )
+
         g.google_sync_service = GoogleSyncService(gsheet=g.gsheet,
                                                   tasks_service=g.tasks_service,
                                                   data_context=g.data_context,
                                                   log=g.log, )
+        # TODO: Убарть хардкод на filepath
+        g.navigation_history_service = JsonHistoryService(filepath="config/navigation_history.json",
+                                                          time_field="collected_at",
+                                                          log=g.log, )
 
+        g.route_estimate_history_service = JsonHistoryService(filepath="config/route_estimate_history.json",
+                                                              time_field="calculated_at",
+                                                              log=g.log, )
+        g.note_history_service = JsonHistoryService(filepath="config/notes_history.json",
+                                                    time_field="created_at",
+                                                    log=g.log, )
+        # -----
         g.new_task_workflow_service = NewTaskWorkflowService(tasks_service=g.tasks_service,
                                                              task_edit_service=g.task_edit_service,
                                                              google_sync_service=g.google_sync_service,
@@ -117,6 +133,8 @@ class AppServices:
                                           browser_rect=getattr(g, "browser_rect", None),
                                           ui_bridge=g.ui_bridge,
                                           tasks_service=g.tasks_service,
+                                          navigation_history_service=g.navigation_history_service,
+                                          route_estimate_history_service=g.route_estimate_history_service,
                                           )
 
     def _build_ui_controllers(self) -> None:

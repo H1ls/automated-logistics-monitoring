@@ -1,9 +1,19 @@
+import sys, faulthandler
 import os
-import faulthandler, sys
 from PyQt6.QtWidgets import QApplication, QDialog, QMessageBox
 from Navigation_Bot.gui.main_window.Gui import NavigationGUI
 
+if sys.stderr is None:
+    sys.stderr = open(os.devnull, "w", encoding="utf-8")
+
+if sys.stdout is None:
+    sys.stdout = open(os.devnull, "w", encoding="utf-8")
 faulthandler.enable(all_threads=True)
+
+from pathlib import Path
+import sys
+
+base = Path(sys.executable).parent if getattr(sys, "frozen", False) else Path(__file__).parent
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)

@@ -7,10 +7,10 @@ from Navigation_Bot.core.NavigationProcessor.browser_session import BrowserSessi
 from Navigation_Bot.core.NavigationProcessor.logistx_race_service import LogistxRaceService
 from Navigation_Bot.core.NavigationProcessor.navigation_row_service import NavigationRowService
 
-
 class NavigationProcessor:
     def __init__(self, data_context, logger, gsheet, display_callback, single_row, updated_rows,
-                 executor=None, highlight_callback=None, browser_rect=None, ui_bridge=None, tasks_service=None, ):
+                 executor=None, highlight_callback=None, browser_rect=None, ui_bridge=None, tasks_service=None,
+                 navigation_history_service=None,route_estimate_history_service=None):
 
         self.data_context = data_context
         self.log = logger
@@ -28,7 +28,8 @@ class NavigationProcessor:
 
         self.ui_bridge = ui_bridge
         self.tasks_service = tasks_service
-
+        self.navigation_history_service = navigation_history_service
+        self.route_estimate_history_service = route_estimate_history_service
         self.browser_session = BrowserSession(logger=self.log,
                                               browser_rect=self.browser_rect,
                                               ui_bridge=self.ui_bridge, )
@@ -40,7 +41,10 @@ class NavigationProcessor:
                                                 ui_bridge=self.ui_bridge,
                                                 display_callback=self.display_callback,
                                                 single_row_processing=self._single_row_processing,
-                                                updated_rows=self.updated_rows, )
+                                                updated_rows=self.updated_rows,
+                                                navigation_history_service=self.navigation_history_service,
+                                                route_estimate_history_service=self.route_estimate_history_service,
+                                                )
 
         self.logistx_race_service = LogistxRaceService(logger=self.log,
                                                        executor=self.executor,
