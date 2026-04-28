@@ -14,12 +14,15 @@ class SignalsBinder:
 
         # кнопки
         gui.btn_settings.clicked.connect(lambda: gui.settings_ui.exec())
+                                                                                        ## кнопки
+        gui.btn_load_google.clicked.connect(gui._load_from_google)                      #"Загрузить Задачи"
+        gui.btn_process_all.clicked.connect(gui.processor.process_all)                  #"▶ Пробежать все ТС"
+        gui.btn_refresh_table.clicked.connect(gui.reload_and_show)                      # "🔄 Обновить"
+        gui.btn_wialon.clicked.connect(gui._open_wialon)                                # "Wialon 🌐"
+        gui.btn_create_race.clicked.connect(gui._open_create_race_dialog)               # "Настройки ⚙️"
+        gui.btn_navigation_history.clicked.connect(gui._open_navigation_history_dialog) #"История"
 
-        gui.btn_load_google.clicked.connect(gui._load_from_google)
-        gui.btn_process_all.clicked.connect(gui.processor.process_all)
-        gui.btn_refresh_table.clicked.connect(gui.reload_and_show)
-        gui.btn_wialon.clicked.connect(gui._open_wialon)
-        gui.btn_create_race.clicked.connect(gui._open_create_race_dialog)
+
 
         # лог
         gui.btn_clear_log.clicked.connect(gui.logger.clear)

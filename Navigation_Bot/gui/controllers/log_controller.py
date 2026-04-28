@@ -6,7 +6,7 @@ from html import escape
 from PyQt6.QtCore import QObject, pyqtSignal
 from PyQt6.QtGui import QTextCursor
 
-
+#TODO: Разросся, переделать на общий AppLog, с 3 режимами вывода
 class LogController(QObject):
     message = pyqtSignal(str)
     clear_requested = pyqtSignal()
@@ -83,6 +83,8 @@ class LogController(QObject):
             or text.startswith("⌛")
             or text.startswith("ℹ️")
             or text.startswith("🔁")
+            or text.startswith("⚪")
+
             or "предупр" in lower
             or "warning" in lower
         ):
@@ -93,6 +95,11 @@ class LogController(QObject):
             or text.startswith("📡")
             or text.startswith("🗺️")
             or text.startswith("🔄")
+            or text.startswith("🚗")
+            or text.startswith("📡")
+            or text.startswith("🚚")
+            or text.startswith("📥")
+            or text.startswith("🟢")
             or "успеш" in lower
             or "успех" in lower
         ):

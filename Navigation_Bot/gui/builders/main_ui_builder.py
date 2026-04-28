@@ -31,13 +31,15 @@ class MainUiBuilder:
         gui.btn_refresh_table = QPushButton("🔄 Обновить")
         gui.btn_wialon = QPushButton("Wialon 🌐")
         gui.btn_settings = QPushButton("Настройки ⚙️")
-
+        gui.btn_navigation_history = QPushButton("История")
         for btn in [gui.btn_load_google,
                     gui.btn_create_race,
                     gui.btn_process_all,
                     gui.btn_refresh_table,
                     gui.btn_wialon,
-                    gui.btn_settings, ]:
+                    gui.btn_settings,
+                    gui.btn_navigation_history,
+                    ]:
             btn.setFixedHeight(28)
             btn.setFixedWidth(130)
 
@@ -47,7 +49,7 @@ class MainUiBuilder:
         top.addWidget(gui.btn_refresh_table)
         top.addWidget(gui.btn_wialon)
         top.addWidget(gui.btn_settings)
-
+        top.addWidget(gui.btn_navigation_history)
         # --- Таблица ---
         gui.table = QTableWidget()
 

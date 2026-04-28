@@ -172,6 +172,12 @@ class CombinedSettingsDialog(QDialog):
             self._forms[section_key] = form
             self.tabs.addTab(form, title)
 
+        self.highlight_tab = HighlightSettingsTab(self)
+        self.highlight_tab.hours_spin.valueChanged.connect(lambda _=None: self._dirty.add("highlight"))
+
+        self._forms["highlight"] = self.highlight_tab
+        self.tabs.addTab(self.highlight_tab, "Подсветка")
+
         self.btn_save = QPushButton("Сохранить")
         self.btn_cancel = QPushButton("Отмена")
         self.btn_save.clicked.connect(self._on_save)
@@ -204,11 +210,11 @@ class CombinedSettingsDialog(QDialog):
         if reply != QMessageBox.StandardButton.Yes:
             return
 
-        data_context = getattr(parent_gui, "data_context", None)
+        task_repository = getattr(parent_gui, "task_repository", None)
         table_manager = getattr(parent_gui, "table_manager", None)
 
-        if data_context is not None:
-            data_context.set([])
+        if task_repository is not None:
+            task_repository.set([])
 
         if table_manager is not None:
             # table_manager.display()
@@ -230,7 +236,19 @@ class CombinedSettingsDialog(QDialog):
         for s_key in self._dirty:
             form = self._forms[s_key]
             val = form.values()
+            if s_key == "highlight":
+                minutes = int(val.get("duration_minutes", 120))
 
+                if self.gui and hasattr(self.gui, "ui_settings"):
+                    node = self.gui.ui_settings.data.setdefault("highlight", {})
+                    node["duration_minutes"] = minutes
+                    self.gui.ui_settings._schedule_save()
+
+                if self.gui and hasattr(self.gui, "_apply_runtime_settings"):
+                    self.gui._apply_runtime_settings()
+
+                changed.add(s_key)
+                continue
             # Специальная обработка для layout_mode
             if s_key == "layout_mode":
                 # Сохраняем напрямую в gui.ui_settings в формате {"mode": ..., "monitor": ...}
@@ -363,6 +381,97 @@ class VerticalTextDelegate(QStyledItemDelegate):
         painter.drawText(QRect(0, 0, rect.height(), rect.width()), Qt.AlignmentFlag.AlignCenter, text)
 
         painter.restore()
+
+
+class HighlightSettingsTab(QWidget):
+    """Вкладка настроек подсветки строк."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.dialog = parent
+        self.gui = getattr(parent, "gui", None)
+        self._build_ui()
+        self.load_values()
+
+    def _build_ui(self):
+        root = QVBoxLayout(self)
+
+        desc = QLabel("Настройки зелёной подсветки строки после нажатия ▶.\n"
+                      "highlight_until хранится в JSON у каждой записи.")
+
+        desc.setStyleSheet("color: #666; font-size: 10px; margin-bottom: 10px;")
+        root.addWidget(desc)
+
+        form = QFormLayout()
+
+        self.hours_spin = QSpinBox()
+        self.hours_spin.setRange(0, 168)
+
+        self.minutes_spin = QSpinBox()
+        self.minutes_spin.setRange(0, 59)
+        self.hours_spin.setSuffix(" ч")
+        row = QHBoxLayout()
+        row.addWidget(self.hours_spin)
+        row.addWidget(QLabel("ч"))
+        row.addWidget(self.minutes_spin)
+        row.addWidget(QLabel("м"))
+
+        form.addRow("Подсветка:", row)
+
+        root.addLayout(form)
+
+        self.btn_clear_highlights = QPushButton("Сбросить все highlight_until")
+        self.btn_clear_highlights.clicked.connect(self.clear_all_highlights)
+
+        root.addLayout(button_row_trailing(self.btn_clear_highlights))
+        root.addStretch()
+
+    def load_values(self):
+        minutes_total = 120
+
+        try:
+            cfg = self.gui.ui_settings.data.get("highlight", {}) or {}
+            minutes_total = int(cfg.get("duration_minutes", 120))
+        except Exception:
+            minutes_total = 120
+
+        hours = minutes_total // 60
+        minutes = minutes_total % 60
+
+        self.hours_spin.setValue(hours)
+        self.minutes_spin.setValue(minutes)
+
+    def values(self):
+        total = self.hours_spin.value() * 60 + self.minutes_spin.value()
+
+        return {"duration_minutes": total}
+
+    def clear_all_highlights(self):
+        if not self.gui:
+            QMessageBox.warning(self, "Ошибка", "GUI не найден.")
+            return
+
+        reply = QMessageBox.question(self,
+                                     "Сброс подсветки",
+                                     "Удалить подсветку у всех строк в текущем JSON?",
+                                     QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+
+        if reply != QMessageBox.StandardButton.Yes:
+            return
+
+        highlighter = getattr(self.gui, "row_highlighter", None)
+        if not highlighter:
+            QMessageBox.warning(self, "Ошибка", "RowHighlighter не найден.")
+            return
+
+        changed = highlighter.clear_all_highlight_until()
+
+        if hasattr(self.gui, "reload_and_show"):
+            self.gui.reload_and_show()
+
+        QMessageBox.information(self,
+                                "Готово",
+                                "Подсветка сброшена." if changed else "Ни у кого нет подсветки.")
 
 
 def _read_config() -> dict:

@@ -7,10 +7,10 @@ from Navigation_Bot.gui.widgets.table.table_row_renderer import TableRowRenderer
 
 
 class TableManager:
-    def __init__(self, table_widget, data_context, log_func, on_row_click, on_edit_id_click,
+    def __init__(self, table_widget, task_repository, log_func, on_row_click, on_edit_id_click,
                  editable_field_workflow=None, address_edit_workflow=None, reload_callback=None):
 
-        self.data_context = data_context
+        self.task_repository = task_repository
         self.table = table_widget
         self.log = log_func
         self.on_row_click = on_row_click
@@ -39,7 +39,7 @@ class TableManager:
     # ---- A. display orchestration
     def display(self, reload_from_file=True, view_order=None):
         self._reload_context(reload_from_file)
-        json_data = self.data_context.get() or []
+        json_data = self.task_repository.get() or []
 
         # стопаем все спиннеры перед перерисовкой таблицы (иначе они "висят" между display)
         self.row_action_controller.clear()
@@ -78,7 +78,7 @@ class TableManager:
         if not reload_from_file:
             return
         try:
-            self.data_context.reload()
+            self.task_repository.reload()
         except Exception as e:
             self.log(f"❌ Ошибка при загрузке JSON: {e}")
 

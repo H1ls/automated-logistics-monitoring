@@ -62,9 +62,9 @@ class SettingsController:
             # Перечитать config.json и заново подключиться к Google
             gsheet.load_settings()
 
-            # На всякий случай держим актуальный data_context
-            if getattr(gui, "data_context", None):
-                gsheet.data_context = gui.data_context
+            # На всякий случай держим актуальный task_repository
+            if getattr(gui, "task_repository", None):
+                gsheet.task_repository = gui.task_repository
 
             self.log("🔁 GoogleSheetsManager обновлён по новым настройкам")
 
@@ -80,9 +80,9 @@ class SettingsController:
                     return
 
             # fallback: если вкладки не активировались
-            if getattr(gui, "data_context", None):
+            if getattr(gui, "task_repository", None):
                 json_path = gui._get_sheet_json_path()
-                gui.data_context.set_filepath(json_path)
+                gui.task_repository.set_filepath(json_path)
 
             gui.reload_and_show()
             self.log("✅ Настройки Google Sheets применены")

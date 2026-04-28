@@ -20,7 +20,7 @@ class GoogleSyncService:
 
     gsheet: Any
     tasks_service: Any
-    data_context: Any
+    task_repository: Any
     cleaner: Any | None = None
     log: Callable[[str], None] | None = None
 
@@ -32,7 +32,7 @@ class GoogleSyncService:
         if self.cleaner is not None:
             return self.cleaner
         from Navigation_Bot.bots.data_cleaner import DataCleaner
-        return DataCleaner(data_context=self.data_context, log_func=self._log)
+        return DataCleaner(task_repository=self.task_repository, log_func=self._log)
 
     # --- Helpers: common
     def _ensure_google_ready(self) -> tuple[bool, None, str | None]:
@@ -41,7 +41,7 @@ class GoogleSyncService:
         return True, None, None
 
     def _reload_context(self) -> None:
-        self.data_context.reload()
+        self.task_repository.reload()
 
     # --- Helpers: refresh_row_by_index
     def _fetch_google_row_dh(self, index_key: int) -> tuple[bool, list[str] | None, str | None]:

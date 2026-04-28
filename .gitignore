@@ -50,4 +50,5 @@ trash/
 config/
 
 /config/datasets/
+/config/media/
 /main.spec

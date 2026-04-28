@@ -4,7 +4,8 @@ from typing import Any
 
 from Navigation_Bot.core.domain.entities.task import Task
 from Navigation_Bot.core.domain.value_objects.arrival_forecast import ArrivalForecast
-from Navigation_Bot.core.domain.value_objects.contact_info import ContactInfo
+from Navigation_Bot.core.domain.value_objects.carrier import Carrier
+from Navigation_Bot.core.domain.value_objects.driver import Driver
 from Navigation_Bot.core.domain.value_objects.navigation_state import NavigationState
 from Navigation_Bot.core.domain.value_objects.processing_state import ProcessingState
 from Navigation_Bot.core.domain.value_objects.vehicle import Vehicle
@@ -19,9 +20,11 @@ class TaskMapper:
     Mapper между dict (текущий JSON) и доменной моделью Task.
 
     - простые поля
+    - vehicle / driver / carrier
+    - route_plan из Погрузка/Выгрузка
     - navigation
-    - forecast (Маршрут)
-    - без route_plan (Погрузка/Выгрузка)
+    - forecast из Маршрут
+    - processing из processed
     """
 
     @staticmethod
@@ -29,11 +32,14 @@ class TaskMapper:
         if not isinstance(data, dict):
             raise ValueError("TaskMapper.from_dict: data must be dict")
         vehicle = Vehicle(plate_number=str(data.get("ТС", "") or ""),
-                          monitoring_id=TaskMapper._to_int_or_none(data.get("id")), )
+                          monitoring_id=TaskMapper._to_int_or_none(data.get("id")),
+                          )
 
-        contact = ContactInfo(full_name=str(data.get("ФИО", "") or ""),
-                              phone=str(data.get("Телефон", "") or ""), )
-
+        driver = Driver(full_name=str(data.get("ФИО", "") or ""),
+                        phone=str(data.get("Телефон", "") or ""),
+                        )
+        carrier_name = str(data.get("КА", "") or "").strip()
+        carrier = Carrier(name=carrier_name) if carrier_name else None
         processed = data.get("processed")
         if not isinstance(processed, list):
             processed = []
@@ -45,15 +51,16 @@ class TaskMapper:
         route_plan = TaskMapper._build_route_plan(data)
         task = Task(index=TaskMapper._to_int_or_zero(data.get("index")),
                     vehicle=vehicle,
-                    contact=contact,
-                    carrier_code=str(data.get("КА", "") or ""),
+                    driver=driver,
+                    carrier=carrier,
                     route_plan=route_plan,
                     navigation=navigation,
                     forecast=forecast,
                     processing=processing,
                     raw_load=str(data.get("raw_load", "") or ""),
-                    raw_unload=str(data.get("raw_unload", "") or ""), )
-
+                    raw_unload=str(data.get("raw_unload", "") or ""),
+                    )
+        task.ensure_processing_consistency()
         return task
 
     @staticmethod
@@ -62,10 +69,11 @@ class TaskMapper:
             raise ValueError("TaskMapper.to_dict: task must be Task")
         result: dict[str, Any] = {"index": task.index,
                                   "ТС": task.vehicle.plate_number,
-                                  "ФИО": task.contact.full_name,
-                                  "Телефон": task.contact.phone,
-                                  "КА": task.carrier_code,
-                                  "processed": list(task.processing.processed_unloads), }
+                                  "ФИО": task.driver.full_name,
+                                  "Телефон": task.driver.phone,
+                                  "КА": task.carrier.name if task.carrier else "",
+                                  "processed": list(task.processing.processed_unloads),
+                                  }
 
         if task.vehicle.monitoring_id is not None:
             result["id"] = task.vehicle.monitoring_id
@@ -116,9 +124,9 @@ class TaskMapper:
         if navigation.gps_fix_text or navigation.gps_fix_age_seconds is not None:
             result["gps_fix_age"] = {"text": navigation.gps_fix_text,
                                      "age_second": navigation.gps_fix_age_seconds, }
-
-        if navigation.has_fresh_coordinates:
-            result["_новые_координаты"] = True
+        # if navigation.has_fresh_coordinates:
+        #     result["_новые_координаты"] = True
+        result["_новые_координаты"] = bool(navigation.has_fresh_coordinates)
 
     # === Forecast / Маршрут
     @staticmethod
@@ -136,12 +144,17 @@ class TaskMapper:
 
     @staticmethod
     def _write_forecast(result: dict[str, Any], forecast: ArrivalForecast) -> None:
-        has_forecast = any([forecast.distance_km,
-                            forecast.duration_minutes,
-                            forecast.arrival_time,
-                            forecast.on_time,
-                            forecast.time_buffer_text,
-                            forecast.buffer_minutes, ])
+        # has_forecast = any([forecast.distance_km,
+        #                     forecast.duration_minutes,
+        #                     forecast.arrival_time,
+        #                     forecast.on_time,
+        #                     forecast.time_buffer_text,
+        #                     forecast.buffer_minutes, ])
+        has_forecast = bool(forecast.arrival_time
+                            or forecast.time_buffer_text
+                            or forecast.distance_km is not None
+                            or forecast.duration_minutes is not None
+                            )
         if not has_forecast:
             return
 

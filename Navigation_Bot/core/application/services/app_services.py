@@ -2,10 +2,11 @@
 from __future__ import annotations
 
 from Navigation_Bot.core.application.services.google_sync_service import GoogleSyncService
+from Navigation_Bot.core.application.services.json_history_service import JsonHistoryService
 from Navigation_Bot.core.application.services.task_edit_service import TaskEditService
 from Navigation_Bot.gui.app.app_context import AppContext
 from Navigation_Bot.bots.google_sheets_manager import GoogleSheetsManager
-from Navigation_Bot.core.data_context import DataContext
+from Navigation_Bot.core.repositories.json_task_repository import JsonTaskRepository
 from Navigation_Bot.core.hotkey_manager import HotkeyManager
 from Navigation_Bot.core.NavigationProcessor.navigation_processor import NavigationProcessor
 from Navigation_Bot.core.settings.settings_controller import SettingsController
@@ -44,8 +45,8 @@ class AppServices:
         g.loading.show("Инициализация контекста данных…", "Загрузка JSON")
 
         json_path = g._get_sheet_json_path()
-        g.data_context = DataContext(json_path, log_func=g.log)
-        g.json_data = g.data_context.get()
+        g.task_repository = JsonTaskRepository(json_path, log_func=g.log)
+        # g.task_repository = g.task_repository  # legacy alias
 
     def _build_settings_layer(self) -> None:
         g = self.gui
@@ -65,15 +66,30 @@ class AppServices:
         g.gsheet.log_message.connect(g.log)
 
         g.loading.show("Инициализация сервисов задач…", "Подготовка")
-
-        g.tasks_service = TasksService(data_context=g.data_context,
-                                       log=g.log, )
         g.task_edit_service = TaskEditService(log=g.log, )
+        g.status_event_service = JsonHistoryService(filepath="config/status_events.json",
+                                                    time_field="created_at",
+                                                    log=g.log, )
+        g.tasks_service = TasksService(task_repository=g.task_repository,
+                                       log=g.log,
+                                       status_event_service=g.status_event_service, )
+
         g.google_sync_service = GoogleSyncService(gsheet=g.gsheet,
                                                   tasks_service=g.tasks_service,
-                                                  data_context=g.data_context,
+                                                  task_repository=g.task_repository,
                                                   log=g.log, )
+        # TODO: Убарть хардкод на filepath
+        g.navigation_history_service = JsonHistoryService(filepath="config/navigation_history.json",
+                                                          time_field="collected_at",
+                                                          log=g.log, )
 
+        g.route_estimate_history_service = JsonHistoryService(filepath="config/route_estimate_history.json",
+                                                              time_field="calculated_at",
+                                                              log=g.log, )
+        g.note_history_service = JsonHistoryService(filepath="config/notes_history.json",
+                                                    time_field="created_at",
+                                                    log=g.log, )
+        # -----
         g.new_task_workflow_service = NewTaskWorkflowService(tasks_service=g.tasks_service,
                                                              task_edit_service=g.task_edit_service,
                                                              google_sync_service=g.google_sync_service,
@@ -81,7 +97,7 @@ class AppServices:
 
         g.editable_field_workflow_service = EditableFieldWorkflowService(tasks_service=g.tasks_service,
                                                                          log=g.log, )
-        g.address_edit_workflow_service = AddressEditWorkflowService(data_context=g.data_context,
+        g.address_edit_workflow_service = AddressEditWorkflowService(task_repository=g.task_repository,
                                                                      tasks_service=g.tasks_service,
                                                                      task_edit_service=g.task_edit_service,
                                                                      log=g.log, )
@@ -91,7 +107,7 @@ class AppServices:
         g.loading.show("Инициализация таблицы…", "Создание менеджера таблицы")
 
         g.table_manager = TableManager(table_widget=g.table,
-                                       data_context=g.data_context,
+                                       task_repository=g.task_repository,
                                        log_func=g.log,
                                        on_row_click=None,
                                        on_edit_id_click=g.open_id_editor,
@@ -100,13 +116,13 @@ class AppServices:
                                        address_edit_workflow=g.address_edit_workflow_service,
                                        reload_callback=g.reload_and_show, )
 
-        g.row_highlighter = RowHighlighter(table=g.table, data_context=g.data_context, log=g.log, hours_default=2, )
+        g.row_highlighter = RowHighlighter(table=g.table, task_repository=g.task_repository, log=g.log, hours_default=2, )
 
     def _build_processing_layer(self) -> None:
         g = self.gui
         g.loading.show("Инициализация процессора…", "Подготовка браузера и обработчика")
 
-        g.processor = NavigationProcessor(data_context=g.data_context,
+        g.processor = NavigationProcessor(task_repository=g.task_repository,
                                           logger=g.log,
                                           gsheet=g.gsheet,
                                           display_callback=g.reload_and_show,
@@ -117,13 +133,15 @@ class AppServices:
                                           browser_rect=getattr(g, "browser_rect", None),
                                           ui_bridge=g.ui_bridge,
                                           tasks_service=g.tasks_service,
+                                          navigation_history_service=g.navigation_history_service,
+                                          route_estimate_history_service=g.route_estimate_history_service,
                                           )
 
     def _build_ui_controllers(self) -> None:
         g = self.gui
         g.loading.show("Инициализация контроллеров…", "Подготовка сортировки и горячих клавиш")
 
-        g.sort_controller = TableSortController(data_context=g.data_context, log=g.log, )
+        g.sort_controller = TableSortController(task_repository=g.task_repository, log=g.log, )
         g.hotkeys = HotkeyManager(log_func=g.log, )
 
         g.loading.show("Инициализация меню…", "Подготовка контекстного меню")
@@ -150,7 +168,7 @@ class AppServices:
         g = self.gui
         g.loading.show("Завершение инициализации…", "Создание контекста зависимостей")
 
-        ctx = AppContext(data_context=g.data_context,
+        ctx = AppContext(task_repository=g.task_repository,
                          gsheet=g.gsheet,
 
                          tasks_service=g.tasks_service,

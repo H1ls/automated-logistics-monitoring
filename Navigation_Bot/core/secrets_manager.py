@@ -1,4 +1,5 @@
 import os
+import sys
 from pathlib import Path
 from typing import Optional
 from dotenv import load_dotenv
@@ -6,10 +7,17 @@ from dotenv import load_dotenv
 
 class SecretsManager:
     """Безопасное управление credentials"""
+
     def __init__(self, env_file: Optional[Path] = None):
         if env_file is None:
-            # Ищем .env в корне проекта
-            env_file = Path(__file__).resolve().parents[2] / '.env'
+            if getattr(sys, "frozen", False):
+                # если exe — берем рядом с exe
+                base = Path(sys.executable).resolve().parent
+            else:
+                # если PyCharm
+                base = Path(__file__).resolve().parents[2]
+
+            env_file = base / ".env"
 
         if env_file.exists():
             load_dotenv(env_file)

@@ -50,7 +50,7 @@ class NavigationBot(NaviBase):
             input_element.send_keys(Keys.BACKSPACE)
             self.driver.execute_script("document.activeElement.blur();")
         except Exception as e:
-            self.log(f"❌ Ошибка в _clear_search: {self._short_err(e)}")
+            self.log(f"❌ Ошибка очистки поля ввода ТС,  _clear_search")
 
     def _type_in_search(self, text: str) -> bool:
         try:
@@ -64,7 +64,8 @@ class NavigationBot(NaviBase):
             return True
         except Exception as e:
             self.log(
-                f"❌ Не удалось ввести текст в поиск '{text}': {self._short_err(e)} -> NavigationBot._type_in_search")
+                f"❌ Не удалось ввести текст в поиск '{text}':  -> NavigationBot._type_in_search")
+            # self.log({self._short_err(e)})
             # car_data["_новые_координаты"] = False
             # car_data["коор"] = None
             # car_data["гео"] = None
@@ -76,7 +77,8 @@ class NavigationBot(NaviBase):
             xpath = xpath_tpl.replace("{car_id}", str(car_id))
             return self._wait_visible_xpath(xpath, timeout=112)
         except Exception as e:
-            self.log(f"❌ Машина с ID {car_id} не найдена: {self._short_err(e)} -> NavigationBot._find_car_element")
+            self.log(f"❌ Машина с ID {car_id} не найдена: -> NavigationBot._find_car_element")
+            # self.log({self._short_err(e)} )
             return None
 
     def _ensure_monitoring_open(self) -> None:
@@ -106,7 +108,8 @@ class NavigationBot(NaviBase):
                 if txt and ("обработка" not in txt.lower()):
                     return txt
             except Exception as e:
-                self.log(f"⚠️ Не удалось получить адрес: {self._short_err(e)} -> NavigationBot._wait_address_ready.")
+                self.log(f"⚠️ Не удалось получить адрес: -> NavigationBot._wait_address_ready.")
+                self.log(f"{self._short_err(e)}.")
         time.sleep(0.15)
         # если ничего не дождались
         if last_text:
@@ -126,7 +129,8 @@ class NavigationBot(NaviBase):
                 return int(digits) if digits else None
             return None
         except Exception as e:
-            self.log(f"⚠️ Не удалось получить скорость: {self._short_err(e)}")
+            self.log(f"⚠️ Не удалось получить скорость: ")
+            # self.log(f"{self._short_err(e)}")
             return None
 
     def _wait_clipboard_coordinates(self, old_value: str = "", timeout: float = None) -> str | None:
@@ -157,7 +161,8 @@ class NavigationBot(NaviBase):
             btn = self._wait_present_css(css_btn, timeout=8)
             btn.click()
         except Exception as e:
-            self.log(f"❌ Не удалось нажать кнопку копирования координат: {self._short_err(e)}")
+            self.log(f"❌ Не удалось нажать кнопку копирования координат: ")
+            # self.log(f" {self._short_err(e)}")
             return None
 
         # coord = self._wait_clipboard_coordinates()
@@ -184,7 +189,8 @@ class NavigationBot(NaviBase):
                     time.sleep(0.2)
 
         except Exception as e:
-            self.log(f"❌ Ошибка чтения гео/коорд/скорости: {self._short_err(e)}")
+            self.log(f"❌ Ошибка чтения гео/коорд/скорости")
+            # self.log(f"❌ {self._short_err(e)}")
             return None, None, None
 
     # ---------- GPS tooltip parsing ----------
@@ -241,7 +247,8 @@ class NavigationBot(NaviBase):
             return fix_line, age_seconds
 
         except Exception as e:
-            self.log(f"⚠️ Не удалось получить GPS-tooltip: {self._short_err(e)} -> NavigationBot._read_gps_fix_age")
+            self.log(f"⚠️ Не удалось получить GPS-tooltip: -> NavigationBot._read_gps_fix_age")
+            # self.log(f"⚠️ Не удалось получить GPS-tooltip: {self._short_err(e)} -> NavigationBot._read_gps_fix_age")
             return None, None
 
     def _is_navigation_stale(self, age_second: int | None) -> bool:
@@ -323,5 +330,6 @@ class NavigationBot(NaviBase):
             return updated
 
         except Exception as e:
+            self.log(f"❌ Ошибка в process_row: ")
             self.log(f"❌ Ошибка в process_row: {self._short_err(e)}")
         return None

@@ -11,7 +11,7 @@ class AppContext:
     """
 
     # --- данные / интеграции ---
-    data_context: Any
+    task_repository: Any
     gsheet: Any
 
     # --- базовые application services ---
