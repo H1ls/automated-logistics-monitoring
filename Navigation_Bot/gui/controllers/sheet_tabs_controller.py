@@ -229,8 +229,8 @@ class SheetTabsController:
 
         json_path = gui._get_sheet_json_path()
         if getattr(gui, "gsheet", None):
-            gui.gsheet.data_context = gui.data_context
-        gui.data_context.set_filepath(json_path)
+            gui.gsheet.task_repository = gui.task_repository
+        gui.task_repository.set_filepath(json_path)
 
         gui.reload_and_show()
 

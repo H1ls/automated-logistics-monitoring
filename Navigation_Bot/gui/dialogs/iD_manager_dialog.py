@@ -4,7 +4,7 @@ from PyQt6.QtWidgets import (
     QTableWidget, QTableWidgetItem, QPushButton
 )
 
-from Navigation_Bot.core.data_context import DataContext
+from Navigation_Bot.core.repositories.json_task_repository import JsonTaskRepository
 from Navigation_Bot.core.paths import ID_FILEPATH
 from Navigation_Bot.gui.dialogs.dialog_helpers import button_row_trailing
 
@@ -21,7 +21,7 @@ class IDManagerDialog(QDialog):
         self.resize(550, 600)
 
         self.log_func = getattr(parent, "log", print)
-        self.context = DataContext(ID_FILEPATH, log_func=self.log_func)
+        self.context = JsonTaskRepository(ID_FILEPATH, log_func=self.log_func)
         self.original_entries = self.context.get()  # это тот же список, что внутри DataContext
         self.changed_rows = set()
         self._initializing = True

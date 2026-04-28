@@ -6,7 +6,7 @@ from datetime import datetime, date
 from PyQt6.QtCore import QObject, pyqtSignal
 from oauth2client.service_account import ServiceAccountCredentials
 
-from Navigation_Bot.core.data_context import DataContext
+from Navigation_Bot.core.repositories.json_task_repository import JsonTaskRepository
 from Navigation_Bot.core.json_manager import JSONManager
 from Navigation_Bot.core.paths import INPUT_FILEPATH, CONFIG_JSON
 
@@ -22,14 +22,14 @@ class GoogleSheetsManager(QObject):
     error = pyqtSignal(str)
     log_message = pyqtSignal(str)
 
-    def __init__(self, config_key="default", log_func=None, parent=None, data_context=None):
+    def __init__(self, config_key="default", log_func=None, parent=None, task_repository=None):
         super().__init__(parent)
         self._external_log = log_func
 
         self.config_key = config_key
         self.config_manager = JSONManager(CONFIG_JSON)
 
-        self.data_context = data_context or DataContext(str(INPUT_FILEPATH), log_func=log_func)
+        self.task_repository = task_repository or JsonTaskRepository(str(INPUT_FILEPATH), log_func=log_func)
 
         # основные поля
         self.worksheet_index = None

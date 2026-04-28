@@ -4,9 +4,9 @@ from PyQt6.QtGui import QColor, QBrush
 
 
 class RowHighlighter:
-    def __init__(self, table, data_context, log, hours_default=2):
+    def __init__(self, table, task_repository, log, hours_default=2):
         self.table = table
-        self.data_context = data_context
+        self.task_repository = task_repository
         self.log = log
         self.hours_default = hours_default
         self.duration_minutes = hours_default * 60
@@ -24,7 +24,7 @@ class RowHighlighter:
             self.duration_minutes = 120  # fallback 2 часа
 
     def clear_all_highlight_until(self):
-        data = self.data_context.get() or []
+        data = self.task_repository.get() or []
         changed = False
 
         for row in data:
@@ -35,12 +35,12 @@ class RowHighlighter:
         self.until_map.clear()
 
         if changed:
-            self.data_context.save()
+            self.task_repository.save()
 
         return changed
 
     def toggle_highlight(self, index_key: int):
-        data = self.data_context.get() or []
+        data = self.task_repository.get() or []
 
         rec = None
         for r in data:
@@ -63,12 +63,13 @@ class RowHighlighter:
                 if 0 <= visual_row < self.table.rowCount():
                     self._paint_row(visual_row, enabled=False)
 
-            self.data_context.save()
+            self.task_repository.save()
             return False  # выключили
 
         # если нет → включить
         self.highlight_for(index_key)
         return True  # включили
+
     def set_view_order(self, view_order: list[int] | None):
         self.view_order = view_order
         self.real_to_visual = {}
@@ -102,7 +103,7 @@ class RowHighlighter:
         until_dt = datetime.now() + timedelta(minutes=minutes)
         until_iso = until_dt.strftime("%Y-%m-%d %H:%M:%S")
 
-        data = self.data_context.get() or []
+        data = self.task_repository.get() or []
 
         # найти запись по ключу
         rec = None
@@ -117,7 +118,7 @@ class RowHighlighter:
 
         # сохранить в JSON запись
         rec["highlight_until"] = until_iso
-        self.data_context.save()
+        self.task_repository.save()
 
         # сохранить в runtime-map
         self.until_map[index_key] = until_dt
@@ -143,7 +144,7 @@ class RowHighlighter:
         Смотрит highlight_until в каждой записи и заново красит строки
         по ключу index (через mapper key->visual_row).
         """
-        data = self.data_context.get() or []
+        data = self.task_repository.get() or []
         now = datetime.now()
 
         self.until_map.clear()
@@ -188,7 +189,7 @@ class RowHighlighter:
         if datetime.now() < until_dt:
             return  # ещё не истекло
 
-        data = self.data_context.get() or []
+        data = self.task_repository.get() or []
 
         rec = None
         for r in data:
@@ -202,7 +203,7 @@ class RowHighlighter:
         # очистить JSON-метку
         if rec.get("highlight_until"):
             rec["highlight_until"] = ""
-            self.data_context.save()
+            self.task_repository.save()
 
         self.until_map.pop(index_key, None)
 
@@ -237,7 +238,7 @@ class RowHighlighter:
     def highlight_expired_unloads(self):
         """Подсвечивает первую непройденную выгрузку, если её время уже меньше текущего."""
 
-        data = self.data_context.get() or []
+        data = self.task_repository.get() or []
         now = datetime.now()
 
         for real_idx, rec in enumerate(data):

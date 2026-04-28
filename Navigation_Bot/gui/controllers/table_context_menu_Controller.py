@@ -22,8 +22,8 @@ class TableContextMenuController:
         real_idx = self._visual_to_real(visual_row)
         if real_idx is None:
             return
-        # TODO: Изменить взаимодействия с data_context
-        data = self.gui.data_context.get() or []
+        # TODO: Изменить взаимодействия с task_repository
+        data = self.gui.task_repository.get() or []
         if not (0 <= real_idx < len(data)):
             return
 
@@ -33,7 +33,7 @@ class TableContextMenuController:
         act_delete = menu.addAction("🗑 Удалить строку")
         menu.addSeparator()
 
-        #TODO: Заполнить act_stub2
+        # TODO: Заполнить act_stub2
         act_stub2 = menu.addAction("2) заглушка")
         act_add_note = menu.addAction("📝 Добавить заметку")
         if rec.get("highlight_until"):
@@ -62,7 +62,7 @@ class TableContextMenuController:
 
     def _add_note(self, real_idx: int):
         try:
-            data = self.gui.data_context.get() or []
+            data = self.gui.task_repository.get() or []
             if not (0 <= real_idx < len(data)):
                 self.gui.log("⚠️ Строка не найдена")
                 return
@@ -133,7 +133,7 @@ class TableContextMenuController:
 
     def _toggle_highlight(self, real_idx: int):
         try:
-            data = self.gui.data_context.get() or []
+            data = self.gui.task_repository.get() or []
             if not (0 <= real_idx < len(data)):
                 return
 
@@ -149,6 +149,7 @@ class TableContextMenuController:
 
             enabled = highlighter.toggle_highlight(index_key)
 
+            # TODO: Если highlighter есть какой то, то он не предлагает подстветить сразу
             if enabled:
                 self.gui.log(f"🟢 Подсветка включена: строки = {real_idx + 1},и ТС {data[real_idx].get("ТС")}")
             else:
@@ -180,7 +181,7 @@ class TableContextMenuController:
 
     def _refresh_row(self, real_idx: int):
         try:
-            data = self.gui.data_context.get() or []
+            data = self.gui.task_repository.get() or []
             if not (0 <= real_idx < len(data)):
                 return
 

@@ -15,7 +15,7 @@ from Navigation_Bot.gui.dialogs.sites_Db_editor_dialog import SitesDbEditorDialo
 class AddressEditDialog(QDialog):
     """Диалог редактирования блоков Погрузка/Выгрузка."""
 
-    def __init__(self, row_data, full_data, prefix, parent=None, disable_save=False, data_context=None, log_func=None):
+    def __init__(self, row_data, full_data, prefix, parent=None, disable_save=False, task_repository=None, log_func=None):
         super().__init__(parent)
         self.setWindowTitle(f"Редактирование: {prefix}")
         self.resize(1000, 500)
@@ -24,7 +24,7 @@ class AddressEditDialog(QDialog):
         self.row_data = row_data
         self.full_data = full_data
         self.disable_save = disable_save
-        self.data_context = data_context
+        self.task_repository = task_repository
         self.log = log_func or print
         self.sites_db = self._load_sites_db()
         self.entries = []  # список кортежей (container, address_edit, arr_date_edit, arr_time_edit)

@@ -17,9 +17,9 @@ class CreateRaceDialog(QDialog):
     - НЕ сохраняет ничего сам, только возвращает payload
     """
 
-    def __init__(self, data_context, log_func=None, parent=None):
+    def __init__(self, task_repository, log_func=None, parent=None):
         super().__init__(parent)
-        self.data_context = data_context
+        self.task_repository = task_repository
         self.log = log_func or print
 
         self._buffer = {"Погрузка": [],
@@ -156,11 +156,11 @@ class CreateRaceDialog(QDialog):
                       "Выгрузка": self._buffer.get("Выгрузка", []), }
 
         dialog = AddressEditDialog(row_data=temp_entry,
-                                   full_data=self.data_context.get() or [],
+                                   full_data=self.task_repository.get() or [],
                                    prefix=prefix,
                                    parent=self,
                                    disable_save=True,
-                                   data_context=self.data_context,
+                                   task_repository=self.task_repository,
                                    log_func=self.log, )
 
         if dialog.exec():

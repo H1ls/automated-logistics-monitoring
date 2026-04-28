@@ -13,7 +13,7 @@ from Navigation_Bot.core.domain.entities.status_event import StatusEvent
 
 @dataclass(slots=True)
 class TasksService:
-    data_context: Any
+    task_repository: Any
     log: Callable[[str], None] | None = None
     status_event_service: Any | None = None
 
@@ -32,6 +32,21 @@ class TasksService:
             self._log(f"⚠️ TasksService.get_task: {e}")
             return None
 
+    def save_task_by_index(self, task: Task) -> tuple[bool, Task | None, str | None]:
+        if not isinstance(task, Task):
+            return False, None, "task_invalid"
+
+        index_key = task.index
+        if not index_key:
+            return False, None, "missing_index"
+
+        real_idx = self.find_real_idx_by_index_key(index_key)
+        if real_idx is None:
+            return False, None, "row_not_found"
+
+        task.ensure_processing_consistency()
+        return self.save_task(real_idx, task)
+
     # TODO:  save_task() не пересчитывает processed
     # либо валидировать Task перед сохранением
     # либо нормализовать processed под число выгрузок
@@ -39,31 +54,60 @@ class TasksService:
     # ---
     # Полностью заменяет строку данными из TaskMapper.to_dict(task).
     # Использовать только там, где нужна полная пересборка строки.
+    # Пересохранения для highlight_for
     def save_task(self, real_idx: int, task: Task) -> tuple[bool, Task | None, str | None]:
-        data, err = self._get_data()
-        if err:
-            return False, None, err
-
-        if not (0 <= real_idx < len(data)):
-            return False, None, "row_out_of_range"
-
-        if not isinstance(task, Task):
-            return False, None, "task_invalid"
-
         try:
-            data[real_idx] = TaskMapper.to_dict(task)
-            self.data_context.save()
+            data = self.task_repository.get()
+
+            if real_idx < 0 or real_idx >= len(data):
+                return False, None, "row_out_of_range"
+
+            task.ensure_processing_consistency()
+            task_dict = TaskMapper.to_dict(task)
+
+            old_row = data[real_idx] or {}
+
+            preserved_fields = {k: v for k, v in old_row.items()
+                                if k not in task_dict
+                                }
+
+            merged = {**task_dict, **preserved_fields}
+
+            data[real_idx] = merged
+
+            self.task_repository.set(data)
+
             return True, task, None
+
         except Exception as e:
-            self._log(f"❌ TasksService.save_task: {e}")
+            self.log(f"❌ TasksService.save_task: {e}")
             return False, None, str(e)
 
+    # def save_task(self, real_idx: int, task: Task) -> tuple[bool, Task | None, str | None]:
+    #     data, err = self._get_data()
+    #     if err:
+    #         return False, None, err
+    #
+    #     if not (0 <= real_idx < len(data)):
+    #         return False, None, "row_out_of_range"
+    #
+    #     if not isinstance(task, Task):
+    #         return False, None, "task_invalid"
+    #
+    #     try:
+    #         data[real_idx] = TaskMapper.to_dict(task)
+    #         self.task_repository.save()
+    #         return True, task, None
+    #     except Exception as e:
+    #         self._log(f"❌ TasksService.save_task: {e}")
+    #         return False, None, str(e)
+
     def _get_data(self) -> tuple[list | None, str | None]:
-        data = self.data_context.get()
+        data = self.task_repository.get()
         if data is None:
-            return None, "data_context_empty"
+            return None, "task_repository _empty"
         if not isinstance(data, list):
-            return None, "data_context_invalid"
+            return None, "task_repository _invalid"
         return data, None
 
     def get_all(self) -> list[dict]:
@@ -102,7 +146,7 @@ class TasksService:
             return False, None, "row_not_dict"
 
         removed = data.pop(real_idx)
-        self.data_context.save()
+        self.task_repository.save()
         return True, removed, None
 
     def apply_patch(self, real_idx: int, patch: dict) -> tuple[bool, dict | None, str | None]:
@@ -129,7 +173,7 @@ class TasksService:
             changed = True
 
         if changed:
-            self.data_context.save()
+            self.task_repository.save()
 
         return True, row, None
 
@@ -164,7 +208,7 @@ class TasksService:
 
         data.append(new_task)
         init_processed_flags(data, data, loads_key="Выгрузка")
-        self.data_context.save()
+        self.task_repository.save()
 
         return True, new_task, None
 
@@ -223,7 +267,7 @@ class TasksService:
             added_count += 1
 
         init_processed_flags(data, data, loads_key="Выгрузка")
-        self.data_context.save()
+        self.task_repository.save()
 
         return (True, {"added": added_count,
                        "skipped_existing": skipped_existing, },
@@ -231,7 +275,7 @@ class TasksService:
 
     def remove_completed_tasks(self, active_google_indexes: set[int]) -> tuple[bool, dict | None, str | None]:
         """
-        Удаляет из локального data_context строки, которых больше нет среди активных строк Google.
+        Удаляет из локального task_repository строки, которых больше нет среди активных строк Google.
         То есть задачи, которые в Google стали "Готов" или исчезли из активной выборки.
 
         Возвращает:
@@ -259,7 +303,7 @@ class TasksService:
         deleted_count = original_len - len(filtered)
 
         if deleted_count > 0:
-            self.data_context.set(filtered)
+            self.task_repository.set(filtered)
 
         return True, {"deleted": deleted_count}, None
 
@@ -331,7 +375,8 @@ class TasksService:
         if not row:
             return None
         return row.get("index")
-    #TODO: Временно на паузе
+
+    # TODO: Временно на паузе
     def _save_status_event(self,
                            *,
                            task_index: int,

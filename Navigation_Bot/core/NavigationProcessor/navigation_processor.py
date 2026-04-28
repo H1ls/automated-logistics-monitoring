@@ -5,14 +5,15 @@ from threading import Lock
 
 from Navigation_Bot.core.NavigationProcessor.browser_session import BrowserSession
 from Navigation_Bot.core.NavigationProcessor.logistx_race_service import LogistxRaceService
-from Navigation_Bot.core.NavigationProcessor.navigation_row_service import NavigationRowService
+from Navigation_Bot.core.application.services.navigation_row_service import NavigationRowService
+
 
 class NavigationProcessor:
-    def __init__(self, data_context, logger, gsheet, display_callback, single_row, updated_rows,
+    def __init__(self, task_repository, logger, gsheet, display_callback, single_row, updated_rows,
                  executor=None, highlight_callback=None, browser_rect=None, ui_bridge=None, tasks_service=None,
-                 navigation_history_service=None,route_estimate_history_service=None):
+                 navigation_history_service=None, route_estimate_history_service=None):
 
-        self.data_context = data_context
+        self.task_repository = task_repository
         self.log = logger
         self.gsheet = gsheet
         self.display_callback = display_callback
@@ -34,8 +35,7 @@ class NavigationProcessor:
                                               browser_rect=self.browser_rect,
                                               ui_bridge=self.ui_bridge, )
 
-        self.row_service = NavigationRowService(data_context=self.data_context,
-                                                logger=self.log,
+        self.row_service = NavigationRowService(logger=self.log,
                                                 gsheet=self.gsheet,
                                                 tasks_service=self.tasks_service,
                                                 ui_bridge=self.ui_bridge,

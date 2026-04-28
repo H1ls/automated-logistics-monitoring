@@ -184,7 +184,7 @@ class NavigationGUI(QWidget):
 
         try:
             json_path = self._get_sheet_json_path()
-            self.data_context.set_filepath(json_path)
+            self.task_repository.set_filepath(json_path)
 
             if not getattr(self, "google_sync_service", None):
                 self.log("⚠️ GoogleSyncService не подключён")
@@ -201,7 +201,7 @@ class NavigationGUI(QWidget):
 
     def _open_create_race_dialog(self):
         try:
-            dialog = CreateRaceDialog(data_context=self.data_context, log_func=self.log, parent=self, )
+            dialog = CreateRaceDialog(task_repository=self.task_repository, log_func=self.log, parent=self, )
 
             if not dialog.exec():
                 return
@@ -263,8 +263,8 @@ class NavigationGUI(QWidget):
 
     def reload_and_show(self):
         with self.json_lock:
-            self.data_context.reload()
-            self.json_data = self.data_context.get()
+            self.task_repository.reload()
+            self.json_data = self.task_repository.get()
 
         view_order = self.sort_controller.build_view_order()
         self.table_manager.display(view_order=view_order)
@@ -289,7 +289,7 @@ class NavigationGUI(QWidget):
         car = self.json_data[row]
         dialog = TrackingIdEditor(car, log_func=self.log, parent=self)
         if dialog.exec():
-            self.data_context.set(self.json_data)
+            self.task_repository.set(self.json_data)
             self.reload_and_show()
 
     def open_id_manager(self):
@@ -311,7 +311,7 @@ class NavigationGUI(QWidget):
                 self.log("⚠️ Не удалось определить реальную строку")
                 return
 
-            data = self.data_context.get() or []
+            data = self.task_repository.get() or []
             if not (0 <= real_idx < len(data)):
                 self.log("⚠️ Строка не найдена")
                 return

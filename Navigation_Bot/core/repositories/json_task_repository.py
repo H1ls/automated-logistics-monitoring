@@ -1,10 +1,12 @@
+# pet.project\Navigation_Bot\core\repositories\json_task_repository.py
 import json
 from pathlib import Path
 from Navigation_Bot.core.exceptions import (DataContextError, FileOperationError, JSONFormatError)
 from Navigation_Bot.core.json_manager import JSONManager
+from Navigation_Bot.core.domain.entities.task import Task
+from Navigation_Bot.core.domain.mappers.task_mapper import TaskMapper
 
-
-class DataContext:
+class JsonTaskRepository:
     """Централизованное хранилище JSON-данных"""
 
     def __init__(self, filepath, log_func=None):
@@ -63,7 +65,6 @@ class DataContext:
             self.log(f"❌ Ошибка сохранения: {e}")
             raise DataContextError(f"Cannot save to {self.filepath}") from e
 
-    #TODO: Почистить ▼
     def get(self):
         return self.data
 
@@ -74,3 +75,58 @@ class DataContext:
     def append(self, entry: dict):
         self.data.append(entry)
         self.save()
+
+    # --- Новый repository API: Task-уровень ---
+
+    def list_tasks(self) -> list[Task]:
+        self.reload()
+        return [
+            TaskMapper.from_dict(row)
+            for row in self.data
+            if isinstance(row, dict)
+        ]
+
+    def get_by_index(self, index_key: int) -> Task | None:
+        self.reload()
+
+        for row in self.data:
+            if isinstance(row, dict) and row.get("index") == index_key:
+                return TaskMapper.from_dict(row)
+
+        return None
+
+    def save_task(self, task: Task) -> None:
+        self.reload()
+
+        task.ensure_processing_consistency()
+        task_dict = TaskMapper.to_dict(task)
+
+        index_key = task.index
+        for i, row in enumerate(self.data):
+            if isinstance(row, dict) and row.get("index") == index_key:
+                self.data[i] = task_dict
+                self.save()
+                return
+
+        self.data.append(task_dict)
+        self.save()
+
+    def replace_all(self, tasks: list[Task]) -> None:
+        new_data = []
+
+        for task in tasks:
+            task.ensure_processing_consistency()
+            new_data.append(TaskMapper.to_dict(task))
+
+        self.set(new_data)
+
+    def delete_by_index(self, index_key: int) -> bool:
+        self.reload()
+
+        for i, row in enumerate(self.data):
+            if isinstance(row, dict) and row.get("index") == index_key:
+                self.data.pop(i)
+                self.save()
+                return True
+
+        return False

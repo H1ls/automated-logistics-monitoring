@@ -60,7 +60,7 @@ class TaskMapper:
                     raw_load=str(data.get("raw_load", "") or ""),
                     raw_unload=str(data.get("raw_unload", "") or ""),
                     )
-
+        task.ensure_processing_consistency()
         return task
 
     @staticmethod
@@ -124,9 +124,9 @@ class TaskMapper:
         if navigation.gps_fix_text or navigation.gps_fix_age_seconds is not None:
             result["gps_fix_age"] = {"text": navigation.gps_fix_text,
                                      "age_second": navigation.gps_fix_age_seconds, }
-
-        if navigation.has_fresh_coordinates:
-            result["_новые_координаты"] = True
+        # if navigation.has_fresh_coordinates:
+        #     result["_новые_координаты"] = True
+        result["_новые_координаты"] = bool(navigation.has_fresh_coordinates)
 
     # === Forecast / Маршрут
     @staticmethod
@@ -144,12 +144,17 @@ class TaskMapper:
 
     @staticmethod
     def _write_forecast(result: dict[str, Any], forecast: ArrivalForecast) -> None:
-        has_forecast = any([forecast.distance_km,
-                            forecast.duration_minutes,
-                            forecast.arrival_time,
-                            forecast.on_time,
-                            forecast.time_buffer_text,
-                            forecast.buffer_minutes, ])
+        # has_forecast = any([forecast.distance_km,
+        #                     forecast.duration_minutes,
+        #                     forecast.arrival_time,
+        #                     forecast.on_time,
+        #                     forecast.time_buffer_text,
+        #                     forecast.buffer_minutes, ])
+        has_forecast = bool(forecast.arrival_time
+                            or forecast.time_buffer_text
+                            or forecast.distance_km is not None
+                            or forecast.duration_minutes is not None
+                            )
         if not has_forecast:
             return
 

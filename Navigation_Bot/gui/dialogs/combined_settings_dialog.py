@@ -210,11 +210,11 @@ class CombinedSettingsDialog(QDialog):
         if reply != QMessageBox.StandardButton.Yes:
             return
 
-        data_context = getattr(parent_gui, "data_context", None)
+        task_repository = getattr(parent_gui, "task_repository", None)
         table_manager = getattr(parent_gui, "table_manager", None)
 
-        if data_context is not None:
-            data_context.set([])
+        if task_repository is not None:
+            task_repository.set([])
 
         if table_manager is not None:
             # table_manager.display()

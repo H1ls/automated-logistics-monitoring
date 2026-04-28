@@ -8,7 +8,7 @@ from Navigation_Bot.gui.dialogs.address_edit_dialog import AddressEditDialog
 
 @dataclass(slots=True)
 class AddressEditWorkflowService:
-    data_context: Any
+    task_repository: Any
     tasks_service: Any
     task_edit_service: Any
     log: Callable[[str], None] | None = None
@@ -41,14 +41,14 @@ class AddressEditWorkflowService:
         if not row_data:
             return False, None, "row_not_found"
 
-        full_data = self.data_context.get() or []
+        full_data = self.task_repository.get() or []
 
         dialog = AddressEditDialog(row_data=row_data,
                                    full_data=full_data,
                                    prefix=prefix,
                                    parent=parent,
-                                   data_context=self.data_context,
-                                   log_func=self.log,)
+                                   task_repository=self.task_repository,
+                                   log_func=self.log, )
 
         if not dialog.exec():
             return False, None, "cancelled"

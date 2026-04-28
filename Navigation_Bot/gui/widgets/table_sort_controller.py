@@ -2,13 +2,13 @@ from datetime import datetime
 
 
 class TableSortController:
-    def __init__(self, data_context, log):
-        self.data_context = data_context
+    def __init__(self, task_repository, log):
+        self.task_repository = task_repository
         self.log = log
         self.current = None  # None / "buffer" / "arrival"
 
     def build_view_order(self) -> list[int]:
-        data = self.data_context.get() or []
+        data = self.task_repository.get() or []
         order = list(range(len(data)))
 
         if self.current is None:

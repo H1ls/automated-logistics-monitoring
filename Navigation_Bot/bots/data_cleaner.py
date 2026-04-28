@@ -3,23 +3,23 @@ import re
 from pathlib import Path
 from typing import List, Dict, Any
 
-from Navigation_Bot.core.data_context import DataContext
+from Navigation_Bot.core.repositories.json_task_repository import JsonTaskRepository
 from Navigation_Bot.core.paths import INPUT_FILEPATH, ID_FILEPATH
 
 """2. Очистка данных"""
 
 
 class DataCleaner:
-    def __init__(self, data_context: DataContext | None = None,
-                 id_context: DataContext | None = None,
+    def __init__(self, task_repository: JsonTaskRepository | None = None,
+                 id_context: JsonTaskRepository | None = None,
                  log_func=print):
 
         self.log = log_func
 
-        self.data_context = data_context or DataContext(str(INPUT_FILEPATH), log_func=log_func)
-        self.id_context = id_context or DataContext(str(ID_FILEPATH), log_func=log_func)
+        self.task_repository = task_repository or JsonTaskRepository(str(INPUT_FILEPATH), log_func=log_func)
+        self.id_context = id_context or JsonTaskRepository(str(ID_FILEPATH), log_func=log_func)
 
-        self.json_data: List[Dict[str, Any]] = self.data_context.get() or []
+        self.json_data: List[Dict[str, Any]] = self.task_repository.get() or []
         self.id_data: List[Dict[str, Any]] = self.id_context.get() or []
 
         self.unload_re = re.compile(r"(\d+\))?\s*"
@@ -110,14 +110,14 @@ class DataCleaner:
         2) Преобразуем строки Погрузка/Выгрузка → список блоков
         3) Чистим поле 'ТС'
         4) Привязываем ID из Id_car.json
-        5) Сохраняем через DataContext
+        5) Сохраняем через TaskRepository
         """
-        if not Path(self.data_context.filepath).exists():
-            self.log(f"❌ Файл не найден: {self.data_context.filepath}")
+        if not Path(self.task_repository.filepath).exists():
+            self.log(f"❌ Файл не найден: {self.task_repository.filepath}")
             return
 
         # актуальные данные и id-справочник
-        self.json_data = self.data_context.get() or []
+        self.json_data = self.task_repository.get() or []
         self.id_data = self.id_context.get() or []
 
         for item in self.json_data:
@@ -143,7 +143,7 @@ class DataCleaner:
         self._clean_vehicle_names()
         self._add_id_to_data()
 
-        self.data_context.set(self.json_data)
+        self.task_repository.set(self.json_data)
 
     def _clean_vehicle_names(self) -> None:
         """Оставляем в 'ТС' только номер (без телефона и переносов)."""
