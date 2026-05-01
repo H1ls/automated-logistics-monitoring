@@ -83,25 +83,6 @@ class TasksService:
             self.log(f"❌ TasksService.save_task: {e}")
             return False, None, str(e)
 
-    # def save_task(self, real_idx: int, task: Task) -> tuple[bool, Task | None, str | None]:
-    #     data, err = self._get_data()
-    #     if err:
-    #         return False, None, err
-    #
-    #     if not (0 <= real_idx < len(data)):
-    #         return False, None, "row_out_of_range"
-    #
-    #     if not isinstance(task, Task):
-    #         return False, None, "task_invalid"
-    #
-    #     try:
-    #         data[real_idx] = TaskMapper.to_dict(task)
-    #         self.task_repository.save()
-    #         return True, task, None
-    #     except Exception as e:
-    #         self._log(f"❌ TasksService.save_task: {e}")
-    #         return False, None, str(e)
-
     def _get_data(self) -> tuple[list | None, str | None]:
         data = self.task_repository.get()
         if data is None:

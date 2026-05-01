@@ -266,7 +266,6 @@ class GoogleSheetsManager(QObject):
             self._log(f"️❌ Ошибка загрузки данных с листа: {e}")
             return None
 
-
     def append_to_cell(self, data, column=12):
         # self._log(f"GSHEET append => sheet_id={self.sheet_id}, ws_index={self.worksheet_index}, col={column}")
         if isinstance(data, list):
@@ -321,16 +320,16 @@ class GoogleSheetsManager(QObject):
             ts_with_phone = f"{entry.get('ТС', '')} {entry.get('Телефон', '')}".strip()
 
             load_str = "; ".join(f"{blk.get(f'Время {i + 1}', '')} {blk.get(f'Погрузка {i + 1}', '')}".strip()
-                for i, blk in enumerate(entry.get("Погрузка", [])))
+                                 for i, blk in enumerate(entry.get("Погрузка", [])))
 
             unload_str = "; ".join(f"{blk.get(f'Время {i + 1}', '')} {blk.get(f'Выгрузка {i + 1}', '')}".strip()
                                    for i, blk in enumerate(entry.get("Выгрузка", [])))
 
-            row_data = [ts_with_phone,  # col D (ТС + телефон)
-                        entry.get("ФИО", ""),  # col E (ФИО)
-                        entry.get("КА", ""),  # col F (КА)
-                        load_str,  # col G (Погрузка)
-                        unload_str]  # col H (Выгрузка)
+            row_data = [ts_with_phone,          # col D (ТС + телефон)
+                        entry.get("ФИО", ""),   # col E (ФИО)
+                        entry.get("КА", ""),    # col F (КА)
+                        load_str,               # col G (Погрузка)
+                        unload_str]             # col H (Выгрузка)
 
             self.sheet.update(f"D{row_index}:H{row_index}", [row_data])
             self._log(f"📤 Новая запись отправлена в Google Sheets (row={row_index})")

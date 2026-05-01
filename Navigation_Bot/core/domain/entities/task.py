@@ -31,6 +31,8 @@ class Task:
     forecast: ArrivalForecast = field(default_factory=ArrivalForecast)
     processing: ProcessingState = field(default_factory=ProcessingState)
 
+    comm_load: str = ""
+    comm_unload: str = ""
     raw_load: str = ""
     raw_unload: str = ""
 

@@ -112,6 +112,7 @@ class NavigationRowService:
         task.navigation = updated_task.navigation
         task.forecast = updated_task.forecast
         task.processing = updated_task.processing
+        task.route_plan = updated_task.route_plan
 
         return task
 
@@ -122,7 +123,6 @@ class NavigationRowService:
                 and ("," in str(nav.coordinates))
                 )
 
-    # TODO: исправить сохранения self._save_json() принудительно из RAM сохраняет в Disk для отображение в таблице
     def process_row(self, row: int, *, navibot, mapsbot, switch_tab: Callable[[str], bool], ) -> tuple[
         dict | None, int | None]:
         """

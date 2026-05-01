@@ -124,8 +124,7 @@ class TaskMapper:
         if navigation.gps_fix_text or navigation.gps_fix_age_seconds is not None:
             result["gps_fix_age"] = {"text": navigation.gps_fix_text,
                                      "age_second": navigation.gps_fix_age_seconds, }
-        # if navigation.has_fresh_coordinates:
-        #     result["_новые_координаты"] = True
+
         result["_новые_координаты"] = bool(navigation.has_fresh_coordinates)
 
     # === Forecast / Маршрут
@@ -144,12 +143,7 @@ class TaskMapper:
 
     @staticmethod
     def _write_forecast(result: dict[str, Any], forecast: ArrivalForecast) -> None:
-        # has_forecast = any([forecast.distance_km,
-        #                     forecast.duration_minutes,
-        #                     forecast.arrival_time,
-        #                     forecast.on_time,
-        #                     forecast.time_buffer_text,
-        #                     forecast.buffer_minutes, ])
+
         has_forecast = bool(forecast.arrival_time
                             or forecast.time_buffer_text
                             or forecast.distance_km is not None
@@ -248,24 +242,34 @@ class TaskMapper:
             return []
 
         points: list[RoutePoint] = []
+        comment_blocks: list[tuple[int, str]] = []  # (position, comment)
 
-        for block in raw_blocks:
+        for idx, block in enumerate(raw_blocks):
             if not isinstance(block, dict):
                 continue
 
-            # Комментарий пока не превращаем в отдельную сущность
-            if "Комментарий" in block:
+            # Читаем комментарий если есть
+            comment = str(block.get("Комментарий", "") or "").strip()
+
+            # Проверяем: это блок ТОЛЬКО с комментарием (без адреса)?
+            has_address_key = any(k != "Комментарий" and k for k in block.keys())
+
+            if not has_address_key and comment:
+                # Чистый комментарий — запоминаем позицию
+                comment_blocks.append((idx, comment))
                 continue
 
+            # Обычный блок с адресом
             seq = TaskMapper._extract_sequence_from_block(block, prefix)
             if seq is None:
-                continue
+                # Нет ключа "Погрузка N" — используем позицию как sequence
+                seq = idx + 1
 
             address = str(block.get(f"{prefix} {seq}", "") or "").strip()
             date = str(block.get(f"Дата {seq}", "") or "").strip()
             time = str(block.get(f"Время {seq}", "") or "").strip()
 
-            if not address and not date and not time:
+            if not address and not date and not time and not comment:
                 continue
 
             points.append(RoutePoint(kind=kind,
@@ -273,7 +277,17 @@ class TaskMapper:
                                      address=address,
                                      date=date,
                                      time=time,
-                                     comment="", ))
+                                     comment=comment, ))
+
+        # Добавляем comment-only блоки как отдельные точки
+        for pos, comment in comment_blocks:
+            points.append(RoutePoint(kind=kind,
+                                     sequence=pos + 1000,  # большой offset чтобы не конфликтовать
+                                     address="",
+                                     date="",
+                                     time="",
+                                     comment=comment, )
+                          )
 
         points.sort(key=lambda p: p.sequence)
         return points
@@ -283,6 +297,11 @@ class TaskMapper:
         result: list[dict[str, Any]] = []
 
         for i, point in enumerate(points, start=1):
+            if point.sequence >= 1000:
+                if point.comment:
+                    result.append({"Комментарий": point.comment})
+                continue
+
             seq = point.sequence if point.sequence > 0 else i
 
             block = {f"{prefix} {seq}": point.address,
@@ -291,7 +310,7 @@ class TaskMapper:
 
             result.append(block)
 
-            # если позже захочешь возвращать комментарий рядом с точкой
+            # комментарий рядом с точкой
             if point.comment:
                 result.append({"Комментарий": point.comment})
 
