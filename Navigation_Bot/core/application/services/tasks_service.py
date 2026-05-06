@@ -80,27 +80,8 @@ class TasksService:
             return True, task, None
 
         except Exception as e:
-            self.log(f"❌ TasksService.save_task: {e}")
+            self._log(f"❌ TasksService.save_task: {e}")
             return False, None, str(e)
-
-    # def save_task(self, real_idx: int, task: Task) -> tuple[bool, Task | None, str | None]:
-    #     data, err = self._get_data()
-    #     if err:
-    #         return False, None, err
-    #
-    #     if not (0 <= real_idx < len(data)):
-    #         return False, None, "row_out_of_range"
-    #
-    #     if not isinstance(task, Task):
-    #         return False, None, "task_invalid"
-    #
-    #     try:
-    #         data[real_idx] = TaskMapper.to_dict(task)
-    #         self.task_repository.save()
-    #         return True, task, None
-    #     except Exception as e:
-    #         self._log(f"❌ TasksService.save_task: {e}")
-    #         return False, None, str(e)
 
     def _get_data(self) -> tuple[list | None, str | None]:
         data = self.task_repository.get()
@@ -112,13 +93,13 @@ class TasksService:
 
     def get_all(self) -> list[dict]:
         data, err = self._get_data()
-        if err:
+        if err or data is None:
             return []
         return [row for row in data if isinstance(row, dict)]
 
     def get_row(self, real_idx: int) -> dict | None:
         data, err = self._get_data()
-        if err:
+        if err or data is None:
             return None
         if not (0 <= real_idx < len(data)):
             return None
@@ -127,7 +108,7 @@ class TasksService:
 
     def find_real_idx_by_index_key(self, index_key: int) -> int | None:
         data, err = self._get_data()
-        if err:
+        if err or data is None:
             return None
         for i, row in enumerate(data):
             if isinstance(row, dict) and row.get("index") == index_key:
@@ -136,7 +117,7 @@ class TasksService:
 
     def delete_row(self, real_idx: int) -> tuple[bool, dict | None, str | None]:
         data, err = self._get_data()
-        if err:
+        if err or data is None:
             return False, None, err
         if not (0 <= real_idx < len(data)):
             return False, None, "row_out_of_range"
@@ -151,7 +132,7 @@ class TasksService:
 
     def apply_patch(self, real_idx: int, patch: dict) -> tuple[bool, dict | None, str | None]:
         data, err = self._get_data()
-        if err:
+        if err or data is None:
             return False, None, err
         if not (0 <= real_idx < len(data)):
             return False, None, "row_out_of_range"
@@ -196,7 +177,7 @@ class TasksService:
 
     def add_task(self, task: dict) -> tuple[bool, dict | None, str | None]:
         data, err = self._get_data()
-        if err:
+        if err or data is None:
             return False, None, err
         if not isinstance(task, dict):
             return False, None, "task_invalid"
@@ -227,7 +208,7 @@ class TasksService:
         где stats = {"added": int, "skipped_existing": int}
         """
         data, err = self._get_data()
-        if err:
+        if err or data is None:
             return False, None, err
 
         if not isinstance(rows_map, dict):
@@ -283,7 +264,7 @@ class TasksService:
         где stats = {"deleted": int}
         """
         data, err = self._get_data()
-        if err:
+        if err or data is None:
             return False, None, err
 
         if not isinstance(active_google_indexes, set):
@@ -350,13 +331,13 @@ class TasksService:
 
     def exists_row(self, real_idx: int) -> bool:
         data, err = self._get_data()
-        if err:
+        if err or data is None:
             return False
         return 0 <= real_idx < len(data) and isinstance(data[real_idx], dict)
 
     def get_processible_rows(self) -> list[tuple[int, int | None]]:
         data, err = self._get_data()
-        if err:
+        if err or data is None:
             return []
 
         result: list[tuple[int, int | None]] = []
@@ -366,9 +347,35 @@ class TasksService:
                 continue
             if not row.get("id") or not row.get("ТС"):
                 continue
+            
+            # Пропускать строки с будущими погрузками (подсвечены светло синим)
+            if self._is_future_load(row):
+                continue
+                
             result.append((row_idx, row.get("index")))
 
         return result
+    
+    def _is_future_load(self, row: dict) -> bool:
+        """Проверить, является ли погрузка будущей (более чем через 3 часа)"""
+        from datetime import datetime, timedelta
+        
+        pg = row.get("Погрузка", [])
+        if not (pg and isinstance(pg, list) and isinstance(pg[0], dict)):
+            return False
+
+        date_str = pg[0].get("Дата 1", "")
+        time_str = pg[0].get("Время 1", "")
+
+        try:
+            if time_str and time_str.count(":") == 1:
+                time_str += ":00"
+            dt = datetime.strptime(f"{date_str} {time_str}", "%d.%m.%Y %H:%M:%S")
+
+            # Пропускать если погрузка через более чем 3 дня
+            return dt > datetime.now() + timedelta(hours=3)
+        except Exception:
+            return False
 
     def get_index_key_by_row(self, real_idx: int) -> int | None:
         row = self.get_row(real_idx)

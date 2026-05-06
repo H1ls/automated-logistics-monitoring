@@ -6,6 +6,7 @@ from Navigation_Bot.bots.web_driver_manager import WebDriverManager
 from Navigation_Bot.bots.scenarios.reports_bot import WialonReportsBot
 
 
+# TODO: Вернуть воскрешения вкладки при случайном закрытие
 class BrowserSession:
     """
     Отвечает за:
@@ -34,7 +35,7 @@ class BrowserSession:
         else:
             self.log(msg)
 
-    # TODO: Исправить на асинхроное открытие Wailon и Yandex вкладок
+    # TODO: Исправить на асинхронное открытие Wialon и Yandex вкладок
     def ensure_ready(self) -> None:
         """
         Готовим браузер и основных ботов:

@@ -31,9 +31,12 @@ class Task:
     forecast: ArrivalForecast = field(default_factory=ArrivalForecast)
     processing: ProcessingState = field(default_factory=ProcessingState)
 
+    comm_load: str = ""
+    comm_unload: str = ""
     raw_load: str = ""
     raw_unload: str = ""
 
+    highlight_until: str | None = None
 
     def ensure_processing_consistency(self) -> None:
         self.processing.ensure_size(len(self.route_plan.unloads))

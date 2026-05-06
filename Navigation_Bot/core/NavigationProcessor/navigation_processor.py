@@ -1,17 +1,20 @@
-import threading
 import traceback
 from concurrent.futures import ThreadPoolExecutor
 from threading import Lock
-
+from Navigation_Bot.core.NavigationProcessor.batch_processing_service import BatchProcessingService
 from Navigation_Bot.core.NavigationProcessor.browser_session import BrowserSession
 from Navigation_Bot.core.NavigationProcessor.logistx_race_service import LogistxRaceService
 from Navigation_Bot.core.application.services.navigation_row_service import NavigationRowService
-
+                                                                                                   
 
 class NavigationProcessor:
+    # TODO: Вынести TIMEOUT_SECONDS в Настройки для ручной регулировки
+    TIMEOUT_SECONDS = 3
+
     def __init__(self, task_repository, logger, gsheet, display_callback, single_row, updated_rows,
                  executor=None, highlight_callback=None, browser_rect=None, ui_bridge=None, tasks_service=None,
-                 navigation_history_service=None, route_estimate_history_service=None):
+                 navigation_history_service=None, route_estimate_history_service=None,
+                 pause_dialog_factory=None, gui_parent=None):
 
         self.task_repository = task_repository
         self.log = logger
@@ -26,11 +29,16 @@ class NavigationProcessor:
 
         self._processing_lock = Lock()
         self._processing_mode = None  # None / single / batch
+        self._batch_pause_requested = False  # флаг для остановки batch после паузы
+        self._batch_progress = {}  # {session_id: {"processed": int, "total": int, "remaining_rows": list}}
 
         self.ui_bridge = ui_bridge
         self.tasks_service = tasks_service
         self.navigation_history_service = navigation_history_service
         self.route_estimate_history_service = route_estimate_history_service
+        self.pause_dialog_factory = pause_dialog_factory  # фабрика диалога паузы
+        self.gui_parent = gui_parent  # родительское окно GUI для показа диалогов
+
         self.browser_session = BrowserSession(logger=self.log,
                                               browser_rect=self.browser_rect,
                                               ui_bridge=self.ui_bridge, )
@@ -50,6 +58,10 @@ class NavigationProcessor:
                                                        executor=self.executor,
                                                        browser_session=self.browser_session,
                                                        ui_bridge=self.ui_bridge, )
+        # TODO: Изменить вызов
+        self.batch_processing_service = BatchProcessingService(self)
+        self._dialog_request_queue = self.batch_processing_service._dialog_request_queue
+        self._dialog_result_queue = self.batch_processing_service._dialog_result_queue
 
     # Processing mode
     def _try_enter_single_processing(self) -> bool:
@@ -109,6 +121,15 @@ class NavigationProcessor:
                 self.log(f"⚠️ Нет поля 'index' у строки {row_idx}. Подсветка пропущена.")
                 return
             self.highlight_cb(index_key)
+
+            # В batch-режиме GUI не перерисовывается после каждой строки, а некоторые операции UI
+            # (например, изменение busy-state) могут сбрасывать фон отдельных ячеек.
+            # Поэтому сразу после сохранения highlight_until пере-применяем подсветки из JSON.
+            if self.ui_bridge and getattr(self.ui_bridge, "gui", None):
+                gui = self.ui_bridge.gui
+                rh = getattr(gui, "row_highlighter", None)
+                if rh and hasattr(rh, "reapply_from_json"):
+                    self.ui_bridge.call.emit(lambda: rh.reapply_from_json())
         except Exception as e:
             self.log(f"⚠️ Ошибка подсветки строки {row_idx}: {e}")
 
@@ -136,7 +157,11 @@ class NavigationProcessor:
 
         self.executor.submit(self.process_row_wrapper, row_idx, index_key)
 
-    def process_row_wrapper(self, row: int, fallback_index_key: int | None = None):
+    def process_row_wrapper(self, row: int, fallback_index_key: int | None = None): 
+        
+        """
+        Обработать строку и вернуть результат (успех, сообщение об ошибке)
+        """
         index_key = fallback_index_key
 
         try:
@@ -150,9 +175,13 @@ class NavigationProcessor:
             if returned_index_key is not None:
                 index_key = returned_index_key
 
+            return True, "", index_key  # успех
+
         except Exception as e:
-            self.log(f"❌ Ошибка в process_row_wrapper: {e}")
+            error_msg = str(e)
+            self.log(f"❌ Ошибка в process_row_wrapper: {error_msg}")
             self.log(traceback.format_exc())
+            return False, error_msg, index_key
 
         finally:
             with self._processing_lock:
@@ -163,68 +192,11 @@ class NavigationProcessor:
 
             self._set_row_busy(index_key, False)
 
-    # Batch
-    def _prepare_batch_processing(self) -> tuple[bool, list[tuple[int, int | None]], bool]:
-        if not self._try_enter_batch_processing():
-            self.log("⏳ Уже идёт обработка. Дождись завершения.")
-            return False, [], False
-
-        prev_single_mode = self._single_row_processing
-        self._single_row_processing = False
-        self.row_service.set_single_row_processing(False)
-
-        self._clear_updated_rows()
-        self.log("▶ Обработка всех ТС...")
-
-        rows_with_keys = self._get_processible_rows()
-        return True, rows_with_keys, prev_single_mode
-
-    def _run_batch_rows(self, rows_with_keys: list[tuple[int, int | None]]) -> int:
-        futures = []
-
-        for row, index_key in rows_with_keys:
-            future = self.executor.submit(self.process_row_wrapper, row, index_key)
-            futures.append(future)
-
-        for f in futures:
-            f.result()
-
-        return len(futures)
-
-    def _finalize_batch_processing(self, prev_single_mode: bool, processed_count: int) -> None:
-        self._leave_processing("batch")
-        self._single_row_processing = prev_single_mode
-        self.row_service.set_single_row_processing(prev_single_mode)
-
-        self._refresh_ui()
-        self.log(f"✅ Обработка всех ТС завершена ({processed_count} строк)")
-
-    # TODO: Проход по каждой, с остановкой на права выбора "Продолжить/Нет" + Таймер
     def process_all(self):
-        ok, rows_with_keys, prev_single_mode = self._prepare_batch_processing()
-        if not ok:
-            return
+        self.batch_processing_service.process_all()
 
-        if not rows_with_keys:
-            self._single_row_processing = prev_single_mode
-            self.row_service.set_single_row_processing(prev_single_mode)
-            self._leave_processing("batch")
-            self._refresh_ui()
-            self.log("ℹ️ Нет строк для обработки.")
-            return
+    def process_pending_dialog_requests(self):
+        self.batch_processing_service.process_pending_dialog_requests()
 
-        def _run_batch():
-            processed_count = 0
-            try:
-                processed_count = self._run_batch_rows(rows_with_keys)
-            except Exception as e:
-                self.log(f"❌ Ошибка batch-обработки: {e}")
-                self.log(traceback.format_exc())
-            finally:
-                self._finalize_batch_processing(prev_single_mode, processed_count)
-
-        threading.Thread(target=_run_batch, daemon=True).start()
-
-    # TODO: что то сделать с полным пакетом данных для отправки в goggle, сейчас по штучно
-    def write_all_to_google(self):
-        self._flush_updated_rows_to_google()
+    def resume_batch_processing(self):
+        self.batch_processing_service.resume_batch_processing()
