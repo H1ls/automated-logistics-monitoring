@@ -2,7 +2,7 @@ import re
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from threading import Lock
-
+import json
 from PyQt6.QtCore import QTimer
 from PyQt6.QtWidgets import QApplication, QWidget
 from Navigation_Bot.core.paths import INPUT_FILEPATH
@@ -95,6 +95,8 @@ class NavigationGUI(QWidget):
             self.loading.show("Готово", "Приложение готово к работе")
         finally:
             QTimer.singleShot(150, self.loading.hide)
+            # Запустить таймер обработки диалогов паузы
+            self._start_dialog_processor_timer()
 
     def _open_wialon(self):
         self.loading.show("Запуск Wialon…")
@@ -118,6 +120,10 @@ class NavigationGUI(QWidget):
     def closeEvent(self, event):
         """Гарантированная очистка при закрытии окна"""
         try:
+            # Остановить таймер обработки диалогов
+            if hasattr(self, 'dialog_processor_timer') and self.dialog_processor_timer:
+                self.dialog_processor_timer.stop()
+
             # 1. Закрыть браузер (самое важное)
             if getattr(self, "processor", None) and hasattr(self.processor, "driver_manager"):
                 try:
@@ -349,3 +355,81 @@ class NavigationGUI(QWidget):
 
         except Exception as e:
             self.log(f"❌ Ошибка открытия истории навигации: {e}")
+
+    # TODO: Оставить обертку - урезать
+    def _on_btn_process_all_clicked(self):
+        """
+        Обработчик кнопки 'Пробежать все ТС'.
+        Проверяет наличие прерванного прогресса и возобновляет его,
+        или начинает новую обработку.
+        """
+        import json
+        from pathlib import Path
+
+        progress_file = Path("config/batch_progress.json")
+
+        if progress_file.exists():
+            try:
+                data = json.loads(progress_file.read_text())
+                remaining = data.get("remaining_rows", [])
+
+                if remaining:
+                    # Есть сохранённый прогресс - предложить возобновить
+                    from PyQt6.QtWidgets import QMessageBox
+
+                    processed = data.get("processed_count", 0)
+                    total = data.get("total_count", 0)
+
+                    result = QMessageBox.question(
+                        self,
+                        "Возобновить обработку",
+                        f"Обнаружена прерванная обработка:\n"
+                        f"Завершено: {processed} из {total} ТС\n\n"
+                        f"Возобновить с того же места?",
+                        QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No | QMessageBox.StandardButton.Cancel
+                    )
+
+                    if result == QMessageBox.StandardButton.Yes:
+                        self.processor.resume_batch_processing()
+                        return
+                    elif result == QMessageBox.StandardButton.Cancel:
+                        # Пользователь отменил - ничего не делаем
+                        return
+                    # No - начнем заново
+            except Exception as e:
+                self.log(f"⚠️ Ошибка проверки прогресса: {e}")
+
+        # Начать новую обработку
+        self.processor.process_all()
+
+    def _start_dialog_processor_timer(self):
+        """
+        Запустить периодический таймер для обработки запросов на показ диалогов
+        из рабочих потоков.
+        """
+        if hasattr(self, 'dialog_processor_timer') and self.dialog_processor_timer.isActive():
+            self.log("⚠️ Таймер диалогов уже активен, пропускаем запуск")
+            return
+
+        self.dialog_processor_timer = QTimer()
+        self.dialog_processor_timer.timeout.connect(self._process_dialog_requests)
+
+        # Проверяем очередь диалогов каждые 50 мс
+        self.dialog_processor_timer.start(50)
+        # self.log("✅ Таймер диалогов запущен (интервал 50мс)")
+
+    def _process_dialog_requests(self):
+        """
+        Обработать ожидающие запросы на показ диалогов.
+        Вызывается периодически из главного потока.
+        """
+        try:
+            if hasattr(self, 'processor') and self.processor:
+                pending_count = self.processor._dialog_request_queue.qsize()
+                if pending_count > 0:
+                    pass
+                    # self.log(f"🔔 Обработка {pending_count} запросов на диалоги...")
+                self.processor.process_pending_dialog_requests()
+        except Exception as e:
+            print(f"⚠️ Ошибка обработки запросов диалогов: {e}")
+            self.log(f"⚠️ Ошибка обработки запросов диалогов: {e}")

@@ -12,6 +12,7 @@ class TableRowRenderer:
     Отвечает за отрисовку одной обычной строки таблицы.
     Не знает про сохранение данных и workflow.
     """
+    DATA_LOAD: int = 3
 
     def __init__(self, *, table, log_func, formatter, row_action_controller, on_row_click, on_edit_id_click, ):
 
@@ -106,7 +107,7 @@ class TableRowRenderer:
                 time_str += ":00"
             dt = datetime.strptime(f"{date_str} {time_str}", "%d.%m.%Y %H:%M:%S")
 
-            if dt > datetime.now() + timedelta(hours=3):
+            if dt > datetime.now() + timedelta(self.DATA_LOAD):
                 for col in range(self.table.columnCount()):
                     item = self.table.item(row_idx, col)
                     if item:

@@ -82,7 +82,8 @@ class MapsBot:
 
         routes = self.get_route_info()
         if not routes:
-            raise ValueError("❌ Нет маршрутов.")
+            self.log("❌ Нет маршрутов.")
+            # raise ValueError("❌ Нет маршрутов.")
         avg_minutes, avg_distance = self._calculate_average_route(routes)
         self.log(f"🛣️ Средний маршрут: {avg_distance} км за {avg_minutes} мин")
         return avg_minutes, avg_distance

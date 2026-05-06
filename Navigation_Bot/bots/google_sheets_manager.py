@@ -345,7 +345,7 @@ class GoogleSheetsManager(QObject):
 
         try:
             self.append_to_cell(items)
-            self._log(f"📤 Обновлены все строки в Google Sheets ({len(items)} шт.)")
+            # self._log(f"📤 Обновлены все строки в Google Sheets ({len(items)} шт.)")
         except Exception as e:
             self._log(f"❌ Ошибка при записи в Google Sheets: {e}")
 

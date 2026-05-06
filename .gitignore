@@ -23,6 +23,8 @@ env/
 *.tmp
 
 #  Project configs
+/config/datasets/
+/config/media/
 config/cookies.pkl
 config/Credentials_wialon.json
 config/selected_data.json
@@ -34,6 +36,7 @@ config/ui_settings.json
 LogistX/config/logistx_sample.json
 LogistX/config/sites_db.json
 !Navigation_Bot/config/*.example.json
+ui_settings.json
 
 #  System
 .DS_Store
@@ -49,6 +52,5 @@ pdf/
 trash/
 config/
 
-/config/datasets/
-/config/media/
+
 /main.spec

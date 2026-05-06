@@ -36,6 +36,7 @@ class Task:
     raw_load: str = ""
     raw_unload: str = ""
 
+    highlight_until: str | None = None
 
     def ensure_processing_consistency(self) -> None:
         self.processing.ensure_size(len(self.route_plan.unloads))

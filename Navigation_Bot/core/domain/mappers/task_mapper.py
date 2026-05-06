@@ -59,6 +59,7 @@ class TaskMapper:
                     processing=processing,
                     raw_load=str(data.get("raw_load", "") or ""),
                     raw_unload=str(data.get("raw_unload", "") or ""),
+                    highlight_until=data.get("highlight_until"),
                     )
         task.ensure_processing_consistency()
         return task
@@ -82,6 +83,9 @@ class TaskMapper:
             result["raw_load"] = task.raw_load
         if task.raw_unload:
             result["raw_unload"] = task.raw_unload
+
+        if task.highlight_until:
+            result["highlight_until"] = task.highlight_until
 
         TaskMapper._write_navigation(result, task.navigation)
         TaskMapper._write_forecast(result, task.forecast)

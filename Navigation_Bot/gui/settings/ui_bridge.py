@@ -8,6 +8,7 @@ class UiBridge(QObject):
     log = pyqtSignal(str)
     call = pyqtSignal(object)
     fact_ready = pyqtSignal(int, str, object, dict)  # row, race_no, fd(datetime), payload(dict)
+    show_pause_dialog = pyqtSignal(dict)
 
     def __init__(self, gui):
         super().__init__(gui)  # важно: родитель = GUI (живёт в GUI-потоке)

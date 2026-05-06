@@ -4,21 +4,22 @@ from __future__ import annotations
 from Navigation_Bot.core.application.services.google_sync_service import GoogleSyncService
 from Navigation_Bot.core.application.services.json_history_service import JsonHistoryService
 from Navigation_Bot.core.application.services.task_edit_service import TaskEditService
-from Navigation_Bot.gui.app.app_context import AppContext
-from Navigation_Bot.bots.google_sheets_manager import GoogleSheetsManager
+from Navigation_Bot.core.application.services.tasks_service import TasksService
+from Navigation_Bot.core.application.services.new_task_workflow_service import NewTaskWorkflowService
+from Navigation_Bot.core.application.services.editable_field_workflow_service import EditableFieldWorkflowService
+from Navigation_Bot.core.application.services.address_edit_workflow_service import AddressEditWorkflowService
 from Navigation_Bot.core.repositories.json_task_repository import JsonTaskRepository
 from Navigation_Bot.core.hotkey_manager import HotkeyManager
+from Navigation_Bot.core.NavigationProcessor.batch_processing_service import BatchProcessingService
 from Navigation_Bot.core.NavigationProcessor.navigation_processor import NavigationProcessor
 from Navigation_Bot.core.settings.settings_controller import SettingsController
-from Navigation_Bot.core.application.services.tasks_service import TasksService
+from Navigation_Bot.gui.app.app_context import AppContext
 from Navigation_Bot.gui.controllers.table_context_menu_Controller import TableContextMenuController
 from Navigation_Bot.gui.dialogs.combined_settings_dialog import CombinedSettingsDialog
 from Navigation_Bot.gui.widgets.row_high_lighter import RowHighlighter
 from Navigation_Bot.gui.widgets.table.table_manager import TableManager
 from Navigation_Bot.gui.widgets.table_sort_controller import TableSortController
-from Navigation_Bot.core.application.services.new_task_workflow_service import NewTaskWorkflowService
-from Navigation_Bot.core.application.services.editable_field_workflow_service import EditableFieldWorkflowService
-from Navigation_Bot.core.application.services.address_edit_workflow_service import AddressEditWorkflowService
+from Navigation_Bot.bots.google_sheets_manager import GoogleSheetsManager
 
 
 class AppServices:
@@ -116,11 +117,15 @@ class AppServices:
                                        address_edit_workflow=g.address_edit_workflow_service,
                                        reload_callback=g.reload_and_show, )
 
-        g.row_highlighter = RowHighlighter(table=g.table, task_repository=g.task_repository, log=g.log, hours_default=2, )
+        g.row_highlighter = RowHighlighter(table=g.table, task_repository=g.task_repository, log=g.log,
+                                           hours_default=2, )
 
     def _build_processing_layer(self) -> None:
         g = self.gui
         g.loading.show("Инициализация процессора…", "Подготовка браузера и обработчика")
+
+        # Импортируем диалог паузы локально чтобы избежать циклических зависимостей
+        from Navigation_Bot.gui.dialogs.pause_between_rows_dialog import PauseBetweenRowsDialog
 
         g.processor = NavigationProcessor(task_repository=g.task_repository,
                                           logger=g.log,
@@ -135,7 +140,15 @@ class AppServices:
                                           tasks_service=g.tasks_service,
                                           navigation_history_service=g.navigation_history_service,
                                           route_estimate_history_service=g.route_estimate_history_service,
+                                          pause_dialog_factory=PauseBetweenRowsDialog,
+                                          gui_parent=g,
                                           )
+        # g.batch_service = BatchProcessingService(processor=g.processor,
+        #                                          tasks_service=g.tasks_service,
+        #                                          ui_bridge=g.ui_bridge,
+        #                                          pause_dialog_factory=PauseBetweenRowsDialog,
+        #                                          log=g.log
+        #                                          )
 
     def _build_ui_controllers(self) -> None:
         g = self.gui
