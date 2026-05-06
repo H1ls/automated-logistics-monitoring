@@ -5,7 +5,7 @@ from Navigation_Bot.core.NavigationProcessor.batch_processing_service import Bat
 from Navigation_Bot.core.NavigationProcessor.browser_session import BrowserSession
 from Navigation_Bot.core.NavigationProcessor.logistx_race_service import LogistxRaceService
 from Navigation_Bot.core.application.services.navigation_row_service import NavigationRowService
-
+                                                                                                   
 
 class NavigationProcessor:
     # TODO: Вынести TIMEOUT_SECONDS в Настройки для ручной регулировки
@@ -38,6 +38,7 @@ class NavigationProcessor:
         self.route_estimate_history_service = route_estimate_history_service
         self.pause_dialog_factory = pause_dialog_factory  # фабрика диалога паузы
         self.gui_parent = gui_parent  # родительское окно GUI для показа диалогов
+
         self.browser_session = BrowserSession(logger=self.log,
                                               browser_rect=self.browser_rect,
                                               ui_bridge=self.ui_bridge, )
@@ -156,7 +157,8 @@ class NavigationProcessor:
 
         self.executor.submit(self.process_row_wrapper, row_idx, index_key)
 
-    def process_row_wrapper(self, row: int, fallback_index_key: int | None = None) -> tuple[bool, str, int]:
+    def process_row_wrapper(self, row: int, fallback_index_key: int | None = None): 
+        
         """
         Обработать строку и вернуть результат (успех, сообщение об ошибке)
         """

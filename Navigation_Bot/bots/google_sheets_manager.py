@@ -176,7 +176,6 @@ class GoogleSheetsManager(QObject):
             self._log(f"⚠️ Не удалось получить список листов: {e}")
             return []
 
-    # TODO: Решить проблему с двойным вызовом
     def set_active_worksheet(self, index: int):
         """Быстро переключает активный лист, без обращений к Google"""
         try:

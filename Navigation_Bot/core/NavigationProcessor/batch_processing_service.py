@@ -9,6 +9,7 @@ from PyQt6.QtWidgets import QDialog
 
 # TODO: Создать пул ошибок
 # TODO: В конце вывод "ТС: какая ошибка \n"
+
 class BatchProcessingService:
     def __init__(self, processor):
         self.processor = processor

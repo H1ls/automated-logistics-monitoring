@@ -175,8 +175,9 @@ class NavigationRowService:
 
             return final_row, index_key
         except Exception as e:
-            self.log(f"❌ Ошибка в NavigationRowService.process_row: {e}")
-            self.log(traceback.format_exc())
+            self.log(f"❌ Ошибка в NavigationRowService.process_row:")
+            # self.log(e)
+            # self.log(traceback.format_exc())
             return None, index_key
 
     def _apply_navigation_result_to_task(self, task, result):

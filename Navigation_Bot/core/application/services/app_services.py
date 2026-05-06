@@ -111,7 +111,7 @@ class AppServices:
                                        task_repository=g.task_repository,
                                        log_func=g.log,
                                        on_row_click=None,
-                                       on_edit_id_click=g.open_id_editor,
+                                       on_edit_id_click=g.actions.open_id_editor,
                                        # new_task_workflow=g.new_task_workflow_service,
                                        editable_field_workflow=g.editable_field_workflow_service,
                                        address_edit_workflow=g.address_edit_workflow_service,
