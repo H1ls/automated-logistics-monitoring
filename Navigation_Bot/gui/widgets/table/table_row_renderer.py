@@ -82,8 +82,17 @@ class TableRowRenderer:
         self._set_cell(row_idx, 2, f"{ts}\n{phone}" if phone else ts, editable=True)
 
         self._set_cell(row_idx, 3, row.get("КА", ""), editable=True)
-        self._set_cell(row_idx, 4, self.formatter.field_with_datetime(row, "Погрузка"))
-        self._set_cell(row_idx, 5, self.formatter.unload_text_with_status(row))
+        self._set_cell(row_idx, 4, self.formatter.field_with_datetime(row,
+                                                                      "Погрузка",
+                                                                      separator_table=self.table,
+                                                                      separator_col=4,
+                                                                      ), )
+
+        self._set_cell(row_idx, 5, self.formatter.unload_text_with_status(row,
+                                                                          separator_table=self.table,
+                                                                          separator_col=5,
+                                                                          ), )
+
         self._set_cell(row_idx, 6, row.get("гео", ""))
 
     def _render_row_route_cells(self, row_idx: int, row: dict):
@@ -107,7 +116,7 @@ class TableRowRenderer:
                 time_str += ":00"
             dt = datetime.strptime(f"{date_str} {time_str}", "%d.%m.%Y %H:%M:%S")
 
-            if dt > datetime.now() + timedelta(self.DATA_LOAD):
+            if dt > datetime.now() + timedelta(hours=self.DATA_LOAD):
                 for col in range(self.table.columnCount()):
                     item = self.table.item(row_idx, col)
                     if item:

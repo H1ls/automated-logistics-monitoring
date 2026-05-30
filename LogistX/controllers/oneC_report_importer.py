@@ -17,6 +17,8 @@ class OneCReportImporter:
     def __init__(self, log_func=print):
         self.log = log_func
 
+
+        # TODO: Вынести в настройки и убрать хардкод
         # куда сохраняем результат JSON
         self.out_json_path = Path("LogistX/config") / "logistx_sample.json"
 
@@ -30,6 +32,7 @@ class OneCReportImporter:
                                     "Remote Desktop Connection", ]
 
         self._rdp_win = None
+
         # pyautogui safety
         pyautogui.FAILSAFE = True
 

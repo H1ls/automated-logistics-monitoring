@@ -1,7 +1,43 @@
 from __future__ import annotations
 
+from PyQt6.QtGui import QFontMetrics
+from Navigation_Bot.gui.widgets.table.sites_db_registry import SitesDbRegistry
+
 
 class TableDisplayFormatter:
+    def __init__(self, log_func=None):
+        self._sites_db = SitesDbRegistry(log_func=log_func)
+
+    def reload_sites_db(self) -> None:
+        self._sites_db.reload()
+
+    def _format_address_line(self, address: str) -> str:
+        """
+        есть совпадение с aliases — только адрес; нет — «❓» перед адресом.
+        """
+
+        address = (address or "").strip()
+        if not address:
+            return ""
+        if self._sites_db.is_address_known(address):
+            return address
+        return f"❓ {address}"
+
+    @staticmethod
+    def _column_separator_line(table, col: int | None) -> str:
+        """Разделитель на всю ширину ячейки колонки (по метрикам шрифта таблицы)."""
+
+        if table is None or col is None:
+            return "____________________"
+
+        width_px = table.columnWidth(col)
+        usable_px = max(24, width_px - 12)  # небольшой запас под отступы ячейки
+
+        fm = QFontMetrics(table.font())
+        unit = fm.horizontalAdvance("_") or 4
+        count = max(8, usable_px // unit)
+        return "_" * count
+
     @staticmethod
     def split_points_and_comment(blocks: list[dict], prefix: str):
         points = []
@@ -20,8 +56,15 @@ class TableDisplayFormatter:
 
         return points, comment
 
-    @staticmethod
-    def field_with_datetime(row: dict, key: str) -> str:
+    def field_with_datetime(self,
+                            row: dict,
+                            key: str,
+                            *,
+                            point_suffixes: list[str] | None = None,
+                            separator_table=None,
+                            separator_col: int | None = None,
+                            ) -> str:
+
         blocks = row.get(key)
 
         if not isinstance(blocks, list):
@@ -51,9 +94,14 @@ class TableDisplayFormatter:
             if dt and dt != "Не указано Не указано":
                 lines.append(dt)
             if address:
-                lines.append(address)
+                address_line = self._format_address_line(address)
+                if point_suffixes and i - 1 < len(point_suffixes):
+                    suffix = point_suffixes[i - 1]
+                    if suffix:
+                        address_line = f"{address_line}  {suffix}"
+                lines.append(address_line)
             if i < len(points):
-                lines.append("____________________")
+                lines.append(self._column_separator_line(separator_table, separator_col))
 
         if comment:
             if lines:
@@ -63,37 +111,30 @@ class TableDisplayFormatter:
 
         return "\n".join(lines)
 
-    @classmethod
-    def unload_text_with_status(cls, row: dict) -> str:
-        unloads_all = row.get("Выгрузка", [])
-        points, comment = cls.split_points_and_comment(unloads_all, "Выгрузка")
-        processed = row.get("processed", [])
+    def unload_text_with_status(
+            self,
+            row: dict,
+            *,
+            separator_table=None,
+            separator_col: int | None = None,
+    ) -> str:
 
-        if len(points) <= 1:
-            temp_row = dict(row)
-            temp_row["Выгрузка"] = points
-            base_text = cls.field_with_datetime(temp_row, "Выгрузка")
-            if comment:
-                return base_text + ("\n\nКомментарий:\n" + comment) if base_text else "Комментарий:\n" + comment
-            return base_text
+        points, _ = self.split_points_and_comment(row.get("Выгрузка", []), "Выгрузка")
+        processed = row.get("processed", []) or []
 
-        text_parts = []
-        for i, unload in enumerate(points, start=1):
-            prefix = f"Выгрузка {i}"
-            address = unload.get(prefix, "")
-            date = unload.get(f"Дата {i}", "")
-            time = unload.get(f"Время {i}", "")
-            checked = processed[i - 1] if i - 1 < len(processed) else False
-            checkbox = "☑️" if checked else "⬜️"
-            part = f"{date} {time}\n{address}  {checkbox}"
-            text_parts.append(part.strip())
+        point_suffixes = None
+        if len(points) > 1:
+            point_suffixes = [
+                "☑️" if (idx < len(processed) and processed[idx]) else "⬜️"
+                for idx in range(len(points))
+            ]
 
-        if comment:
-            text_parts.append("")
-            text_parts.append("Комментарий:")
-            text_parts.append(comment)
-
-        return "\n\n".join(text_parts)
+        return self.field_with_datetime(row,
+                                        "Выгрузка",
+                                        point_suffixes=point_suffixes,
+                                        separator_table=separator_table,
+                                        separator_col=separator_col,
+                                        )
 
     @staticmethod
     def route_buffer_text(route: dict) -> str:

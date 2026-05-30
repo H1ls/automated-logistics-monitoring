@@ -5,11 +5,10 @@ import os
 import time
 from dataclasses import dataclass
 from typing import List, Optional
-
+from openpyxl import load_workbook
 from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtWidgets import (QWidget, QGridLayout, QLabel, QLineEdit, QListWidget, QListWidgetItem,
                              QFrame, QPushButton, QHBoxLayout, QVBoxLayout)
-from openpyxl import load_workbook
 
 
 # TODO: Выводить одну машину  левой графе, и все карты в правой, убрать дубли с номеров карт, проверить ts = card

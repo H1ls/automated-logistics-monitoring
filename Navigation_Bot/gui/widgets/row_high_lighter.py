@@ -13,6 +13,10 @@ class RowHighlighter:
         self.until_map = {}
         self.key_to_visual = None  # callable: key -> visual_row
 
+        # Colors used by this highlighter (keep in one place)
+        self._row_manual_brush = QBrush(QColor("#e9f2d3"))  # light green
+        self._unload_expired_brush = QBrush(QColor("#FFD6D6"))  # light red (cell only)
+
     def apply_settings(self, settings: dict):
         highlight = settings.get("highlight", {}) or {}
 
@@ -93,15 +97,17 @@ class RowHighlighter:
         """
         Подсветить запись (и строку в таблице) по стабильному ключу index_key.
         Хранит highlight_until в самой записи JSON (rec["highlight_until"]).
-        until_map хранит key -> datetime.
+        ВАЖНО: highlight_until трактуется как "время постановки на слежение".
+        until_map хранит key -> expiry datetime (когда нужно снять подсветку).
         """
         if index_key is None:
             self.log("⚠️ highlight_for: index_key=None")
             return
 
         minutes = self.duration_minutes if hours is None else int(hours * 60)
-        until_dt = datetime.now() + timedelta(minutes=minutes)
-        until_iso = until_dt.strftime("%Y-%m-%d %H:%M:%S")
+        started_at = datetime.now()
+        started_iso = started_at.strftime("%Y-%m-%d %H:%M:%S")
+        expiry_dt = started_at + timedelta(minutes=minutes)
 
         data = self.task_repository.get() or []
 
@@ -117,11 +123,11 @@ class RowHighlighter:
             return
 
         # сохранить в JSON запись
-        rec["highlight_until"] = until_iso
+        rec["highlight_until"] = started_iso
         self.task_repository.save()
 
         # сохранить в runtime-map
-        self.until_map[index_key] = until_dt
+        self.until_map[index_key] = expiry_dt
 
         # покрасить строку на экране (через mapper key->visual_row)
         visual_row = -1
@@ -156,15 +162,16 @@ class RowHighlighter:
                 continue
 
             try:
-                until_dt = datetime.strptime(iso, "%Y-%m-%d %H:%M:%S")
+                started_at = datetime.strptime(iso, "%Y-%m-%d %H:%M:%S")
             except Exception:
                 continue
 
-            if now >= until_dt:
+            expiry_dt = started_at + timedelta(minutes=self.duration_minutes)
+            if now >= expiry_dt:
                 continue
 
             # сохраняем в runtime-map: key -> datetime
-            self.until_map[index_key] = until_dt
+            self.until_map[index_key] = expiry_dt
 
             # красим строку по текущей позиции (через mapper)
             if callable(self.key_to_visual):
@@ -179,14 +186,17 @@ class RowHighlighter:
 
             if 0 <= visual_row < self.table.rowCount():
                 self._paint_row(visual_row, enabled=True)
-            # self.log(f"DEBUG paint key={index_key} -> row={visual_row}")
+
+            # авто-снятие после оставшегося времени
+            remaining_ms = int(max(1, (expiry_dt - now).total_seconds() * 1000))
+            QTimer.singleShot(remaining_ms, lambda k=index_key: self._clear_if_expired(k))
 
     def _clear_if_expired(self, index_key: int):
-        until_dt = self.until_map.get(index_key)
-        if not until_dt:
+        expiry_dt = self.until_map.get(index_key)
+        if not expiry_dt:
             return
 
-        if datetime.now() < until_dt:
+        if datetime.now() < expiry_dt:
             return  # ещё не истекло
 
         data = self.task_repository.get() or []
@@ -221,22 +231,24 @@ class RowHighlighter:
     def _paint_row(self, row_idx: int, enabled: bool):
 
         default_brush = QBrush()
-        green_brush = QBrush(QColor("#e9f2d3"))
 
         for col in range(self.table.columnCount()):
             item = self.table.item(row_idx, col)
             if not item:
                 continue
 
-            #  Если это колонка 'Выгрузка' и уже есть красная подсветка - не трогаем
+            # Если это колонка 'Выгрузка' и уже есть подсветка выгрузки - не трогаем.
             current_color = item.background().color().name()
             if col == 5 and current_color.lower() in ["#ffd6d6", "#ffcccc"]:
                 continue
 
-            item.setBackground(green_brush if enabled else default_brush)
+            item.setBackground(self._row_manual_brush if enabled else default_brush)
 
     def highlight_expired_unloads(self):
-        """Подсвечивает первую непройденную выгрузку, если её время уже меньше текущего."""
+        """
+        Подсвечивает ячейку выгрузки КРАСНЫМ, если время первой НЕобработанной выгрузки меньше текущего.
+        Подсветка НЕ сохраняется в JSON (её можно пересчитать при перерисовке).
+        """
 
         data = self.task_repository.get() or []
         now = datetime.now()
@@ -291,10 +303,9 @@ class RowHighlighter:
                     dt_unload = datetime.strptime(f"{date_str} {time_str}", "%d.%m.%Y %H:%M:%S")
 
                     if dt_unload < now:
-                        brush = QBrush(QColor("#FFD6D6"))
                         item = self.table.item(visual_row, 5)
                         if item:
-                            item.setBackground(brush)
+                            item.setBackground(self._unload_expired_brush)
                         break
                 except Exception:
                     continue

@@ -6,7 +6,6 @@ from Navigation_Bot.bots.web_driver_manager import WebDriverManager
 from Navigation_Bot.bots.scenarios.reports_bot import WialonReportsBot
 
 
-# TODO: Вернуть воскрешения вкладки при случайном закрытие
 class BrowserSession:
     """
     Отвечает за:
@@ -35,18 +34,16 @@ class BrowserSession:
         else:
             self.log(msg)
 
-    # TODO: Исправить на асинхронное открытие Wialon и Yandex вкладок
     def ensure_ready(self) -> None:
         """
         Готовим браузер и основных ботов:
-        - если драйвер умер -> сбрасываем состояние
-        - если браузер не открыт -> стартуем
+        - если драйвер умер -> перезапуск Chrome
+        - если вкладка закрыта -> открываем её в том же Chrome
         - если боты не созданы -> создаём
         """
         driver = getattr(self.driver_manager, "driver", None)
         if not driver or not self.driver_manager.is_alive():
             self.driver_manager.stop_browser()
-
             self.browser_opened = False
             self.navibot = None
             self.mapsbot = None
@@ -54,10 +51,11 @@ class BrowserSession:
 
         if not self.browser_opened:
             self.driver_manager.start_browser(self.browser_rect)
-            self.driver_manager.login_wialon()
-            self.driver_manager.open_yandex_maps()
             self.browser_opened = True
-            self._uilog("✅ Драйвер и вкладки готовы.")
+            self._uilog("✅ Chrome запущен.")
+
+        # Восстанавливаем только недостающие вкладки (без quit/start).
+        self.driver_manager.ensure_required_tabs()
 
         if not self.navibot:
             self.navibot = NavigationBot(self.driver_manager.driver, log_func=self.log)
@@ -78,16 +76,8 @@ class BrowserSession:
         return self.reportsbot
 
     def switch_tab_or_log(self, name: str) -> bool:
-        ok = self.driver_manager.switch_to_tab(name)
-        if ok:
+        if self.driver_manager.switch_to_tab(name):
             return True
-
-        if name == "gps.skyglonass" and self.navibot and hasattr(self.navibot, "_ensure_on_wialon_tab"):
-            try:
-                if self.navibot._ensure_on_wialon_tab():
-                    return True
-            except Exception:
-                pass
 
         self.log(f"⛔ Не удалось переключиться на вкладку: {name}")
         return False

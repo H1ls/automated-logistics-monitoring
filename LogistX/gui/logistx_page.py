@@ -11,7 +11,7 @@ from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QTa
 from LogistX.controllers.oneC_report_importer import OneCReportImporter
 from Navigation_Bot.gui.dialogs.sites_Db_editor_dialog import SitesDbEditorDialog
 
-
+#TODO : Слить в единую таблицу class Table, чтоб не создавать две разных
 class LogistXPage(QWidget):
     COL_PLAY = 0
     COL_TS = 1

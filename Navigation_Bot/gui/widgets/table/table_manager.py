@@ -19,7 +19,7 @@ class TableManager:
         self.editable_field_workflow = editable_field_workflow
         self.reload_callback = reload_callback
 
-        self.formatter = TableDisplayFormatter()
+        self.formatter = TableDisplayFormatter(log_func=log_func)
         self._editable_headers = {"Телефон", "ФИО", "КА", "id"}
         self.after_display = None
         self.view_order = []
@@ -39,6 +39,7 @@ class TableManager:
     # ---- A. display orchestration
     def display(self, reload_from_file=True, view_order=None):
         self._reload_context(reload_from_file)
+        self.formatter.reload_sites_db()
         json_data = self.task_repository.get() or []
 
         # стопаем все спиннеры перед перерисовкой таблицы (иначе они "висят" между display)
