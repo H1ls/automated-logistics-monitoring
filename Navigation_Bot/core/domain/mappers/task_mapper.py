@@ -110,6 +110,7 @@ class TaskMapper:
 
         return NavigationState(
             geo_text=str(data.get("гео", "") or ""),
+            geo_zona=str(data.get("geo_zona", "") or ""),
             coordinates=str(data.get("коор", "") or ""),
             speed_kmh=speed if isinstance(speed, (int, float)) else TaskMapper._to_number_or_none(speed),
             gps_fix_text=gps_fix_text,
@@ -120,6 +121,8 @@ class TaskMapper:
     def _write_navigation(result: dict[str, Any], navigation: NavigationState) -> None:
         if navigation.geo_text:
             result["гео"] = navigation.geo_text
+        if navigation.geo_zona:
+            result["geo_zona"] = navigation.geo_zona
         if navigation.coordinates:
             result["коор"] = navigation.coordinates
         if navigation.speed_kmh is not None:

@@ -10,6 +10,9 @@ from Navigation_Bot.core.json_manager import JSONManager as JM
 from Navigation_Bot.core.paths import CONFIG_JSON
 from Navigation_Bot.core.settings.settings_schema import SECTIONS
 from Navigation_Bot.gui.dialogs.dialog_helpers import button_row_trailing
+from LogistX.config.paths import ONEC_UI_MAP
+from LogistX.onec.steps.capture_race_ui import CaptureRaceUiStep
+from LogistX.onec.uimap import UiMap
 
 
 class LayoutModeTab(QWidget):
@@ -220,6 +223,39 @@ class CombinedSettingsDialog(QDialog):
             # table_manager.display()
             parent_gui.reload_and_show()
 
+    def clear_onec_ui_coordinates(self):
+        """Сброс якорей калибровки 1С (capture_race_ui) в onec_ui_map_v2.json."""
+        reply = QMessageBox.question(self,
+                                     "Сброс координат 1С",
+                                     "Удалить сохранённые координаты калибровки формы рейса в 1С?\n"
+                                     "При следующем закрытии рейса калибровка выполнится заново.",
+                                     QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No, )
+        if reply != QMessageBox.StandardButton.Yes:
+            return
+
+        if not ONEC_UI_MAP.exists():
+            QMessageBox.information(self, "Готово", "Файл координат ещё не создан — сбрасывать нечего.")
+            return
+
+        try:
+            ui_map = UiMap(ONEC_UI_MAP)
+            removed = ui_map.clear_anchors(CaptureRaceUiStep.REQUIRED_POINTS)
+        except Exception as e:
+            QMessageBox.warning(self, "Ошибка", f"Не удалось сбросить координаты:\n{e}")
+            return
+
+        parent_gui = self.parent()
+        if parent_gui:
+            processor = getattr(parent_gui, "processor", None)
+            if processor:
+                svc = getattr(processor, "logistx_race_service", None)
+                if svc is not None:
+                    svc.onec_bot = None
+
+        QMessageBox.information(self,
+                                "Готово",
+                                f"Удалено якорей: {removed}." if removed else "Сохранённых якорей калибровки не было.", )
+
     def _on_save(self):
         ok, msg = self._validate_required()
         if not ok:
@@ -308,13 +344,20 @@ class SectionForm(QWidget):
             form.addRow(label + (" *" if required else ""), editor)
 
         self.btn_reset = QPushButton("Сбросить (default)")
-        self.btn_reset.clicked.connect(self.reset_to_default)
+        # self.btn_reset.clicked.connect(self.reset_to_default)
 
         self.btn_clear_json = QPushButton("Очистить JSON")
-        if isinstance(parent, CombinedSettingsDialog):
-            self.btn_clear_json.clicked.connect(parent.clear_json)
+        self.btn_reset_onec_ui = QPushButton("Сбросить координаты 1С")
 
-        self.layout().addLayout(button_row_trailing(self.btn_reset, self.btn_clear_json))
+        dialog = parent
+        if isinstance(dialog, CombinedSettingsDialog):
+            self.btn_reset.clicked.connect(self.reset_to_default)
+            self.btn_clear_json.clicked.connect(dialog.clear_json)
+            self.btn_reset_onec_ui.clicked.connect(dialog.clear_onec_ui_coordinates)
+
+        self.layout().addLayout(button_row_trailing(self.btn_reset,
+                                                            self.btn_clear_json,
+                                                            self.btn_reset_onec_ui))
 
     def values(self) -> dict:
         out = {}
@@ -383,6 +426,7 @@ class VerticalTextDelegate(QStyledItemDelegate):
         painter.restore()
 
 
+# TODO: Добавить настройку времени для погрузки(сейчас Погрузка > now на 3ч)
 class HighlightSettingsTab(QWidget):
     """Вкладка настроек подсветки строк."""
 
@@ -390,41 +434,56 @@ class HighlightSettingsTab(QWidget):
         super().__init__(parent)
         self.dialog = parent
         self.gui = getattr(parent, "gui", None)
-        self._build_ui()
+        self._green_line()
         self.load_values()
 
-    def _build_ui(self):
+    def _green_line(self):
         root = QVBoxLayout(self)
 
         desc = QLabel("Настройки зелёной подсветки строки после нажатия ▶.\n"
-                      "highlight_until хранится в JSON у каждой записи.")
-
+                      "Подсветка хранится в JSON у каждой записи.")
         desc.setStyleSheet("color: #666; font-size: 10px; margin-bottom: 10px;")
+
         root.addWidget(desc)
+        row = QHBoxLayout()
 
-        form = QFormLayout()
-
+        # Левая часть: лейбл + поля
         self.hours_spin = QSpinBox()
         self.hours_spin.setRange(0, 168)
+        self.hours_spin.setSuffix(" ч")
+        self.hours_spin.setFixedWidth(80)
 
         self.minutes_spin = QSpinBox()
         self.minutes_spin.setRange(0, 59)
-        self.hours_spin.setSuffix(" ч")
-        row = QHBoxLayout()
+        self.minutes_spin.setSuffix(" м")
+        self.minutes_spin.setFixedWidth(80)
+
+        row.addWidget(QLabel("Слежение 🟩:"))
         row.addWidget(self.hours_spin)
-        row.addWidget(QLabel("ч"))
         row.addWidget(self.minutes_spin)
-        row.addWidget(QLabel("м"))
 
-        form.addRow("Подсветка:", row)
+        # Пружина, которая раздвигает левую и правую части
+        row.addStretch()
 
-        root.addLayout(form)
-
-        self.btn_clear_highlights = QPushButton("Сбросить все highlight_until")
+        # Правая часть: кнопка сброса
+        self.btn_clear_highlights = QPushButton("Сброс")
         self.btn_clear_highlights.clicked.connect(self.clear_all_highlights)
+        row.addWidget(self.btn_clear_highlights)
 
-        root.addLayout(button_row_trailing(self.btn_clear_highlights))
+        root.addLayout(row)
         root.addStretch()
+
+    # TODO: Настройка красной подсветки - Опоздуны
+    def _outsiders(self):
+
+        root = QVBoxLayout(self)
+        desc = QLabel("Настройки красной подсветки строки. Опоздуны")
+
+    # TODO: Настройка голобой подсветки - будущий рейс
+    def _future_rice(self):
+        root = QVBoxLayout(self)
+        desc = QLabel("Настройки за сколько будет откл.подсветка строки.\n"
+                      "Предстоящий рейс")
 
     def load_values(self):
         minutes_total = 120

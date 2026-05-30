@@ -10,10 +10,11 @@ from Navigation_Bot.core.json_manager import JSONManager
 from Navigation_Bot.core.paths import CONFIG_JSON
 
 
-# TODO 1.MapsBot - запускает вспомогательные классы
-# TODO 2.Вынести ввод и клики в MapsUIHelper
-# TODO 3.Вынести парсинг маршрутов в отдельный класс
-# TODO 4.Вынести address+datetime обработку
+#TODO:
+# 1.MapsBot - запускает вспомогательные классы
+# 2.Вынести ввод и клики в MapsUIHelper
+# 3.Вынести парсинг маршрутов в отдельный класс
+# 4.Вынести address+datetime обработку
 
 
 class MapsBot:

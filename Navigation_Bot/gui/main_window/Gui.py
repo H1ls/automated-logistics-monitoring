@@ -166,7 +166,8 @@ class NavigationGUI(QWidget):
         view_order = self.sort_controller.build_view_order()
         self.table_manager.display(view_order=view_order)
         self.row_highlighter.set_view_order(view_order)  # real_to_visual
-        self.row_highlighter.highlight_expired_unloads()  # вызов красной подсветки
+        self.row_highlighter.highlight_expired_unloads()
+        self.row_highlighter.reapply_from_json()
 
     def _on_header_clicked(self, logicalIndex: int):
         if logicalIndex == 0:  # 🔍 — открыть справочник ID

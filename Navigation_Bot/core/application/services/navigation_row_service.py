@@ -185,6 +185,7 @@ class NavigationRowService:
         task.navigation.gps_fix_text = result.gps_fix_text or ""
         task.navigation.gps_fix_age_seconds = result.gps_fix_age_seconds
         task.navigation.geo_text = result.geo_text or ""
+        task.navigation.geo_zona = result.geo_zona or ""
         task.navigation.coordinates = result.coordinates
         task.navigation.speed_kmh = result.speed_kmh
         task.navigation.has_fresh_coordinates = bool(result.has_fresh_coordinates)

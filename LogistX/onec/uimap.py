@@ -25,6 +25,18 @@ class UiMap:
         self.data.setdefault("anchors", {})
         self.data["anchors"][name] = [int(x), int(y)]
 
+    def clear_anchors(self, names: tuple[str, ...] | list[str]) -> int:
+        """Удаляет якоря калибровки по имени. Возвращает число удалённых."""
+        anchors = self.data.setdefault("anchors", {})
+        removed = 0
+        for name in names:
+            if name in anchors:
+                del anchors[name]
+                removed += 1
+        if removed:
+            self.save()
+        return removed
+
     def get_region(self, name: str) -> tuple[int, int, int, int]:
         regions = self.data.get("regions", {})
         region = regions.get(name)

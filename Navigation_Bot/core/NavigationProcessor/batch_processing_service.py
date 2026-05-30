@@ -7,8 +7,9 @@ from pathlib import Path
 from PyQt6.QtWidgets import QDialog
 
 
-# TODO: Создать пул ошибок
-# TODO: В конце вывод "ТС: какая ошибка \n"
+# TODO:
+#  1. Создать пул ошибок
+#  2. В конце вывод "ТС: какая ошибка \n"
 
 class BatchProcessingService:
     def __init__(self, processor):

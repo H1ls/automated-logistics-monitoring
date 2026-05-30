@@ -1,4 +1,5 @@
 from __future__ import annotations
+from Navigation_Bot.gui.main_window.pin_codes_page import PinCodesPage
 
 
 class LocalPagesController:
@@ -50,15 +51,14 @@ class LocalPagesController:
         return default_local_tabs()
 
     def _build_page_pincodes(self):
-        from Navigation_Bot.gui.main_window.pin_codes_page import PinCodesPage
 
         g = self.gui
-        page = PinCodesPage(
-            xlsx_path=g.pincodes_xlsx_path,
-            json_path=g.pincodes_json_path,
-            log_func=g.log,
-            parent=g.stack,
-        )
+        page = PinCodesPage(xlsx_path=g.pincodes_xlsx_path,
+                            json_path=g.pincodes_json_path,
+                            log_func=g.log,
+                            parent=g.stack,
+                            )
+
         g.stack.addWidget(page)
         return page
 

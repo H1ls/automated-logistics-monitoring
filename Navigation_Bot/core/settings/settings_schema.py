@@ -5,6 +5,7 @@ SECTIONS = {
             "search_input_xpath": ("XPath поиска", str, True),
             "unit_block_xpath": ("XPath блока ТС", str, True),
             "address_selector": ("CSS адреса", str, True),
+            "geo_zone_selector": ("CSS геозоны (geo_jYI9)", str, False),
             "copy_button_selector": ("CSS копирования координат", str, True),
             "speed_selector": ("CSS скорости", str, False),
             "gps_sats_xpath": ("XPath иконки GPS/спутников", str, False),

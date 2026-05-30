@@ -15,8 +15,12 @@ from Navigation_Bot.core.paths import CREDENTIALS_WIALON, COOKIES_FILE
 
 """6. Настройка WebDriver"""
 
-
 # TODO: 1. чтение json -> JSONManager
+
+WIALON_URL = "https://gps.skyglonass.ru/"
+YANDEX_MAPS_URL = "https://yandex.ru/maps"
+
+
 class WebDriverManager:
     def __init__(self, log_func=None):
         self.log = log_func or print
@@ -89,16 +93,50 @@ class WebDriverManager:
         return WebDriverWait(self.driver, timeout).until(
             EC.visibility_of_element_located((By.XPATH, xpath)))
 
+    @staticmethod
+    def _is_wialon_tab(url: str, title: str) -> bool:
+        url = (url or "").lower()
+        title = (title or "").lower()
+        return ("gps.skyglonass" in url
+                or "rtmglonass" in url
+                or "wialon" in title
+                or "skytelecom" in title
+                )
+
+    @staticmethod
+    def _is_yandex_maps_tab(url: str, title: str) -> bool:
+        url = (url or "").lower()
+        title = (title or "").lower()
+        return ("yandex" in url and "maps" in url) or ("yandex" in title or "яндекс" in title)
+
+    def _switch_to_first_alive_window(self) -> bool:
+        """Переключается на первую доступную вкладку (если текущая была закрыта)."""
+        d = self.driver
+        if not d:
+            return False
+        try:
+            handles = d.window_handles
+        except (InvalidSessionIdException, WebDriverException):
+            return False
+        for handle in handles:
+            try:
+                d.switch_to.window(handle)
+                _ = d.current_url
+                return True
+            except (InvalidSessionIdException, WebDriverException):
+                continue
+        return False
+
     def is_alive(self) -> bool:
-        """Проверка живой ли WebDriver"""
+        """Проверка живой ли WebDriver (закрытие одной вкладки не считается смертью сессии)."""
         d = getattr(self, "driver", None)
         if not d:
             return False
         try:
-            _ = d.current_url
-            return True
+            if not d.window_handles:
+                return False
+            return self._switch_to_first_alive_window()
         except (InvalidSessionIdException, WebDriverException):
-            self.driver = None
             return False
 
     def start_browser(self, rect=None):
@@ -115,8 +153,7 @@ class WebDriverManager:
         # гарантированно запускаем новый браузер
         try:
             options = ChromeOptions()
-            # Опционально для headless:
-            # options.add_argument('--headless')
+            # Опционально для headless: options.add_argument('--headless')
             self.driver = webdriver.Chrome(options=options)
 
             if rect:
@@ -159,36 +196,43 @@ class WebDriverManager:
             # self.log(f"❌ Ошибка загрузки cookies:\n {e}")
             return False
 
-    def login_wialon(self):
-        """Открывает/логинит Wialon и переключает на мониторинг"""
+    def _find_tab(self, *, wialon: bool = False, yandex: bool = False) -> bool:
+        for handle in self.driver.window_handles:
+            self.driver.switch_to.window(handle)
+            url = self.driver.current_url or ""
+            title = self.driver.title or ""
+            if wialon and self._is_wialon_tab(url, title):
+                return True
+            if yandex and self._is_yandex_maps_tab(url, title):
+                return True
+        return False
 
-        self.driver.get("https://gps.skyglonass.ru/")
+    def login_wialon(self, *, new_tab: bool = False):
+        """Открывает/логинит Wialon и переключает на мониторинг."""
+        if new_tab:
+            self.driver.execute_script(f"window.open('{WIALON_URL}', '_blank');")
+            time.sleep(0.5)
+            self.driver.switch_to.window(self.driver.window_handles[-1])
+        else:
+            self.driver.get(WIALON_URL)
 
-        if self.load_cookies(): self.driver.refresh()
+        if self.load_cookies():
+            self.driver.refresh()
 
         try:
             self.web_driver_wait("//*[@id='hb_mi_monitoring']", timeout=1)
             self.log("🔑 Авторизация уже выполнена (по cookies).")
         except TimeoutException:
-            # self.log("ℹ️ Куки не сработали, пробуем логин по логину/паролю")
             self._login_wialon()
 
     def open_yandex_maps(self):
-        # self.log("🗺️ Проверка вкладок с Яндекс.Картами...")
         try:
-            for handle in self.driver.window_handles:
-                self.driver.switch_to.window(handle)
-                current_url = self.driver.current_url.lower()
-                title = self.driver.title.lower()
+            if self._find_tab(yandex=True):
+                self.log("🔁 Найдена вкладка Яндекс.Карт — переключаемся")
+                return
 
-                if ("yandex" in current_url and "maps" in current_url) or \
-                        ("yandex" in title or "яндекс" in title):
-                    self.log("🔁 Найдена вкладка Яндекс.Карт — переключаемся")
-                    return
-
-                    # Не нашли - открываем новую
-            # self.log("➕ Открытие новой вкладки с Я.Картами...")
-            self.driver.execute_script("window.open('https://yandex.ru/maps', '_blank');")
+            self.log("➕ Открываю новую вкладку с Я.Картами...")
+            self.driver.execute_script(f"window.open('{YANDEX_MAPS_URL}', '_blank');")
             time.sleep(2)
             self.driver.switch_to.window(self.driver.window_handles[-1])
 
@@ -196,46 +240,62 @@ class WebDriverManager:
                 EC.presence_of_element_located((By.TAG_NAME, "body")))
             self.log("🗺️ Новая вкладка Я.Карт открыта")
 
-        except Exception as e:
-            self.log(f"❌ Ошибка при открытии Я.Карт: ")
-            # self.log(f"❌ {e}")
+        except Exception:
+            self.log("❌ Ошибка при открытии Я.Карт")
+
+    def ensure_wialon_tab(self) -> None:
+        """Восстанавливает вкладку Wialon в уже открытом Chrome (без перезапуска браузера)."""
+        if self._find_tab(wialon=True):
+            return
+        # Если Я.Карты (или другие вкладки) уже открыты — не трогаем их, открываем Wialon отдельно.
+        use_new_tab = self._find_tab(yandex=True) or len(self.driver.window_handles) > 1
+        self.log("➕ Вкладка Wialon не найдена — открываю "
+                 + ("в новой вкладке..." if use_new_tab else "в текущей вкладке...")
+                 )
+        self.login_wialon(new_tab=use_new_tab)
+
+    def ensure_yandex_tab(self) -> None:
+        """Восстанавливает вкладку Я.Карт в уже открытом Chrome."""
+        self.open_yandex_maps()
+
+    def ensure_required_tabs(self) -> None:
+        """Гарантирует наличие вкладок Wialon и Я.Карт."""
+        if not self.driver or not self.is_alive():
+            return
+        self._switch_to_first_alive_window()
+        self.ensure_wialon_tab()
+        self.ensure_yandex_tab()
 
     def switch_to_tab(self, name: str) -> bool:
         try:
-            wanted = (name or "").lower().strip()
+            if not self.driver:
+                return False
+            self._switch_to_first_alive_window()
 
+            wanted = (name or "").lower().strip()
             is_wialon = wanted in {"wialon", "gps.skyglonass", "skyglonass", "rtmglonass"}
             is_yandex = wanted == "yandex"
 
-            for handle in self.driver.window_handles:
-                self.driver.switch_to.window(handle)
-                url = (self.driver.current_url or "").lower()
-                title = (self.driver.title or "").lower()
+            if is_wialon and self._find_tab(wialon=True):
+                return True
+            if is_yandex and self._find_tab(yandex=True):
+                return True
 
-                if is_wialon and ("gps.skyglonass" in url
-                                  or "rtmglonass" in url
-                                  or "wialon" in title
-                                  or "skytelecom" in title):
-                    return True
-
-                if is_yandex and "yandex" in url and "maps" in url:
-                    return True
+            if is_wialon:
+                self.log("ℹ️ Вкладка Wialon не найдена — восстанавливаю...")
+                self.ensure_wialon_tab()
+                return self._find_tab(wialon=True)
 
             if is_yandex:
-                self.log("ℹ️ Вкладка 'yandex' не найдена, открываю Яндекс.Карты...")
-                self.open_yandex_maps()
-                for handle in self.driver.window_handles:
-                    self.driver.switch_to.window(handle)
-                    url = (self.driver.current_url or "").lower()
-                    if "yandex" in url and "maps" in url:
-                        return True
+                self.log("ℹ️ Вкладка 'yandex' не найдена — восстанавливаю...")
+                self.ensure_yandex_tab()
+                return self._find_tab(yandex=True)
 
             self.log(f"❌ Вкладка '{name}' не найдена.")
             return False
 
-        except Exception as e:
+        except Exception:
             self.log(f"❌ Ошибка переключения на вкладку {name}")
-            # self.log(f"❌ {e}")
             return False
 
     def find(self, locator, timeout=10, condition="presence"):

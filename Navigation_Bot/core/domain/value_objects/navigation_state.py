@@ -4,6 +4,7 @@ from dataclasses import dataclass
 @dataclass(slots=True)
 class NavigationState:
     geo_text: str = ""
+    geo_zona: str = ""
     coordinates: str = ""
     speed_kmh: int | float | None = None
     gps_fix_text: str = ""

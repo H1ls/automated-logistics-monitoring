@@ -9,6 +9,7 @@ from oauth2client.service_account import ServiceAccountCredentials
 from Navigation_Bot.core.repositories.json_task_repository import JsonTaskRepository
 from Navigation_Bot.core.json_manager import JSONManager
 from Navigation_Bot.core.paths import INPUT_FILEPATH, CONFIG_JSON
+from Navigation_Bot.gui.widgets.table.sites_db_registry import SitesDbRegistry
 
 
 # TODO: 1.знает про локальный JSON - исправить
@@ -38,6 +39,7 @@ class GoogleSheetsManager(QObject):
         self.file_path = None
 
         self.sheet = None
+        self._sites_db = SitesDbRegistry(log_func=log_func)
         self.load_settings()
 
     def _log(self, msg: str):
@@ -267,6 +269,7 @@ class GoogleSheetsManager(QObject):
 
     def append_to_cell(self, data, column=12):
         # self._log(f"GSHEET append => sheet_id={self.sheet_id}, ws_index={self.worksheet_index}, col={column}")
+        self._sites_db.reload()
         if isinstance(data, list):
             for item in data:
                 self._append_entry(item, column)
@@ -287,10 +290,15 @@ class GoogleSheetsManager(QObject):
             current_time = datetime.now().strftime("%d-%m %H:%M")
 
             geo = item.get("гео") or ""
+            geo_zona = str(item.get("geo_zona") or "").strip()
             coor = item.get("коор") or ""
             speed = item.get("скорость")
 
-            if geo == "нет навигации":
+            zone_label = self._sites_db.match_geo_zona_to_zone_label(geo_zona, item)
+
+            if zone_label:
+                new_text = f"{current_time} {zone_label}"
+            elif geo == "нет навигации":
                 new_text = f"{current_time} нет навигации"
             elif not geo and not coor:
                 self._log(f"⚠️ Пропуск строки {row_index}: нет гео/координат")

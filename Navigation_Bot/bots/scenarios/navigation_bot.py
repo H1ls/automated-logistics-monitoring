@@ -12,14 +12,15 @@ from Navigation_Bot.core.domain.value_objects.navigation_read_result import Navi
 from Navigation_Bot.bots.navi_bot_base import NaviBase
 
 
-# TODO: подумать о рефакторинге NavigationBot
 class NavigationBot(NaviBase):
     # --- настройки поведения ---
-    SELECTOR_SECTION = "wialon_selectors"
 
     STALE_GPS_SECONDS = 3600  # 1 час
     ADDRESS_READY_TIMEOUT = 12
     CLIPBOARD_TIMEOUT = 2.5
+
+    SELECTOR_SECTION = "wialon_selectors"
+    DEFAULT_GEO_ZONE_SELECTOR = ".geo_jYI9"
 
     REQUIRED_KEYS = ("search_input_xpath",
                      "unit_block_xpath",
@@ -116,6 +117,19 @@ class NavigationBot(NaviBase):
             self.log(f"⚠️ Адрес не готов: '{last_text[:60]}'...")
         return None
 
+    def _read_geo_zona(self) -> str | None:
+        """Геозона Wialon (класс geo_jYI9 на панели объекта)."""
+        css = self.selectors.get("geo_zone_selector") or self.DEFAULT_GEO_ZONE_SELECTOR
+        try:
+            el = self._safe_find_css(css)
+            if not el:
+                return None
+            text = (el.text or "").strip()
+            return text or None
+        except Exception:
+            self.log("⚠️ Не удалось прочитать geo_zona")
+            return None
+
     def read_speed_kmh(self) -> int | None:
         css = self.selectors["speed_selector"]
         try:
@@ -165,33 +179,37 @@ class NavigationBot(NaviBase):
             # self.log(f" {self._short_err(e)}")
             return None
 
-        # coord = self._wait_clipboard_coordinates()
         coord = self._wait_clipboard_coordinates(old_value=old_clip)
         if not coord:
             self.log("❌ Координаты не получены из буфера обмена.")
         return coord
 
-    def _read_location_coordinates_speed(self):
+    def _read_location_coordinates_speed(
+            self,
+    ) -> tuple[str | None, str | None, int | None, str | None]:
+        """Адрес, координаты, скорость и геозона с панели объекта."""
         try:
             for i in range(3):
                 try:
                     location_text = self._wait_address_ready()
                     coordinates = self._copy_coordinates()
                     speed_kmh = self.read_speed_kmh()
+                    geo_zona = self._read_geo_zona()
 
                     if not location_text and not coordinates:
-                        return None, None, None
+                        return None, None, None, geo_zona
 
-                    return location_text, coordinates, speed_kmh
+                    return location_text, coordinates, speed_kmh, geo_zona
 
                 except StaleElementReferenceException:
                     self.log(f"🔁 stale при чтении панели, повтор {i + 1}/3")
                     time.sleep(0.2)
 
-        except Exception as e:
-            self.log(f"❌ Ошибка чтения гео/коорд/скорости")
-            # self.log(f"❌ {self._short_err(e)}")
-            return None, None, None
+            return None, None, None, None
+
+        except Exception:
+            self.log("❌ Ошибка чтения гео/коорд/скорости/geo_zona")
+            return None, None, None, None
 
     # ---------- GPS tooltip parsing ----------
     def _extract_fix_line(self, tooltip_text: str) -> str | None:
@@ -285,6 +303,7 @@ class NavigationBot(NaviBase):
             self.log("⚠️ stale при проверке id элемента — пропуск проверки")
 
         # 4) GPS tooltip age
+
         gps_text, gps_age = self._read_gps_fix_age(car_id)
         is_stale = self._is_navigation_stale(gps_age)
 
@@ -293,10 +312,12 @@ class NavigationBot(NaviBase):
             return NavigationReadResult(gps_fix_text=gps_text or "",
                                         gps_fix_age_seconds=gps_age,
                                         geo_text="нет навигации",
+                                        geo_zona="",
                                         coordinates="!",
                                         speed_kmh=0,
                                         has_fresh_coordinates=False,
-                                        is_navigation_stale=True, )
+                                        is_navigation_stale=True,
+                                        )
 
         # 5) Повторно берём элемент и читаем панель
         element = self._find_car_element(car_id)
@@ -306,30 +327,28 @@ class NavigationBot(NaviBase):
 
         self._hover(element)
 
-        geo, coor, speed = self._read_location_coordinates_speed()
+        geo, coor, speed, geo_zona = self._read_location_coordinates_speed()
 
         return NavigationReadResult(gps_fix_text=gps_text or "",
                                     gps_fix_age_seconds=gps_age,
                                     geo_text=geo or "",
+                                    geo_zona=geo_zona or "",
                                     coordinates=coor if coor else None,
                                     speed_kmh=speed,
                                     has_fresh_coordinates=bool(coor),
-                                    is_navigation_stale=False, )
+                                    is_navigation_stale=False,
+                                    )
 
-    def process_vehicle_row(self, car_data: dict) -> dict | None:
+    def process_vehicle_row(self, car_data: dict) -> NavigationReadResult | None:
         try:
-
             self._ensure_monitoring_open()
-            updated = self.read_navigation_state(car_data)
-
-            # чистим строку поиска всегда
+            result = self.read_navigation_state(car_data)
             self._clear_search()
 
-            if not updated.coordinates:
+            if result and not result.coordinates:
                 self.log(f"⚠️ Координаты не получены у ТС: {car_data.get('ТС')}")
-            return updated
+            return result
 
         except Exception as e:
-            self.log(f"❌ Ошибка в process_row: ")
-            self.log(f"❌ Ошибка в process_row: {self._short_err(e)}")
+            self.log(f"❌ Ошибка в process_vehicle_row: {self._short_err(e)}")
         return None

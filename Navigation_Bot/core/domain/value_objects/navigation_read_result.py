@@ -13,6 +13,7 @@ class NavigationReadResult:
     gps_fix_age_seconds: int | None = None
 
     geo_text: str = ""
+    geo_zona: str = ""
     coordinates: str | None = None
     speed_kmh: int | None = None
 
