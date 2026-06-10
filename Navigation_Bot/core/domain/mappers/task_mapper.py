@@ -11,6 +11,7 @@ from Navigation_Bot.core.domain.value_objects.processing_state import Processing
 from Navigation_Bot.core.domain.value_objects.vehicle import Vehicle
 import re
 
+from Navigation_Bot.core.geo_coordinates import format_coordinate_pair, parse_coordinate_pair
 from Navigation_Bot.core.domain.value_objects.route_plan import RoutePlan
 from Navigation_Bot.core.domain.value_objects.route_point import RoutePoint
 
@@ -68,13 +69,15 @@ class TaskMapper:
     def to_dict(task: Task) -> dict[str, Any]:
         if not isinstance(task, Task):
             raise ValueError("TaskMapper.to_dict: task must be Task")
-        result: dict[str, Any] = {"index": task.index,
-                                  "ТС": task.vehicle.plate_number,
+        result: dict[str, Any] = {"ТС": task.vehicle.plate_number,
                                   "ФИО": task.driver.full_name,
                                   "Телефон": task.driver.phone,
                                   "КА": task.carrier.name if task.carrier else "",
                                   "processed": list(task.processing.processed_unloads),
                                   }
+
+        if task.index:
+            result["index"] = task.index
 
         if task.vehicle.monitoring_id is not None:
             result["id"] = task.vehicle.monitoring_id
@@ -275,6 +278,7 @@ class TaskMapper:
             address = str(block.get(f"{prefix} {seq}", "") or "").strip()
             date = str(block.get(f"Дата {seq}", "") or "").strip()
             time = str(block.get(f"Время {seq}", "") or "").strip()
+            latitude, longitude = TaskMapper._extract_coordinates_from_block(block, prefix, seq)
 
             if not address and not date and not time and not comment:
                 continue
@@ -284,7 +288,10 @@ class TaskMapper:
                                      address=address,
                                      date=date,
                                      time=time,
-                                     comment=comment, ))
+                                     comment=comment,
+                                     latitude=latitude,
+                                     longitude=longitude,
+                                     geocoding_source="parsed" if latitude is not None and longitude is not None else "", ))
 
         # Добавляем comment-only блоки как отдельные точки
         for pos, comment in comment_blocks:
@@ -314,6 +321,9 @@ class TaskMapper:
             block = {f"{prefix} {seq}": point.address,
                      f"Дата {seq}": point.date,
                      f"Время {seq}": point.time, }
+            coordinates = format_coordinate_pair(point.latitude, point.longitude)
+            if coordinates:
+                block[f"Координаты {seq}"] = coordinates
 
             result.append(block)
 
@@ -336,3 +346,33 @@ class TaskMapper:
                 return int(m.group(1))
 
         return None
+
+    @staticmethod
+    def _extract_coordinates_from_block(block: dict[str, Any], prefix: str, sequence: int) -> tuple[float | None, float | None]:
+        latitude = block.get("latitude", block.get("lat"))
+        longitude = block.get("longitude", block.get("lon", block.get("lng")))
+        if latitude is not None and longitude is not None:
+            try:
+                return float(str(latitude).replace(",", ".")), float(str(longitude).replace(",", "."))
+            except ValueError:
+                pass
+
+        candidates = [
+            block.get(f"Координаты {sequence}"),
+            block.get(f"{prefix} {sequence} координаты"),
+            block.get("Координаты"),
+            block.get("координаты"),
+            block.get("coordinates"),
+            block.get("coords"),
+            block.get("latlon"),
+            block.get("коор"),
+            block.get(f"{prefix} {sequence}"),
+            block.get("Комментарий"),
+        ]
+
+        for candidate in candidates:
+            parsed_latitude, parsed_longitude = parse_coordinate_pair(candidate)
+            if parsed_latitude is not None and parsed_longitude is not None:
+                return parsed_latitude, parsed_longitude
+
+        return None, None

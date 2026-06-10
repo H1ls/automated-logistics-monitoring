@@ -3,7 +3,7 @@ from PyQt6.QtCore import QObject, pyqtSignal, pyqtSlot
 
 
 class UiBridge(QObject):
-    set_busy = pyqtSignal(int, bool)  # index_key, busy
+    set_busy = pyqtSignal(int, bool)  # row_identity, busy
     refresh = pyqtSignal()
     log = pyqtSignal(str)
     call = pyqtSignal(object)
@@ -28,8 +28,8 @@ class UiBridge(QObject):
         fn()
 
     @pyqtSlot(int, bool)
-    def _on_set_busy(self, index_key: int, busy: bool):
-        self.gui.table_manager.set_row_busy(index_key, busy)
+    def _on_set_busy(self, row_identity: int, busy: bool):
+        self.gui.table_manager.set_row_busy(row_identity, busy)
 
     @pyqtSlot()
     def _on_refresh(self):

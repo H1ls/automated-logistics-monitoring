@@ -54,12 +54,20 @@ class SheetTabsController:
                     w.deleteLater()
 
             if not getattr(gui, "gsheet", None):
+                gui.log("⚠️ gsheet не инициализирован")
                 return
 
-            worksheets = gui.gsheet.list_worksheets() or []
+            # Принудительно обновляем список листов
+            worksheets = gui.gsheet.get_worksheets_list()  # Новый метод
             if not worksheets:
                 gui.log("⚠️ Не удалось получить список листов Google Sheets.")
-                return
+                # Попробуем переподключиться
+                if hasattr(gui.gsheet, 'reconnect'):
+                    gui.gsheet.reconnect()
+                    worksheets = gui.gsheet.get_worksheets_list()
+
+                if not worksheets:
+                    return
 
             # ---- читаем скрытые вкладки из ui_settings (по key) ----
             hidden = set()
@@ -227,10 +235,7 @@ class SheetTabsController:
             gui.log(f"❌ Не удалось переключить лист: {err}")
             return
 
-        json_path = gui._get_sheet_json_path()
-        if getattr(gui, "gsheet", None):
-            gui.gsheet.task_repository = gui.task_repository
-        gui.task_repository.set_filepath(json_path)
+        gui.task_repository.set_source_key(gui._get_sheet_source_key())
 
         gui.reload_and_show()
 

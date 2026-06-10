@@ -11,7 +11,9 @@ from PyQt6.QtWidgets import (QWidget, QGridLayout, QLabel, QLineEdit, QListWidge
                              QFrame, QPushButton, QHBoxLayout, QVBoxLayout)
 
 
-# TODO: Выводить одну машину  левой графе, и все карты в правой, убрать дубли с номеров карт, проверить ts = card
+# TODO:
+#  Выводить одну машину  левой графе, и все карты в правой, убрать дубли с номеров карт, проверить ts = card
+#  Исправить баг: Если поля заполнены, смена Листа, крашит ПО
 @dataclass
 class PinRow:
     card: str  # столбец A "Номер" (номер карты)

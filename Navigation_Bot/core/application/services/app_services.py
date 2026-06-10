@@ -1,17 +1,26 @@
 # pet.project\Navigation_Bot\core\application\services\app_services.py
 from __future__ import annotations
 
-from Navigation_Bot.core.application.services.google_sync_service import GoogleSyncService
-from Navigation_Bot.core.application.services.json_history_service import JsonHistoryService
+from Navigation_Bot.core.application.services.goggle.google_sync_service import GoogleSyncService
+from Navigation_Bot.core.application.services.goggle.google_account_auth_service import GoogleAccountAuthService
+from Navigation_Bot.core.application.services.goggle.google_navigation_writer import GoogleNavigationWriter
+from Navigation_Bot.core.application.services.sqlite_history_services import (
+    SqliteNavigationHistoryService,
+    SqliteNoteHistoryService,
+    SqliteRouteEstimateHistoryService,
+    SqliteStatusEventService,
+)
 from Navigation_Bot.core.application.services.task_edit_service import TaskEditService
 from Navigation_Bot.core.application.services.tasks_service import TasksService
 from Navigation_Bot.core.application.services.new_task_workflow_service import NewTaskWorkflowService
 from Navigation_Bot.core.application.services.editable_field_workflow_service import EditableFieldWorkflowService
 from Navigation_Bot.core.application.services.address_edit_workflow_service import AddressEditWorkflowService
-from Navigation_Bot.core.repositories.json_task_repository import JsonTaskRepository
+from Navigation_Bot.core.repositories.sqlite_task_repository import SqliteTaskRepository
+from Navigation_Bot.core.repositories.sqlite_vehicle_repository import SqliteVehicleRepository
 from Navigation_Bot.core.hotkey_manager import HotkeyManager
-from Navigation_Bot.core.NavigationProcessor.batch_processing_service import BatchProcessingService
 from Navigation_Bot.core.NavigationProcessor.navigation_processor import NavigationProcessor
+from Navigation_Bot.core.paths import ID_FILEPATH, SQLITE_DB_FILEPATH
+from Navigation_Bot.core.storage.sqlite_connection import open_database
 from Navigation_Bot.core.settings.settings_controller import SettingsController
 from Navigation_Bot.gui.app.app_context import AppContext
 from Navigation_Bot.gui.controllers.table_context_menu_Controller import TableContextMenuController
@@ -43,11 +52,15 @@ class AppServices:
 
     def _build_data_layer(self) -> None:
         g = self.gui
-        g.loading.show("Инициализация контекста данных…", "Загрузка JSON")
+        g.loading.show("Инициализация контекста данных…", "Загрузка SQLite")
 
-        json_path = g._get_sheet_json_path()
-        g.task_repository = JsonTaskRepository(json_path, log_func=g.log)
-        # g.task_repository = g.task_repository  # legacy alias
+        g.sqlite_connection = open_database(SQLITE_DB_FILEPATH)
+        g.vehicle_repository = SqliteVehicleRepository(g.sqlite_connection, log=g.log)
+        imported = g.vehicle_repository.import_id_car_json(ID_FILEPATH)
+        if imported:
+            g.log(f"✅ Справочник ТС импортирован в БД: {imported} записей")
+        g.task_repository = SqliteTaskRepository(g.sqlite_connection, log=g.log)
+        g.task_repository.set_source_key(g._get_sheet_source_key())
 
     def _build_settings_layer(self) -> None:
         g = self.gui
@@ -65,31 +78,26 @@ class AppServices:
         g.gsheet.finished.connect(lambda: g.hide_loading())
         g.gsheet.error.connect(lambda err: (g.hide_loading(), g.log(f"❌ {err}")))
         g.gsheet.log_message.connect(g.log)
+        g.google_navigation_writer = GoogleNavigationWriter(gsheet=g.gsheet, log=g.log)
+        g.google_account_auth_service = GoogleAccountAuthService(gsheet=g.gsheet, log=g.log)
 
         g.loading.show("Инициализация сервисов задач…", "Подготовка")
         g.task_edit_service = TaskEditService(log=g.log, )
-        g.status_event_service = JsonHistoryService(filepath="config/status_events.json",
-                                                    time_field="created_at",
-                                                    log=g.log, )
+        g.status_event_service = SqliteStatusEventService(g.sqlite_connection, log=g.log)
         g.tasks_service = TasksService(task_repository=g.task_repository,
                                        log=g.log,
                                        status_event_service=g.status_event_service, )
 
         g.google_sync_service = GoogleSyncService(gsheet=g.gsheet,
+                                                  google_writer=g.google_navigation_writer,
                                                   tasks_service=g.tasks_service,
                                                   task_repository=g.task_repository,
                                                   log=g.log, )
-        # TODO: Убарть хардкод на filepath
-        g.navigation_history_service = JsonHistoryService(filepath="config/navigation_history.json",
-                                                          time_field="collected_at",
-                                                          log=g.log, )
+        g.navigation_history_service = SqliteNavigationHistoryService(g.sqlite_connection, log=g.log)
 
-        g.route_estimate_history_service = JsonHistoryService(filepath="config/route_estimate_history.json",
-                                                              time_field="calculated_at",
-                                                              log=g.log, )
-        g.note_history_service = JsonHistoryService(filepath="config/notes_history.json",
-                                                    time_field="created_at",
-                                                    log=g.log, )
+        g.route_estimate_history_service = SqliteRouteEstimateHistoryService(g.sqlite_connection, log=g.log)
+
+        g.note_history_service = SqliteNoteHistoryService(g.sqlite_connection, log=g.log)
         # -----
         g.new_task_workflow_service = NewTaskWorkflowService(tasks_service=g.tasks_service,
                                                              task_edit_service=g.task_edit_service,
@@ -129,7 +137,7 @@ class AppServices:
 
         g.processor = NavigationProcessor(task_repository=g.task_repository,
                                           logger=g.log,
-                                          gsheet=g.gsheet,
+                                          gsheet=g.google_navigation_writer,
                                           display_callback=g.reload_and_show,
                                           single_row=g._single_row_processing,
                                           updated_rows=g.updated_rows,
@@ -166,8 +174,9 @@ class AppServices:
     def _wire_components(self) -> None:
         g = self.gui
 
-        g.row_highlighter.set_key_to_visual_mapper(g.table_manager.visual_row_by_index_key)
+        g.row_highlighter.set_key_to_visual_mapper(g.table_manager.visual_row_by_row_identity)
 
+        # TODO: Два on_row_click?
         g.table_manager.on_row_click = g.processor.on_row_click
         g.table_manager.row_renderer.on_row_click = g.processor.on_row_click
 
@@ -183,6 +192,8 @@ class AppServices:
 
         ctx = AppContext(task_repository=g.task_repository,
                          gsheet=g.gsheet,
+                         google_navigation_writer=g.google_navigation_writer,
+                         google_account_auth_service=g.google_account_auth_service,
 
                          tasks_service=g.tasks_service,
                          task_edit_service=g.task_edit_service,
@@ -208,6 +219,12 @@ class AppServices:
 
     def shutdown(self):
         g = self.gui
+
+        try:
+            if getattr(g, "sqlite_connection", None):
+                g.sqlite_connection.close()
+        except Exception as e:
+            g.log(f"SQLite close failed: {e}")
 
         try:
             g.ui_settings.save_window(g)

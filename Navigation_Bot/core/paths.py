@@ -15,10 +15,9 @@ def app_root() -> Path:
 ROOT_DIR = app_root()
 CONFIG_DIR = ROOT_DIR / "config"
 
-
-INPUT_FILEPATH = CONFIG_DIR / "selected_data.json"
 ID_FILEPATH = CONFIG_DIR / "Id_car.json"
 CONFIG_JSON = CONFIG_DIR / "config.json"
+SQLITE_DB_FILEPATH = CONFIG_DIR / "navigation_bot.db"
 
 COOKIES_FILE = CONFIG_DIR / "cookies.pkl"
 CREDENTIALS_WIALON = CONFIG_DIR / "Credentials_wialon.json"

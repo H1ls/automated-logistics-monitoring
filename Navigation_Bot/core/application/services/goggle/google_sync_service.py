@@ -13,12 +13,13 @@ class GoogleSyncService:
 
     Не должен вызываться для простых локальных операций (create/update/delete row).
     Вызывается для операций, которые трогают Google:
-    - refresh_row_by_index: читать из Google одну строку
+    - refresh_row_by_google_sheet_row: читать из Google одну строку
     - load_current_sheet: загрузить весь лист
     - upload_new_task: загрузить новую задачу в Google
     """
 
     gsheet: Any
+    google_writer: Any
     tasks_service: Any
     task_repository: Any
     cleaner: Any | None = None
@@ -43,13 +44,13 @@ class GoogleSyncService:
     def _reload_context(self) -> None:
         self.task_repository.reload()
 
-    # --- Helpers: refresh_row_by_index
-    def _fetch_google_row_dh(self, index_key: int) -> tuple[bool, list[str] | None, str | None]:
+    # --- Helpers: refresh_row_by_google_sheet_row
+    def _fetch_google_row_dh(self, google_sheet_row: int) -> tuple[bool, list[str] | None, str | None]:
         try:
-            rng = f"D{index_key}:H{index_key}"
+            rng = f"D{google_sheet_row}:H{google_sheet_row}"
             rows = self.gsheet.sheet.get(rng)
             if not rows or not rows[0]:
-                return False, None, f"Row {index_key} is empty in Google"
+                return False, None, f"Row {google_sheet_row} is empty in Google"
 
             dh = list(rows[0])
             while len(dh) < 5:
@@ -59,39 +60,39 @@ class GoogleSyncService:
         except Exception as e:
             return False, None, str(e)
 
-    def _find_local_row_index(self, index_key: int) -> tuple[bool, int | None, str | None]:
-        real_idx = self.tasks_service.find_real_idx_by_index_key(index_key)
+    def _find_local_row_index(self, google_sheet_row: int) -> tuple[bool, int | None, str | None]:
+        real_idx = self.tasks_service.find_real_idx_by_google_sheet_row(google_sheet_row)
         if real_idx is None:
-            return False, None, f"Row with index {index_key} not found locally"
+            return False, None, f"Row with google_sheet_row {google_sheet_row} not found locally"
         return True, real_idx, None
 
-    def _build_patch_from_google_row(self, index_key: int, dh: list[str]) -> tuple[bool, dict | None, str | None]:
+    def _build_patch_from_google_row(self, google_sheet_row: int, dh: list[str]) -> tuple[bool, dict | None, str | None]:
         try:
-            patch = GoogleRowMapper.build_row(index_key, dh)
+            patch = GoogleRowMapper.build_row(google_sheet_row, dh)
             return True, patch, None
         except Exception as e:
             return False, None, str(e)
 
     def _apply_google_patch_to_row(self, real_idx: int, patch: dict) -> tuple[bool, str | None]:
-        ok, _, err = self.tasks_service.apply_patch(real_idx, patch)
+        ok, _, err = self.tasks_service.apply_patch(real_idx, patch, source="google")
         if not ok:
             return False, err
         return True, None
 
-    def _clean_single_row(self, index_key: int) -> tuple[bool, str | None]:
+    def _clean_single_row(self, google_sheet_row: int) -> tuple[bool, str | None]:
         try:
             cleaner = self._get_cleaner()
-            cleaner.start_clean(only_indexes={index_key})
+            cleaner.start_clean(only_indexes={google_sheet_row})
             return True, None
         except Exception as e:
             return False, str(e)
 
-    def _reload_and_get_row(self, index_key: int) -> tuple[bool, dict | None, str | None]:
+    def _reload_and_get_row(self, google_sheet_row: int) -> tuple[bool, dict | None, str | None]:
         try:
             self._reload_context()
-            real_idx = self.tasks_service.find_real_idx_by_index_key(index_key)
+            real_idx = self.tasks_service.find_real_idx_by_google_sheet_row(google_sheet_row)
             if real_idx is None:
-                return False, None, f"Row with index {index_key} disappeared after refresh"
+                return False, None, f"Row with google_sheet_row {google_sheet_row} disappeared after refresh"
 
             updated_row = self.tasks_service.get_row(real_idx)
             return True, updated_row, None
@@ -99,12 +100,12 @@ class GoogleSyncService:
             return False, None, str(e)
 
     # --- Public: refresh one row
-    def refresh_row_by_index(self, index_key: int) -> tuple[bool, dict | None, str | None]:
+    def refresh_row_by_google_sheet_row(self, google_sheet_row: int) -> tuple[bool, dict | None, str | None]:
         """
-        Перезагрузить одну строку из Google по её index_key.
+        Перезагрузить одну строку из Google по её google_sheet_row.
 
         Процесс:
-        1. Читает диапазон D-H из Google для этого index_key
+        1. Читает диапазон D-H из Google для этого google_sheet_row
         2. Обновляет локальное хранилище через TasksService
         3. Очищает только эту строку через DataCleaner
         4. Возвращает обновлённую строку или ошибку
@@ -115,15 +116,15 @@ class GoogleSyncService:
             if not ok:
                 return False, None, err
             # получить строку
-            ok, dh, err = self._fetch_google_row_dh(index_key)
+            ok, dh, err = self._fetch_google_row_dh(google_sheet_row)
             if not ok:
                 return False, None, err
             # найти локальный индекс
-            ok, real_idx, err = self._find_local_row_index(index_key)
+            ok, real_idx, err = self._find_local_row_index(google_sheet_row)
             if not ok:
                 return False, None, err
             # собрать patch
-            ok, patch, err = self._build_patch_from_google_row(index_key, dh)
+            ok, patch, err = self._build_patch_from_google_row(google_sheet_row, dh)
             if not ok:
                 return False, None, err
             # применить patch
@@ -131,15 +132,19 @@ class GoogleSyncService:
             if not ok:
                 return False, None, err
             # почистить строку
-            ok, err = self._clean_single_row(index_key)
+            ok, err = self._clean_single_row(google_sheet_row)
             if not ok:
                 return False, None, err
 
-            return self._reload_and_get_row(index_key)
+            return self._reload_and_get_row(google_sheet_row)
 
         except Exception as e:
-            self._log(f"❌ GoogleSyncService.refresh_row_by_index: {e}")
+            self._log(f"❌ GoogleSyncService.refresh_row_by_google_sheet_row: {e}")
             return False, None, str(e)
+
+    def refresh_row_by_index(self, index_key: int) -> tuple[bool, dict | None, str | None]:
+        """Совместимый alias: раньше index_key означал строку Google."""
+        return self.refresh_row_by_google_sheet_row(index_key)
 
     # --- Helpers: load_current_sheet
     def _fetch_current_sheet_rows(self) -> tuple[bool, dict[int, list[str]] | None, str | None]:
@@ -213,7 +218,9 @@ class GoogleSyncService:
                 return False, err
 
             self._log(f"🌎 Загрузка из Google: добавлено {add_stats['added']}, "
-                      f"удалено завершённых {remove_stats['deleted']}")
+                      f"обновлено {add_stats.get('updated', 0)}, "
+                      f"заменено строк Google {add_stats.get('replaced', 0)}, "
+                      f"завершено {remove_stats['deleted']}")
             return True, None
 
         except Exception as e:
@@ -264,11 +271,16 @@ class GoogleSyncService:
             if not ok:
                 return False, err
 
-            if not hasattr(self.gsheet, "upload_new_row"):
+            if not hasattr(self.google_writer, "upload_new_row"):
                 return False, "missing_upload_new_row"
 
-            self.gsheet.upload_new_row(task)
-            self._log(f"✅ Новая задача выгружена в Google (index={task.get('index')})")
+            google_sheet_row = self.google_writer.upload_new_row(task)
+            task["index"] = google_sheet_row
+            task["google_sheet_row"] = google_sheet_row
+            if self.task_repository:
+                self.task_repository.upsert_from_row(task, source="user")
+                self.task_repository.reload()
+            self._log(f"✅ Новая задача выгружена в Google (google_sheet_row={google_sheet_row})")
             return True, None
 
         except Exception as e:

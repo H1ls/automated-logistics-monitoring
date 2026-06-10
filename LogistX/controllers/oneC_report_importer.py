@@ -14,27 +14,62 @@ from openpyxl.utils import get_column_letter
 
 
 class OneCReportImporter:
-    def __init__(self, log_func=print):
+    def __init__(self, log_func=print, config_path=None):
         self.log = log_func
 
+        # путь к конфигу по умолчанию
+        if config_path is None:
+            config_path = Path("LogistX/config/onec_ui_map_v2.json")
+        self.config_path = Path(config_path)
 
-        # TODO: Вынести в настройки и убрать хардкод
-        # куда сохраняем результат JSON
+        # загружаем конфиг или используем значения по умолчанию
+        self.rdp_title_hint, self.rdp_title_fallbacks = self._load_window_config()
+
+        # остальные пути (тоже можно вынести в конфиг)
         self.out_json_path = Path("LogistX/config") / "logistx_sample.json"
-
-        # куда сохраняем “сырой” отчет xlsx
         self.out_xlsx_path = Path("LogistX/config") / "1c_unclosed_races.xlsx"
 
-        # подсказка заголовка окна RDP (поменяешь под себя)
-        self.rdp_title_hint = "176.57.78.6:2025 — Подключение к удаленному рабочему столу"
-        # запасные варианты
-        self.rdp_title_fallbacks = ["Подключение к удаленному рабочему столу",
-                                    "Remote Desktop Connection", ]
-
-        self._rdp_win = None
-
-        # pyautogui safety
         pyautogui.FAILSAFE = True
+        # # TODO: Вынести в настройки и убрать хардкод
+        # # куда сохраняем результат JSON
+        # self.out_json_path = Path("LogistX/config") / "logistx_sample.json"
+        #
+        # # куда сохраняем “сырой” отчет xlsx
+        # self.out_xlsx_path = Path("LogistX/config") / "1c_unclosed_races.xlsx"
+        #
+        # # подсказка заголовка окна RDP (поменяешь под себя)
+        # self.rdp_title_hint = "1C:Предприятие - Управление транспортом Верус (рабочая база)"
+        # # запасные варианты
+        # self.rdp_title_fallbacks = ["176.57.78.6:2025 — Подключение к удаленному рабочему столу",
+        #                             "Подключение к удаленному рабочему столу",
+        #                             "Remote Desktop Connection", ]
+        #
+        # self._rdp_win = None
+        # # pyautogui safety
+        # pyautogui.FAILSAFE = True
+
+    def _load_window_config(self):
+        """Загружает настройки окна из JSON, возвращает (title_hint, title_fallbacks)."""
+        default_hint = "1С:Предприятие - Управление транспортом Верус (рабочая база)"
+        default_fallbacks = [
+            "176.57.78.6:2025 — Подключение к удаленному рабочему столу",
+            "Подключение к удаленному рабочему столу",
+            "Remote Desktop Connection"
+        ]
+
+        if not self.config_path.exists():
+            self.log(f"⚠️ Конфиг не найден: {self.config_path}, используются значения по умолчанию")
+            return default_hint, default_fallbacks
+
+        try:
+            data = json.loads(self.config_path.read_text(encoding="utf-8"))
+            window_cfg = data.get("window", {})
+            hint = window_cfg.get("title_hint", default_hint)
+            fallbacks = window_cfg.get("title_fallbacks", default_fallbacks)
+            return hint, fallbacks
+        except Exception as e:
+            self.log(f"⚠️ Ошибка чтения конфига: {e}, используются значения по умолчанию")
+            return default_hint, default_fallbacks
 
     def run(self) -> int:
         """Возвращает кол-во сохранённых строк."""

@@ -228,7 +228,7 @@ class WebDriverManager:
     def open_yandex_maps(self):
         try:
             if self._find_tab(yandex=True):
-                self.log("🔁 Найдена вкладка Яндекс.Карт — переключаемся")
+                # self.log("🔁 Найдена вкладка Яндекс.Карт — переключаемся")
                 return
 
             self.log("➕ Открываю новую вкладку с Я.Картами...")

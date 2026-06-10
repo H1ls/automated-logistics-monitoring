@@ -1,9 +1,6 @@
-import re
 from concurrent.futures import ThreadPoolExecutor
-from pathlib import Path
 from threading import Lock
 from PyQt6.QtWidgets import QApplication, QWidget
-from Navigation_Bot.core.paths import INPUT_FILEPATH
 from Navigation_Bot.core.paths import PIN_XLSX_FILEPATH, PIN_JSON_FILEPATH
 from Navigation_Bot.gui.builders.main_ui_builder import MainUiBuilder
 from Navigation_Bot.core.application.services.app_services import AppServices
@@ -23,7 +20,6 @@ class NavigationGUI(QWidget):
         super().__init__()
 
         self.log = lambda msg: print(msg)
-        self.INPUT_FILEPATH = INPUT_FILEPATH
         self.PIN_XLSX_FILEPATH = PIN_XLSX_FILEPATH
         self.PIN_JSON_FILEPATH = PIN_JSON_FILEPATH
 
@@ -132,25 +128,17 @@ class NavigationGUI(QWidget):
         hdr_v.sectionResized.connect(
             lambda logical, old, new: self.ui_settings.on_row_resized(logical, old, new, self.table))
 
-    def _get_sheet_json_path(self) -> str:
+    def _get_sheet_source_key(self) -> str:
         """
-        Возвращает путь к json для текущего листа Google Sheets.
-        Например: config/selected_data_3_Kontrol_TS.json
+        Возвращает ключ источника для текущего листа Google Sheets.
+        Рейсы хранятся в SQLite, ключ нужен только для разделения листов.
         """
-        base = Path(INPUT_FILEPATH)
-
         if not getattr(self, "gsheet", None) or not getattr(self.gsheet, "sheet", None):
-            return str(base)
+            return "default"
 
         index = getattr(self.gsheet, "worksheet_index", 0) or 0
         title = getattr(self.gsheet.sheet, "title", f"sheet_{index}") or f"sheet_{index}"
-
-        safe = re.sub(r"[^\w.-]+", "_", title, flags=re.UNICODE).strip("._-")
-        if not safe:
-            safe = f"sheet_{index}"
-
-        filename = f"{base.stem}_{index}_{safe}.json"
-        return str(base.with_name(filename))
+        return f"sheet_{index}_{title}"
 
     def _toggle_search_bar(self):
         if self.search_bar.isVisible():

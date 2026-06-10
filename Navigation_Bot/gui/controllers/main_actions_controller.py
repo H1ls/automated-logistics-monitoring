@@ -7,6 +7,7 @@ from Navigation_Bot.gui.dialogs.create_race_dialog import CreateRaceDialog
 from Navigation_Bot.gui.dialogs.iD_manager_dialog import IDManagerDialog
 from Navigation_Bot.gui.dialogs.navigation_history_dialog import NavigationHistoryDialog
 from Navigation_Bot.gui.dialogs.tracking_id_editor import TrackingIdEditor
+from Navigation_Bot.core.task_identity import google_sheet_row, trip_number
 
 
 class MainActionsController:
@@ -35,8 +36,7 @@ class MainActionsController:
         gui._reload_after_gsheet = True
 
         try:
-            json_path = gui._get_sheet_json_path()
-            gui.task_repository.set_filepath(json_path)
+            gui.task_repository.set_source_key(gui._get_sheet_source_key())
 
             if not getattr(gui, "google_sync_service", None):
                 gui.log("⚠️ GoogleSyncService не подключён")
@@ -71,15 +71,21 @@ class MainActionsController:
                 gui.log("⚠️ NewTaskWorkflowService не подключён")
                 return
 
-            ok, new_task, err = gui.new_task_workflow_service.create_from_dialog_payload(dialog.get_payload(),
-                                                                                         upload_to_google=True,)
+            payload = dialog.get_payload()
+            ok, new_task, err = gui.new_task_workflow_service.create_from_dialog_payload(
+                payload,
+                upload_to_google=bool(payload.get("upload_to_google")),
+            )
 
             if not ok:
                 gui.log(f"❌ Не удалось создать рейс: {err}")
                 return
 
             gui.reload_and_show()
-            gui.log(f"✅ Рейс создан (index={new_task.get('index')})")
+            if google_sheet_row(new_task):
+                gui.log(f"✅ Рейс создан и отправлен в Google (trip_number={trip_number(new_task)}, google_sheet_row={google_sheet_row(new_task)})")
+            else:
+                gui.log(f"✅ Рейс создан локально (trip_number={trip_number(new_task)})")
         except Exception as e:
             gui.log(f"❌ Ошибка в _open_create_race_dialog: {e}")
 
@@ -88,7 +94,7 @@ class MainActionsController:
         car = gui.json_data[row]
         dialog = TrackingIdEditor(car, log_func=gui.log, parent=gui)
         if dialog.exec():
-            gui.task_repository.set(gui.json_data)
+            gui.task_repository.set(gui.json_data, source="user")
             gui.reload_and_show()
 
     def open_id_manager(self) -> None:
@@ -96,15 +102,20 @@ class MainActionsController:
         dialog = IDManagerDialog(gui)
         if dialog.exec():
             gui.reload_and_show()
-            gui.log("✅ Id_car.json перезаписан")
+            gui.log("✅ Справочник ТС обновлен в БД")
 
     def open_navigation_history_dialog(self) -> None:
         gui = self.gui
         try:
-            task_index = self._selected_task_index()
-            if not task_index:
+            task_row = self._selected_task_row()
+            if not task_row:
                 return
 
+            task_trip_number = trip_number(task_row)
+            if not task_trip_number:
+                gui.log("⚠️ У строки нет trip_number")
+                return
+            vehicle_monitoring_id = task_row.get("id")
             nav_service = getattr(gui, "navigation_history_service", None)
             route_service = getattr(gui, "route_estimate_history_service", None)
             note_service = getattr(gui, "note_history_service", None)
@@ -114,10 +125,13 @@ class MainActionsController:
                 return
 
             dialog = NavigationHistoryDialog(
-                task_index=task_index,
-                nav_rows=nav_service.get_by_task_index(task_index),
-                route_rows=route_service.get_by_task_index(task_index) if route_service else [],
-                note_rows=note_service.get_by_task_index(task_index) if note_service else [],
+                task_index=task_trip_number,
+                vehicle_monitoring_id=vehicle_monitoring_id,
+                vehicle_plate=task_row.get("ТС", ""),
+                nav_rows=nav_service.get_by_trip_number(task_trip_number),
+                vehicle_nav_rows=nav_service.get_by_vehicle_monitoring_id(vehicle_monitoring_id),
+                route_rows=route_service.get_by_trip_number(task_trip_number) if route_service else [],
+                note_rows=note_service.get_by_trip_number(task_trip_number) if note_service else [],
                 note_history_service=note_service,
                 parent=gui,
             )
@@ -126,6 +140,10 @@ class MainActionsController:
             gui.log(f"❌ Ошибка открытия истории навигации: {e}")
 
     def _selected_task_index(self):
+        task_row = self._selected_task_row()
+        return trip_number(task_row) if task_row else None
+
+    def _selected_task_row(self):
         gui = self.gui
         row = gui.table.currentRow()
         if row < 0:
@@ -142,11 +160,11 @@ class MainActionsController:
             gui.log("⚠️ Строка не найдена")
             return None
 
-        task_index = data[real_idx].get("index")
-        if not task_index:
-            gui.log("⚠️ У строки нет index")
+        task_row = data[real_idx]
+        if not google_sheet_row(task_row) and not trip_number(task_row):
+            gui.log("⚠️ У строки нет google_sheet_row/trip_number")
             return None
-        return task_index
+        return task_row
 
     def on_btn_process_all_clicked(self) -> None:
         progress = self._load_batch_progress()

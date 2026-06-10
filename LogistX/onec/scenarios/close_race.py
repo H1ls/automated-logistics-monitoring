@@ -40,6 +40,7 @@ class CloseRaceScenario(BaseScenario):
         step.run(ctx)
         completed.append(step.stage)
 
+    # TODO: Проверять на загрузку детализации, уберет ошибку при медленном интернете, вместо времени ожидания
     def run(self, ctx) -> BotResult:
         completed: list[str] = []
         precheck_future: Future | None = None
@@ -93,7 +94,7 @@ class CloseRaceScenario(BaseScenario):
 
             ctx.state["close_status"] = "closed"
 
-            return BotResult.success(stage="done",message=f"Выполнены шаги: {', '.join(completed)}")
+            return BotResult.success(stage="done", message=f"Выполнены шаги: {', '.join(completed)}")
 
         except ScenarioError as e:
             self.errors.safe_abort(e.message)

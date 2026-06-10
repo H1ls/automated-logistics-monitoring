@@ -6,6 +6,8 @@ from PyQt6.QtGui import QColor
 from PyQt6.QtWidgets import (QTableWidgetItem, QPushButton, QWidget, QHBoxLayout, QLabel, )
 from PyQt6.QtCore import Qt
 
+from Navigation_Bot.core.task_identity import row_identity_for_gui
+
 
 class TableRowRenderer:
     """
@@ -47,8 +49,8 @@ class TableRowRenderer:
     def _render_row_actions(self, row_idx: int, row: dict, real_idx: int):
         btn = QPushButton("▶" if row.get("id") else "🛠")
 
-        index_key = row.get("index")
-        self.row_action_controller.register_button(index_key, btn)
+        row_identity = row_identity_for_gui(row)
+        self.row_action_controller.register_button(row_identity, btn)
 
         if not row.get("id"):
             btn.setStyleSheet("color: red;")
