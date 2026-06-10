@@ -4,6 +4,7 @@ from Navigation_Bot.gui.dialogs.combined_settings_dialog import VerticalTextDele
 from Navigation_Bot.gui.widgets.table.row_action_controller import RowActionController
 from Navigation_Bot.gui.widgets.table.table_display_formatter import TableDisplayFormatter
 from Navigation_Bot.gui.widgets.table.table_row_renderer import TableRowRenderer
+from Navigation_Bot.core.task_identity import row_identity_for_gui
 
 
 class TableManager:
@@ -48,15 +49,15 @@ class TableManager:
         if view_order is None:
             view_order = list(range(len(json_data)))
         self.view_order = view_order or list(range(len(json_data)))
-        self._index_to_visual = {}
+        self._row_identity_to_visual = {}
 
         for visual_row, real_idx in enumerate(self.view_order):
             try:
-                key = (json_data[real_idx] or {}).get("index")
+                key = row_identity_for_gui(json_data[real_idx] or {})
             except Exception:
                 key = None
             if key is not None:
-                self._index_to_visual[key] = visual_row
+                self._row_identity_to_visual[key] = visual_row
 
         scroll_value, selected_row = self._capture_view_state()
 
@@ -108,8 +109,11 @@ class TableManager:
         real_idx = self.view_order[visual_row]
         return real_idx if real_idx >= 0 else None
 
+    def visual_row_by_row_identity(self, row_identity):
+        return self._row_identity_to_visual.get(row_identity, -1)
+
     def visual_row_by_index_key(self, key):
-        return self._index_to_visual.get(key, -1)
+        return self.visual_row_by_row_identity(key)
 
     # ---- B. table event entrypoints
     def edit_cell_content(self, row, col):
@@ -149,8 +153,8 @@ class TableManager:
         QTimer.singleShot(0, lambda: self._save_item(item))
 
     # ---- D.facades to child helpers
-    def set_row_busy(self, index_key: int, busy: bool):
-        self.row_action_controller.set_row_busy(index_key, busy)
+    def set_row_busy(self, row_identity: int, busy: bool):
+        self.row_action_controller.set_row_busy(row_identity, busy)
 
     def set_all_rows_busy(self, busy: bool):
         self.row_action_controller.set_all_rows_busy(busy)

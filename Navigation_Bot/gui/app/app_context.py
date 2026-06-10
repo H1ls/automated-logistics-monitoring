@@ -13,6 +13,8 @@ class AppContext:
     # --- данные / интеграции ---
     task_repository: Any
     gsheet: Any
+    google_navigation_writer: Any
+    google_account_auth_service: Any
 
     # --- базовые application services ---
     tasks_service: Any

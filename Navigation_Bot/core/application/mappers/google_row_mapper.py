@@ -5,7 +5,7 @@ import re
 
 class GoogleRowMapper:
     @staticmethod
-    def build_row(index_key: int, dh: list[str]) -> dict:
+    def build_row(google_sheet_row: int, dh: list[str]) -> dict:
         d = dh[0] if len(dh) > 0 else ""
         e = dh[1] if len(dh) > 1 else ""
         f = dh[2] if len(dh) > 2 else ""
@@ -16,7 +16,8 @@ class GoogleRowMapper:
         number, phone = raw_ts[:9], raw_ts[9:]
         formatted_ts = number[:6] + " " + number[6:] if len(number) >= 9 else number
 
-        return {"index": index_key,
+        return {"index": google_sheet_row,
+                "google_sheet_row": google_sheet_row,
                 "ТС": formatted_ts,
                 "Телефон": phone,
                 "ФИО": e,

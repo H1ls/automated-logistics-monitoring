@@ -217,7 +217,7 @@ class CombinedSettingsDialog(QDialog):
         table_manager = getattr(parent_gui, "table_manager", None)
 
         if task_repository is not None:
-            task_repository.set([])
+            task_repository.set([], source="user")
 
         if table_manager is not None:
             # table_manager.display()
@@ -426,7 +426,8 @@ class VerticalTextDelegate(QStyledItemDelegate):
         painter.restore()
 
 
-# TODO: Добавить настройку времени для погрузки(сейчас Погрузка > now на 3ч)
+# TODO: 1. Добавить настройку времени для погрузки(сейчас Погрузка > now на 3ч)
+#       2. Добавить настройку времени для опоздунов
 class HighlightSettingsTab(QWidget):
     """Вкладка настроек подсветки строк."""
 

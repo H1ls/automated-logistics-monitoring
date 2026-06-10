@@ -36,14 +36,14 @@ class NavigationRowService:
         self.route_estimate_history_service = route_estimate_history_service
 
     # TODO: Найти нормальное место для _save_route_estimate
-    def _save_route_estimate(self, task, unload_idx: int) -> None:
+    def _save_route_estimate(self, task, unload_idx: int, task_trip_number: int | None) -> None:
         try:
             if not self.route_estimate_history_service:
                 return
 
             forecast = task.forecast
 
-            estimate = RouteEstimate(task_index=task.index,
+            estimate = RouteEstimate(task_index=task_trip_number or task.index,
                                      target_sequence=unload_idx + 1,
                                      distance_km=forecast.distance_km,
                                      duration_minutes=forecast.duration_minutes,
@@ -58,14 +58,14 @@ class NavigationRowService:
             self.log(f"❌ Ошибка в NavigationRowService._save_route_estimate: {e}")
 
     # TODO: Найти нормальное место для _save_navigation_snapshot
-    def _save_navigation_snapshot(self, task) -> None:
+    def _save_navigation_snapshot(self, task, task_trip_number: int | None) -> None:
         try:
             if not self.navigation_history_service:
                 return
 
             nav = task.navigation
 
-            snapshot = NavigationSnapshot(task_index=task.index,
+            snapshot = NavigationSnapshot(task_index=task_trip_number or task.index,
                                           vehicle_plate=task.vehicle.plate_number,
                                           vehicle_monitoring_id=task.vehicle.monitoring_id,
                                           geo_text=nav.geo_text or "",
@@ -128,57 +128,59 @@ class NavigationRowService:
         """
         Обработать одну строку.
         Возвращает:
-            (merged_row, index_key)
+            (merged_row, row_identity)
         где:
             merged_row -> итоговая строка после обработки
-            index_key  -> row["index"], если удалось определить
+            row_identity -> ключ GUI: google_sheet_row, иначе trip_number
         """
-        index_key = None
+        row_identity = None
 
         try:
-            index_key = self.tasks_service.get_index_key_by_row(row)
+            row_identity = self.tasks_service.get_row_identity_by_row(row)
+            task_trip_number = self.tasks_service.get_trip_number_by_row(row)
             if not self.tasks_service.exists_row(row):
                 self.log(f"⚠️ Строка {row} не существует.")
-                return None, index_key
+                return None, row_identity
 
             task = self.tasks_service.get_task(row)
             if not task:
                 self.log(f"⚠️ Не удалось получить Task для строки {row}")
-                return None, index_key
+                return None, row_identity
 
             if not task.vehicle.plate_number:
                 self.log(f"⛔ Пропуск: нет ТС в строке {row + 1}")
-                return None, index_key
+                return None, row_identity
 
             updated_task = self._process_wialon_row(task=task, navibot=navibot, switch_tab=switch_tab)
             if not updated_task:
-                return None, index_key
+                return None, row_identity
 
-            self._save_navigation_snapshot(updated_task)
+            self._save_navigation_snapshot(updated_task, task_trip_number)
             should_maps = self._should_process_maps(updated_task)
 
             if should_maps:
-                updated_task = self._process_maps(task=updated_task, mapsbot=mapsbot, switch_tab=switch_tab, )
+                updated_task = self._process_maps(task=updated_task, mapsbot=mapsbot, switch_tab=switch_tab,
+                                                  task_trip_number=task_trip_number, )
 
-            ok, saved_task, err = self.tasks_service.save_task_by_index(updated_task)
+            ok, saved_task, err = self.tasks_service.save_task(row, updated_task)
             if not ok:
                 self.log(f"❌ Не удалось сохранить Task: {err}")
-                return None, index_key
+                return None, row_identity
 
             final_row = TaskMapper.to_dict(updated_task)
             if not final_row:
                 self.log(f"⚠️ После сохранения строка {row} не найдена")
-                return None, index_key
+                return None, row_identity
 
             self.updated_rows.append(dict(final_row))
             self._finalize_row(final_row)
 
-            return final_row, index_key
+            return final_row, row_identity
         except Exception as e:
             self.log(f"❌ Ошибка в NavigationRowService.process_row:")
             # self.log(e)
             # self.log(traceback.format_exc())
-            return None, index_key
+            return None, row_identity
 
     def _apply_navigation_result_to_task(self, task, result):
 
@@ -219,7 +221,8 @@ class NavigationRowService:
             return None
 
     # TODO: добавить слежение что стоит/покинул Выгрузку N
-    def _process_maps(self, *, task, mapsbot, switch_tab):
+    # TODO: Привязать
+    def _process_maps(self, *, task, mapsbot, switch_tab, task_trip_number: int | None):
         if not switch_tab("yandex"):
             return task
 
@@ -237,14 +240,14 @@ class NavigationRowService:
         mapsbot.process_navigation_from_point(legacy_row, unload_point)
         task = self._apply_legacy_row_to_task(task, legacy_row)
 
-        self._save_route_estimate(task, unload_idx)
+        self._save_route_estimate(task, unload_idx, task_trip_number)
         if task.navigation.geo_text == "у выгрузки":
-            index_key = task.index
-            if index_key is None:
-                self.log("⚠️ Нельзя отметить выгрузку обработанной: нет index")
+            google_sheet_row = task.index
+            if google_sheet_row is None:
+                self.log("⚠️ Нельзя отметить выгрузку обработанной: нет google_sheet_row")
                 return task
 
-            ok, saved_task, err = self.tasks_service.mark_unload_processed(index_key, unload_idx)
+            ok, saved_task, err = self.tasks_service.mark_unload_processed(google_sheet_row, unload_idx)
             if not ok:
                 self.log(f"⚠️ Не удалось отметить выгрузку обработанной: {err}")
                 return task

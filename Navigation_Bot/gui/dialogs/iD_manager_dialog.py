@@ -4,14 +4,22 @@ from PyQt6.QtWidgets import (
     QTableWidget, QTableWidgetItem, QPushButton
 )
 
-from Navigation_Bot.core.repositories.json_task_repository import JsonTaskRepository
-from Navigation_Bot.core.paths import ID_FILEPATH
+from Navigation_Bot.core.paths import SQLITE_DB_FILEPATH
+from Navigation_Bot.core.repositories.sqlite_vehicle_repository import (
+    CENTER_FIELD,
+    DB_ID_FIELD,
+    ID_FIELD,
+    NAME_FIELD,
+    TS_FIELD,
+    SqliteVehicleRepository,
+)
+from Navigation_Bot.core.storage.sqlite_connection import open_database
 from Navigation_Bot.gui.dialogs.dialog_helpers import button_row_trailing
 
-_ID = "ИДОбъекта в центре мониторинга"
-_NAME = "Наименование"
-_TS = "ТС"
-_CENTER = "Центр мониторинга"
+_ID = ID_FIELD
+_NAME = NAME_FIELD
+_TS = TS_FIELD
+_CENTER = CENTER_FIELD
 
 
 class IDManagerDialog(QDialog):
@@ -21,8 +29,12 @@ class IDManagerDialog(QDialog):
         self.resize(550, 600)
 
         self.log_func = getattr(parent, "log", print)
-        self.context = JsonTaskRepository(ID_FILEPATH, log_func=self.log_func)
-        self.original_entries = self.context.get()  # это тот же список, что внутри DataContext
+        connection = getattr(parent, "sqlite_connection", None) or open_database(SQLITE_DB_FILEPATH)
+        self.vehicle_repository = getattr(parent, "vehicle_repository", None) or SqliteVehicleRepository(
+            connection,
+            log=self.log_func,
+        )
+        self.original_entries = self.vehicle_repository.list_registry_entries()
         self.changed_rows = set()
         self._initializing = True
 
@@ -182,5 +194,5 @@ class IDManagerDialog(QDialog):
             ent[_TS] = ts_text
             ent[_CENTER] = center_text
 
-        self.context.save()
+        self.vehicle_repository.save_registry_entries(self.original_entries)
         super().accept()

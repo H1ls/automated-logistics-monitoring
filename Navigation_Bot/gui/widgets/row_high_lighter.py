@@ -2,6 +2,8 @@ from PyQt6.QtCore import QTimer, Qt
 from datetime import datetime, timedelta, timezone
 from PyQt6.QtGui import QColor, QBrush
 
+from Navigation_Bot.core.task_identity import row_identity_for_gui
+
 
 class RowHighlighter:
     def __init__(self, table, task_repository, log, hours_default=2):
@@ -11,7 +13,7 @@ class RowHighlighter:
         self.hours_default = hours_default
         self.duration_minutes = hours_default * 60
         self.until_map = {}
-        self.key_to_visual = None  # callable: key -> visual_row
+        self.key_to_visual = None  # callable: row_identity -> visual_row
 
         # Colors used by this highlighter (keep in one place)
         self._row_manual_brush = QBrush(QColor("#e9f2d3"))  # light green
@@ -39,39 +41,39 @@ class RowHighlighter:
         self.until_map.clear()
 
         if changed:
-            self.task_repository.save()
+            self.task_repository.save(source="user")
 
         return changed
 
-    def toggle_highlight(self, index_key: int):
+    def toggle_highlight(self, row_identity: int):
         data = self.task_repository.get() or []
 
         rec = None
         for r in data:
-            if r.get("index") == index_key:
+            if row_identity_for_gui(r) == row_identity:
                 rec = r
                 break
 
         if not rec:
-            self.log(f"⚠️ toggle_highlight: не найдена запись index={index_key}")
+            self.log(f"⚠️ toggle_highlight: не найдена запись row_identity={row_identity}")
             return False
 
         # если уже есть → убрать
         if rec.get("highlight_until"):
             rec.pop("highlight_until", None)
-            self.until_map.pop(index_key, None)
+            self.until_map.pop(row_identity, None)
 
             # снять подсветку
             if callable(self.key_to_visual):
-                visual_row = self.key_to_visual(index_key)
+                visual_row = self.key_to_visual(row_identity)
                 if 0 <= visual_row < self.table.rowCount():
                     self._paint_row(visual_row, enabled=False)
 
-            self.task_repository.save()
+            self.task_repository.save(source="user")
             return False  # выключили
 
         # если нет → включить
-        self.highlight_for(index_key)
+        self.highlight_for(row_identity)
         return True  # включили
 
     def set_view_order(self, view_order: list[int] | None):
@@ -93,15 +95,15 @@ class RowHighlighter:
     def _from_iso_utc(s: str) -> datetime:
         return datetime.fromisoformat(s.replace("Z", "+00:00"))
 
-    def highlight_for(self, index_key: int, hours: int | None = None):
+    def highlight_for(self, row_identity: int, hours: int | None = None):
         """
-        Подсветить запись (и строку в таблице) по стабильному ключу index_key.
+        Подсветить запись (и строку в таблице) по стабильному ключу row_identity.
         Хранит highlight_until в самой записи JSON (rec["highlight_until"]).
         ВАЖНО: highlight_until трактуется как "время постановки на слежение".
         until_map хранит key -> expiry datetime (когда нужно снять подсветку).
         """
-        if index_key is None:
-            self.log("⚠️ highlight_for: index_key=None")
+        if row_identity is None:
+            self.log("⚠️ highlight_for: row_identity=None")
             return
 
         minutes = self.duration_minutes if hours is None else int(hours * 60)
@@ -114,26 +116,26 @@ class RowHighlighter:
         # найти запись по ключу
         rec = None
         for r in data:
-            if r.get("index") == index_key:
+            if row_identity_for_gui(r) == row_identity:
                 rec = r
                 break
 
         if rec is None:
-            self.log(f"⚠️ highlight_for: запись index={index_key} не найдена")
+            self.log(f"⚠️ highlight_for: запись row_identity={row_identity} не найдена")
             return
 
         # сохранить в JSON запись
         rec["highlight_until"] = started_iso
-        self.task_repository.save()
+        self.task_repository.save(source="user")
 
         # сохранить в runtime-map
-        self.until_map[index_key] = expiry_dt
+        self.until_map[row_identity] = expiry_dt
 
         # покрасить строку на экране (через mapper key->visual_row)
         visual_row = -1
         if callable(self.key_to_visual):
             try:
-                visual_row = self.key_to_visual(index_key)
+                visual_row = self.key_to_visual(row_identity)
             except Exception as e:
                 self.log(f"⚠️ key_to_visual mapper error: {e}")
                 visual_row = -1
@@ -142,13 +144,13 @@ class RowHighlighter:
             self._paint_row(visual_row, enabled=True)
 
         # поставить таймер на авто-снятие (если к тому моменту истечёт)
-        QTimer.singleShot(minutes * 60 * 1000, lambda: self._clear_if_expired(index_key))
+        QTimer.singleShot(minutes * 60 * 1000, lambda: self._clear_if_expired(row_identity))
 
     def reapply_from_json(self):
         """
         Вызывается после перерисовки таблицы (after_display).
         Смотрит highlight_until в каждой записи и заново красит строки
-        по ключу index (через mapper key->visual_row).
+        по ключу row_identity (через mapper key->visual_row).
         """
         data = self.task_repository.get() or []
         now = datetime.now()
@@ -156,9 +158,9 @@ class RowHighlighter:
         self.until_map.clear()
 
         for rec in data:
-            index_key = rec.get("index")
+            row_identity = row_identity_for_gui(rec)
             iso = (rec.get("highlight_until") or "").strip()
-            if index_key is None or not iso:
+            if row_identity is None or not iso:
                 continue
 
             try:
@@ -171,12 +173,12 @@ class RowHighlighter:
                 continue
 
             # сохраняем в runtime-map: key -> datetime
-            self.until_map[index_key] = expiry_dt
+            self.until_map[row_identity] = expiry_dt
 
             # красим строку по текущей позиции (через mapper)
             if callable(self.key_to_visual):
                 try:
-                    visual_row = self.key_to_visual(index_key)
+                    visual_row = self.key_to_visual(row_identity)
                 except Exception as e:
                     self.log(f"⚠️ key_to_visual mapper error: {e}")
                     continue
@@ -189,10 +191,10 @@ class RowHighlighter:
 
             # авто-снятие после оставшегося времени
             remaining_ms = int(max(1, (expiry_dt - now).total_seconds() * 1000))
-            QTimer.singleShot(remaining_ms, lambda k=index_key: self._clear_if_expired(k))
+            QTimer.singleShot(remaining_ms, lambda k=row_identity: self._clear_if_expired(k))
 
-    def _clear_if_expired(self, index_key: int):
-        expiry_dt = self.until_map.get(index_key)
+    def _clear_if_expired(self, row_identity: int):
+        expiry_dt = self.until_map.get(row_identity)
         if not expiry_dt:
             return
 
@@ -203,25 +205,25 @@ class RowHighlighter:
 
         rec = None
         for r in data:
-            if r.get("index") == index_key:
+            if row_identity_for_gui(r) == row_identity:
                 rec = r
                 break
         if rec is None:
-            self.until_map.pop(index_key, None)
+            self.until_map.pop(row_identity, None)
             return
 
         # очистить JSON-метку
         if rec.get("highlight_until"):
             rec["highlight_until"] = ""
-            self.task_repository.save()
+            self.task_repository.save(source="user")
 
-        self.until_map.pop(index_key, None)
+        self.until_map.pop(row_identity, None)
 
         # снять подсветку с текущей строки на экране
         visual_row = -1
         if callable(self.key_to_visual):
             try:
-                visual_row = self.key_to_visual(index_key)
+                visual_row = self.key_to_visual(row_identity)
             except Exception:
                 visual_row = -1
 
@@ -276,12 +278,12 @@ class RowHighlighter:
                 continue
 
             #  real -> visual (если сортировка включена)
-            index_key = rec.get("index")
-            if index_key is None or not callable(self.key_to_visual):
+            row_identity = row_identity_for_gui(rec)
+            if row_identity is None or not callable(self.key_to_visual):
                 continue
 
             try:
-                visual_row = self.key_to_visual(index_key)
+                visual_row = self.key_to_visual(row_identity)
             except Exception as e:
                 self.log(f"⚠️ key_to_visual mapper error: {e}")
                 continue

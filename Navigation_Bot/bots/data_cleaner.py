@@ -1,27 +1,29 @@
 import os
 import re
 from datetime import datetime
-from pathlib import Path
 from typing import List, Dict, Any
 
-from Navigation_Bot.core.repositories.json_task_repository import JsonTaskRepository
-from Navigation_Bot.core.paths import INPUT_FILEPATH, ID_FILEPATH
+from Navigation_Bot.core.repositories.sqlite_task_repository import SqliteTaskRepository
+from Navigation_Bot.core.repositories.sqlite_vehicle_repository import SqliteVehicleRepository
+from Navigation_Bot.core.paths import SQLITE_DB_FILEPATH
+from Navigation_Bot.core.storage.sqlite_connection import open_database
 
 """2. Очистка данных"""
 
 
 class DataCleaner:
-    def __init__(self, task_repository: JsonTaskRepository | None = None,
-                 id_context: JsonTaskRepository | None = None,
+    def __init__(self, task_repository=None,
+                 id_context=None,
                  log_func=print):
 
         self.log = log_func
 
-        self.task_repository = task_repository or JsonTaskRepository(str(INPUT_FILEPATH), log_func=log_func)
-        self.id_context = id_context or JsonTaskRepository(str(ID_FILEPATH), log_func=log_func)
+        self.task_repository = task_repository or SqliteTaskRepository(open_database(SQLITE_DB_FILEPATH), log=log_func)
+        connection = getattr(self.task_repository, "connection", None) or open_database(SQLITE_DB_FILEPATH)
+        self.vehicle_repository = id_context or SqliteVehicleRepository(connection, log=log_func)
 
         self.json_data: List[Dict[str, Any]] = self.task_repository.get() or []
-        self.id_data: List[Dict[str, Any]] = self.id_context.get() or []
+        self.vehicle_lookup: dict[str, dict] = self.vehicle_repository.registry_lookup()
 
         self.date_re = re.compile(r"\b\d{1,2}[./]\d{1,2}(?:[./]\d{2,4})?\b")
         self.time_re = re.compile(r"\b(\d{1,2}[:\-]\d{2}(?::\d{2})?)\b")
@@ -318,16 +320,12 @@ class DataCleaner:
         1) Один раз сохраняем сырые строки в raw_load / raw_unload (для ML)
         2) Преобразуем строки Погрузка/Выгрузка → список блоков
         3) Чистим поле 'ТС'
-        4) Привязываем ID из Id_car.json
+        4) Привязываем Wialon ID из таблицы vehicles
         5) Сохраняем через TaskRepository
         """
-        if not Path(self.task_repository.filepath).exists():
-            self.log(f"❌ Файл не найден: {self.task_repository.filepath}")
-            return
-
         # актуальные данные и id-справочник
         self.json_data = self.task_repository.get() or []
-        self.id_data = self.id_context.get() or []
+        self.vehicle_lookup = self.vehicle_repository.registry_lookup()
 
         for item in self.json_data:
             if only_indexes is not None and item.get("index") not in only_indexes:
@@ -352,7 +350,7 @@ class DataCleaner:
         self._clean_vehicle_names()
         self._add_id_to_data()
 
-        self.task_repository.set(self.json_data)
+        self.task_repository.set(self.json_data, source="cleaner")
 
     def _clean_vehicle_names(self) -> None:
         """Оставляем в 'ТС' только номер (без телефона и переносов)."""
@@ -364,26 +362,19 @@ class DataCleaner:
     def _add_id_to_data(self) -> None:
         """
         Привязка ID к ТС:
-          - ключ по справочнику: 'Наименование' без пробелов
+          - ключ по справочнику vehicles: monitoring_name/plate_number без пробелов
           - ключ по данным: 'ТС' без пробелов (и без телефона)
         """
-        # создаём lookup: "Р703ТХ790" → 123456
-        lookup = {}
-        for entry in (self.id_data or []):
-            name = entry.get("Наименование")
-            obj_id = entry.get("ИДОбъекта в центре мониторинга")
-            if isinstance(name, str) and obj_id is not None:
-                key = re.sub(r"\s+", "", name)
-                lookup[key] = obj_id
-
         for row in self.json_data:
             ts = row.get("ТС", "")
             if not isinstance(ts, str) or not ts:
                 continue
             ts_clean = ts.split("\n", 1)[0].strip()
-            key = re.sub(r"\s+", "", ts_clean)
-            found = lookup.get(key)
+            key = SqliteVehicleRepository.compact_key(ts_clean)
+            found = self.vehicle_lookup.get(key)
             if found is not None:
-                row["id"] = found
+                row["id"] = found["monitoring_id"]
+                if found.get("plate_number"):
+                    row["ТС"] = found["plate_number"]
             else:
                 self.log(f"❌ Не найден ID для ТС: {ts_clean}")

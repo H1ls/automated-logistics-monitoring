@@ -68,12 +68,12 @@ class BatchProcessingService:
         total_count = len(rows_with_keys)
         processor = self.processor
 
-        for processed_count_cur, (row, index_key) in enumerate(rows_with_keys):
-            future = processor.executor.submit(processor.process_row_wrapper, row, index_key)
+        for processed_count_cur, (row, row_identity) in enumerate(rows_with_keys):
+            future = processor.executor.submit(processor.process_row_wrapper, row, row_identity)
             try:
-                success, error_msg, index_key = future.result()
+                success, error_msg, row_identity = future.result()
                 processed_count = processed_count_cur + 1
-                processor._highlight_row(row, index_key)
+                processor._highlight_row(row, row_identity)
 
                 row_info = self._get_row_info_for_display(row)
                 if not success:

@@ -24,6 +24,7 @@ class CreateRaceDialog(QDialog):
 
         self._buffer = {"Погрузка": [],
                         "Выгрузка": [],}
+        self._upload_to_google = False
 
         self.setWindowTitle("Создать рейс")
         self.resize(760, 720)
@@ -86,12 +87,15 @@ class CreateRaceDialog(QDialog):
         actions.addStretch()
 
         self.btn_save = QPushButton("Сохранить")
+        self.btn_save_send = QPushButton("Сохранить и отправить")
         self.btn_cancel = QPushButton("Отмена")
 
-        self.btn_save.clicked.connect(self._accept_if_valid)
+        self.btn_save.clicked.connect(lambda: self._accept_if_valid(upload_to_google=False))
+        self.btn_save_send.clicked.connect(lambda: self._accept_if_valid(upload_to_google=True))
         self.btn_cancel.clicked.connect(self.reject)
 
         actions.addWidget(self.btn_save)
+        actions.addWidget(self.btn_save_send)
         actions.addWidget(self.btn_cancel)
 
         root.addLayout(actions)
@@ -185,7 +189,7 @@ class CreateRaceDialog(QDialog):
     def _edit_unload(self):
         self._open_address_editor("Выгрузка")
 
-    def _accept_if_valid(self):
+    def _accept_if_valid(self, *, upload_to_google: bool = False):
         ts = self.edit_ts.text().strip()
         ka = self.edit_ka.text().strip()
         fio = self.edit_fio.text().strip()
@@ -210,6 +214,7 @@ class CreateRaceDialog(QDialog):
             QMessageBox.warning(self, "Проверка", "Добавь выгрузку.")
             return
 
+        self._upload_to_google = bool(upload_to_google)
         self.accept()
 
     # --- public
@@ -218,4 +223,5 @@ class CreateRaceDialog(QDialog):
                 "phone": self.edit_phone.text().strip(),
                 "ka": self.edit_ka.text().strip(),
                 "fio": self.edit_fio.text().strip(),
-                "buffer": dict(self._buffer), }
+                "buffer": dict(self._buffer),
+                "upload_to_google": self._upload_to_google, }

@@ -98,29 +98,29 @@ class NavigationProcessor:
             return False
         return self.tasks_service.exists_row(row_idx)
 
-    def _get_index_key_by_row(self, row_idx: int) -> int | None:
+    def _get_row_identity_by_row(self, row_idx: int) -> int | None:
         if not self.tasks_service:
             return None
-        return self.tasks_service.get_index_key_by_row(row_idx)
+        return self.tasks_service.get_row_identity_by_row(row_idx)
 
     def _get_processible_rows(self) -> list[tuple[int, int | None]]:
         if not self.tasks_service:
             return []
         return self.tasks_service.get_processible_rows()
 
-    def _set_row_busy(self, index_key: int | None, value: bool) -> None:
-        if self.ui_bridge and index_key is not None:
-            self.ui_bridge.set_busy.emit(index_key, value)
+    def _set_row_busy(self, row_identity: int | None, value: bool) -> None:
+        if self.ui_bridge and row_identity is not None:
+            self.ui_bridge.set_busy.emit(row_identity, value)
 
-    def _highlight_row(self, row_idx: int, index_key: int | None) -> None:
+    def _highlight_row(self, row_idx: int, row_identity: int | None) -> None:
         if not self.highlight_cb:
             return
 
         try:
-            if index_key is None:
-                self.log(f"⚠️ Нет поля 'index' у строки {row_idx}. Подсветка пропущена.")
+            if row_identity is None:
+                self.log(f"⚠️ Нет row_identity у строки {row_idx}. Подсветка пропущена.")
                 return
-            self.highlight_cb(index_key)
+            self.highlight_cb(row_identity)
 
             # В batch-режиме GUI не перерисовывается после каждой строки, а некоторые операции UI
             # (например, изменение busy-state) могут сбрасывать фон отдельных ячеек.
@@ -150,38 +150,38 @@ class NavigationProcessor:
             self.log(f"⚠️ Строка {row_idx} больше не существует. Пропуск.")
             return
 
-        index_key = self._get_index_key_by_row(row_idx)
+        row_identity = self._get_row_identity_by_row(row_idx)
 
-        self._set_row_busy(index_key, True)
-        self._highlight_row(row_idx, index_key)
+        self._set_row_busy(row_identity, True)
+        self._highlight_row(row_idx, row_identity)
 
-        self.executor.submit(self.process_row_wrapper, row_idx, index_key)
+        self.executor.submit(self.process_row_wrapper, row_idx, row_identity)
 
-    def process_row_wrapper(self, row: int, fallback_index_key: int | None = None): 
+    def process_row_wrapper(self, row: int, fallback_row_identity: int | None = None): 
         
         """
         Обработать строку и вернуть результат (успех, сообщение об ошибке)
         """
-        index_key = fallback_index_key
+        row_identity = fallback_row_identity
 
         try:
             self.browser_session.ensure_ready()
 
-            _, returned_index_key = self.row_service.process_row(row,
+            _, returned_row_identity = self.row_service.process_row(row,
                                                                  navibot=self.browser_session.navibot,
                                                                  mapsbot=self.browser_session.mapsbot,
                                                                  switch_tab=self.browser_session.switch_tab_or_log, )
 
-            if returned_index_key is not None:
-                index_key = returned_index_key
+            if returned_row_identity is not None:
+                row_identity = returned_row_identity
 
-            return True, "", index_key  # успех
+            return True, "", row_identity  # успех
 
         except Exception as e:
             error_msg = str(e)
             self.log(f"❌ Ошибка в process_row_wrapper: {error_msg}")
             self.log(traceback.format_exc())
-            return False, error_msg, index_key
+            return False, error_msg, row_identity
 
         finally:
             with self._processing_lock:
@@ -190,7 +190,7 @@ class NavigationProcessor:
             if is_single_mode:
                 self._leave_processing("single")
 
-            self._set_row_busy(index_key, False)
+            self._set_row_busy(row_identity, False)
 
     def process_all(self):
         self.batch_processing_service.process_all()

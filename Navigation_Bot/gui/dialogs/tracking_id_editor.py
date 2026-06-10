@@ -1,7 +1,15 @@
 from PyQt6.QtWidgets import QDialog, QLabel, QLineEdit, QPushButton, QVBoxLayout
 
-from Navigation_Bot.core.json_manager import JSONManager
-from Navigation_Bot.core.paths import ID_FILEPATH
+from Navigation_Bot.core.paths import SQLITE_DB_FILEPATH
+from Navigation_Bot.core.repositories.sqlite_vehicle_repository import (
+    CENTER_FIELD,
+    DB_ID_FIELD,
+    ID_FIELD,
+    NAME_FIELD,
+    TS_FIELD,
+    SqliteVehicleRepository,
+)
+from Navigation_Bot.core.storage.sqlite_connection import open_database
 
 """TODO 1.Логика self.car_data["id"] = int(new_id) 
         2.Проверка дубликатов
@@ -15,7 +23,11 @@ class TrackingIdEditor(QDialog):
         self.car_data = car_data
         self.log = log_func
 
-        self.json_manager = JSONManager(file_path=ID_FILEPATH, log_func=self.log)
+        connection = getattr(parent, "sqlite_connection", None) or open_database(SQLITE_DB_FILEPATH)
+        self.vehicle_repository = getattr(parent, "vehicle_repository", None) or SqliteVehicleRepository(
+            connection,
+            log=self.log,
+        )
 
         self.id_input = QLineEdit()
         self.id_input.setPlaceholderText("Введите ID")
@@ -44,25 +56,22 @@ class TrackingIdEditor(QDialog):
             self.log("⚠️ Введите корректные данные.")
             return
 
-        new_entry = {"ИДОбъекта в центре мониторинга": int(new_id),
-                     "Центр мониторинга": "Виалон",
-                     "ТС": ts,
-                     "Наименование": ts.replace(" ", "")
-                     }
+        existing_vehicle_id = None
+        for entry in self.vehicle_repository.list_registry_entries():
+            if entry.get(TS_FIELD) == ts:
+                existing_vehicle_id = entry.get(DB_ID_FIELD)
+                break
 
-        try:
-            data = self.json_manager.load_json()
-        except Exception:
-            data = []
-
-        if not isinstance(data, list):
-            data = []
-
-        if any(x.get("ИДОбъекта в центре мониторинга") == int(new_id) for x in data):
+        if self.vehicle_repository.exists_monitoring_id(int(new_id), except_vehicle_id=existing_vehicle_id):
             self.log(f"⚠️ ID {new_id} уже существует.")
         else:
-            data.append(new_entry)
-            self.json_manager.save_in_json(data)
+            self.vehicle_repository.upsert_registry_entry({
+                DB_ID_FIELD: existing_vehicle_id,
+                ID_FIELD: int(new_id),
+                CENTER_FIELD: "Виалон",
+                TS_FIELD: ts,
+                NAME_FIELD: ts.replace(" ", ""),
+            })
             self.log(f"✅ Добавлен ID {new_id} для ТС {ts}")
 
         self.car_data["id"] = int(new_id)

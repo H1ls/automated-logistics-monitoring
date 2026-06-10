@@ -1,7 +1,6 @@
 from __future__ import annotations
 
-import re
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from typing import Any, Callable
 
 from Navigation_Bot.core.domain.entities.task import Task
@@ -9,6 +8,9 @@ from Navigation_Bot.core.domain.mappers.task_mapper import TaskMapper
 from Navigation_Bot.core.processed_flags import init_processed_flags
 from Navigation_Bot.core.application.mappers.google_row_mapper import GoogleRowMapper
 from Navigation_Bot.core.domain.entities.status_event import StatusEvent
+from Navigation_Bot.core.task_identity import google_sheet_row, row_identity_for_gui, trip_number
+
+AUDITED_USER_FIELDS = {"id", "Телефон", "ФИО", "КА", "status"}
 
 
 @dataclass(slots=True)
@@ -36,11 +38,11 @@ class TasksService:
         if not isinstance(task, Task):
             return False, None, "task_invalid"
 
-        index_key = task.index
-        if not index_key:
+        google_row = task.index
+        if not google_row:
             return False, None, "missing_index"
 
-        real_idx = self.find_real_idx_by_index_key(index_key)
+        real_idx = self.find_real_idx_by_google_sheet_row(google_row)
         if real_idx is None:
             return False, None, "row_not_found"
 
@@ -75,7 +77,7 @@ class TasksService:
 
             data[real_idx] = merged
 
-            self.task_repository.set(data)
+            self.task_repository.set(data, source="user")
 
             return True, task, None
 
@@ -107,15 +109,32 @@ class TasksService:
         return row if isinstance(row, dict) else None
 
     def find_real_idx_by_index_key(self, index_key: int) -> int | None:
+        """Legacy-lookup по ключу GUI; сейчас это google_sheet_row/index."""
+        return self.find_real_idx_by_google_sheet_row(index_key)
+
+    def find_real_idx_by_google_sheet_row(self, google_row: int) -> int | None:
+        """Ищет реальный индекс строки по номеру строки Google Sheets."""
         data, err = self._get_data()
         if err or data is None:
             return None
         for i, row in enumerate(data):
-            if isinstance(row, dict) and row.get("index") == index_key:
+            if isinstance(row, dict) and google_sheet_row(row) == google_row:
+                return i
+        return None
+
+    def find_real_idx_by_trip_number(self, task_trip_number: int) -> int | None:
+        data, err = self._get_data()
+        if err or data is None:
+            return None
+        for i, row in enumerate(data):
+            if isinstance(row, dict) and trip_number(row) == task_trip_number:
                 return i
         return None
 
     def delete_row(self, real_idx: int) -> tuple[bool, dict | None, str | None]:
+        return self.complete_row(real_idx, source="user")
+
+    def complete_row(self, real_idx: int, *, source: str = "user") -> tuple[bool, dict | None, str | None]:
         data, err = self._get_data()
         if err or data is None:
             return False, None, err
@@ -126,11 +145,31 @@ class TasksService:
         if not isinstance(row, dict):
             return False, None, "row_not_dict"
 
-        removed = data.pop(real_idx)
-        self.task_repository.save()
+        task_trip_number = trip_number(row)
+        old_status = str(row.get("status") or "active")
+
+        if hasattr(self.task_repository, "complete_row"):
+            ok, removed, complete_err = self.task_repository.complete_row(real_idx, source=source)
+        else:
+            removed = data.pop(real_idx)
+            self.task_repository.save(source=source)
+            ok, complete_err = True, None
+
+        if not ok:
+            return False, None, complete_err
+
+        if task_trip_number:
+            self._save_status_event(task_index=task_trip_number,
+                                    event_type="task_completed",
+                                    field_name="status",
+                                    old_value=old_status,
+                                    new_value="completed",
+                                    message="Рейс завершён вручную" if source == "user" else "Рейс завершён",
+                                    source=source, )
+
         return True, removed, None
 
-    def apply_patch(self, real_idx: int, patch: dict) -> tuple[bool, dict | None, str | None]:
+    def apply_patch(self, real_idx: int, patch: dict, *, source: str = "user") -> tuple[bool, dict | None, str | None]:
         data, err = self._get_data()
         if err or data is None:
             return False, None, err
@@ -143,6 +182,14 @@ class TasksService:
         if not isinstance(patch, dict) or not patch:
             return False, None, "empty_patch"
 
+        if source == "google" and self._looks_like_reused_google_row(row, patch):
+            row.clear()
+            row.update(patch)
+            init_processed_flags(data, data, loads_key="Выгрузка")
+            self.task_repository.save(source=source)
+            return True, row, None
+
+        old_row = dict(row)
         changed = False
         for key, value in patch.items():
             if row.get(key) != value:
@@ -154,7 +201,8 @@ class TasksService:
             changed = True
 
         if changed:
-            self.task_repository.save()
+            self.task_repository.save(source=source)
+            self._save_patch_status_events(old_row, row, patch, source)
 
         return True, row, None
 
@@ -182,20 +230,19 @@ class TasksService:
         if not isinstance(task, dict):
             return False, None, "task_invalid"
 
-        last_index = max([row.get("index", 0) for row in data if isinstance(row, dict)], default=0, )
-
         new_task = dict(task)
-        new_task["index"] = last_index + 1
+        new_task.pop("index", None)
+        new_task.pop("google_sheet_row", None)
 
         data.append(new_task)
         init_processed_flags(data, data, loads_key="Выгрузка")
-        self.task_repository.save()
+        self.task_repository.save(source="user")
 
         return True, new_task, None
 
     # TODO:В перспективе вынести либо в:GoogleSyncService, отдельный mapper типа GoogleRowMapper
-    def build_row_from_google_dh(self, index_key: int, dh: list[str]) -> dict:
-        return GoogleRowMapper.build_row(index_key, dh)
+    def build_row_from_google_dh(self, google_sheet_row_value: int, dh: list[str]) -> dict:
+        return GoogleRowMapper.build_row(google_sheet_row_value, dh)
 
     def add_only_missing_rows_from_google(self, rows_map: dict[int, list[str]]) -> tuple[bool, dict | None, str | None]:
         """
@@ -205,7 +252,7 @@ class TasksService:
 
         Возвращает:
             (ok, stats, err)
-        где stats = {"added": int, "skipped_existing": int}
+        где stats = {"added": int, "updated": int, "replaced": int}
         """
         data, err = self._get_data()
         if err or data is None:
@@ -214,25 +261,22 @@ class TasksService:
         if not isinstance(rows_map, dict):
             return False, None, "rows_map_invalid"
 
-        existing_indexes = {row.get("index")
-                            for row in data
-                            if isinstance(row, dict) and row.get("index") is not None
-                            }
+        existing_google_rows = {google_sheet_row(row): i
+                                for i, row in enumerate(data)
+                                if isinstance(row, dict) and google_sheet_row(row) is not None
+                                }
 
         added_count = 0
-        skipped_existing = 0
+        updated_count = 0
+        replaced_count = 0
 
-        for index_key, dh in rows_map.items():
-            if not isinstance(index_key, int):
+        for google_sheet_row_value, dh in rows_map.items():
+            if not isinstance(google_sheet_row_value, int):
                 continue
             if not isinstance(dh, list):
                 continue
 
-            if index_key in existing_indexes:
-                skipped_existing += 1
-                continue
-
-            fresh = self.build_row_from_google_dh(index_key, dh)
+            fresh = self.build_row_from_google_dh(google_sheet_row_value, dh)
 
             # защита от полностью пустой строки
             if not any([fresh.get("ТС"),
@@ -243,16 +287,70 @@ class TasksService:
                         fresh.get("Выгрузка"), ]):
                 continue
 
-            data.append(fresh)
-            existing_indexes.add(index_key)
-            added_count += 1
+            existing_idx = existing_google_rows.get(google_sheet_row_value)
+            if existing_idx is None:
+                data.append(fresh)
+                existing_google_rows[google_sheet_row_value] = len(data) - 1
+                added_count += 1
+                continue
+
+            old_row = data[existing_idx] if 0 <= existing_idx < len(data) else {}
+            if isinstance(old_row, dict) and self._looks_like_reused_google_row(old_row, fresh):
+                data[existing_idx] = fresh
+                replaced_count += 1
+            elif isinstance(old_row, dict):
+                data[existing_idx] = {**old_row, **fresh}
+                updated_count += 1
 
         init_processed_flags(data, data, loads_key="Выгрузка")
-        self.task_repository.save()
+        self.task_repository.save(source="google")
 
         return (True, {"added": added_count,
-                       "skipped_existing": skipped_existing, },
+                       "updated": updated_count,
+                       "replaced": replaced_count, },
                 None)
+
+    @staticmethod
+    def _looks_like_reused_google_row(old_row: dict, fresh_row: dict) -> bool:
+        old_plate = TasksService._signature_text(old_row.get("ТС"))
+        new_plate = TasksService._signature_text(fresh_row.get("ТС"))
+        old_load = TasksService._signature_text(old_row.get("raw_load") or old_row.get("Погрузка"))
+        new_load = TasksService._signature_text(fresh_row.get("raw_load") or fresh_row.get("Погрузка"))
+        old_unload = TasksService._signature_text(old_row.get("raw_unload") or old_row.get("Выгрузка"))
+        new_unload = TasksService._signature_text(fresh_row.get("raw_unload") or fresh_row.get("Выгрузка"))
+        if not old_plate or not new_plate:
+            return False
+        return old_plate != new_plate and (old_load != new_load or old_unload != new_unload)
+
+    @staticmethod
+    def _signature_text(value: Any) -> str:
+        return " ".join(str(value or "").lower().split())
+
+    def _save_patch_status_events(self, old_row: dict, new_row: dict, patch: dict, source: str) -> None:
+        if source != "user":
+            return
+
+        task_trip_number = trip_number(new_row) or trip_number(old_row)
+        if not task_trip_number:
+            return
+
+        for field_name in patch:
+            if field_name not in AUDITED_USER_FIELDS:
+                continue
+            old_value = old_row.get(field_name)
+            new_value = new_row.get(field_name)
+            if str(old_value or "") == str(new_value or ""):
+                continue
+
+            self._save_status_event(
+                task_index=task_trip_number,
+                event_type="task_field_updated",
+                field_name=field_name,
+                old_value=str(old_value or ""),
+                new_value=str(new_value or ""),
+                message=f"{field_name} changed manually",
+                source=source,
+            )
 
     def remove_completed_tasks(self, active_google_indexes: set[int]) -> tuple[bool, dict | None, str | None]:
         """
@@ -277,20 +375,20 @@ class TasksService:
             if not isinstance(row, dict):
                 continue
 
-            index_key = row.get("index")
-            if index_key in active_google_indexes:
+            row_google_sheet_row = google_sheet_row(row)
+            if row_google_sheet_row in active_google_indexes:
                 filtered.append(row)
 
         deleted_count = original_len - len(filtered)
 
         if deleted_count > 0:
-            self.task_repository.set(filtered)
+            self.task_repository.set(filtered, source="google")
 
         return True, {"deleted": deleted_count}, None
 
-    def mark_unload_processed(self, index_key: int, unload_idx: int) -> tuple[bool, Task | None, str | None]:
-        self._log(f"🧪 mark_unload_processed вызван: index={index_key}, unload_idx={unload_idx}")
-        real_idx = self.find_real_idx_by_index_key(index_key)
+    def mark_unload_processed(self, google_sheet_row_value: int, unload_idx: int) -> tuple[bool, Task | None, str | None]:
+        self._log(f"🧪 mark_unload_processed вызван: google_sheet_row={google_sheet_row_value}, unload_idx={unload_idx}")
+        real_idx = self.find_real_idx_by_google_sheet_row(google_sheet_row_value)
         if real_idx is None:
             return False, None, "row_not_found"
 
@@ -320,7 +418,9 @@ class TasksService:
 
         # записать событие
         # TODO: Временно не используется, вернутся после FastApi, для отслеживания действия Users
-        self._save_status_event(task_index=index_key,
+        saved_row = self.get_row(real_idx)
+        event_trip_number = trip_number(saved_row) or google_sheet_row_value
+        self._save_status_event(task_index=event_trip_number,
                                 event_type="unload_done",
                                 field_name=f"processed[{unload_idx}]",
                                 old_value=str(old_processed),
@@ -336,6 +436,7 @@ class TasksService:
         return 0 <= real_idx < len(data) and isinstance(data[real_idx], dict)
 
     def get_processible_rows(self) -> list[tuple[int, int | None]]:
+        """Возвращает пары (real_row_idx, row_identity) для обработки навигации."""
         data, err = self._get_data()
         if err or data is None:
             return []
@@ -352,7 +453,7 @@ class TasksService:
             if self._is_future_load(row):
                 continue
                 
-            result.append((row_idx, row.get("index")))
+            result.append((row_idx, row_identity_for_gui(row)))
 
         return result
     
@@ -377,11 +478,21 @@ class TasksService:
         except Exception:
             return False
 
-    def get_index_key_by_row(self, real_idx: int) -> int | None:
+    def get_row_identity_by_row(self, real_idx: int) -> int | None:
         row = self.get_row(real_idx)
         if not row:
             return None
-        return row.get("index")
+        return row_identity_for_gui(row)
+
+    def get_index_key_by_row(self, real_idx: int) -> int | None:
+        """Совместимый alias: раньше GUI row_identity называли index_key."""
+        return self.get_row_identity_by_row(real_idx)
+
+    def get_trip_number_by_row(self, real_idx: int) -> int | None:
+        row = self.get_row(real_idx)
+        if not row:
+            return None
+        return trip_number(row)
 
     # TODO: Временно на паузе
     def _save_status_event(self,
@@ -392,7 +503,7 @@ class TasksService:
                            old_value: str = "",
                            new_value: str = "",
                            message: str = "",
-                           source: str = "system", ) -> None:
+                           source: str = "user", ) -> None:
         self._log(f"🧪 _save_status_event вызван: {event_type}, task_index={task_index}")
         if not self.status_event_service:
             self._log("⚠️ status_event_service не подключён")

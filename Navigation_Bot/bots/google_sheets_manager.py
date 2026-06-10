@@ -2,20 +2,12 @@ import os
 import sys
 import gspread
 
-from datetime import datetime, date
 from PyQt6.QtCore import QObject, pyqtSignal
 from oauth2client.service_account import ServiceAccountCredentials
 
-from Navigation_Bot.core.repositories.json_task_repository import JsonTaskRepository
 from Navigation_Bot.core.json_manager import JSONManager
-from Navigation_Bot.core.paths import INPUT_FILEPATH, CONFIG_JSON
-from Navigation_Bot.gui.widgets.table.sites_db_registry import SitesDbRegistry
+from Navigation_Bot.core.paths import CONFIG_JSON
 
-
-# TODO: 1.знает про локальный JSON - исправить
-# TODO: 2.пишет в DataContext - отвязать от GoogleSheetsManager
-# TODO: ✅ 3.запускает DataCleaner - передать в TasksService
-# TODO: ✅ 4.дергает init_processed_flags - делегировать
 
 class GoogleSheetsManager(QObject):
     started = pyqtSignal()
@@ -23,14 +15,12 @@ class GoogleSheetsManager(QObject):
     error = pyqtSignal(str)
     log_message = pyqtSignal(str)
 
-    def __init__(self, config_key="default", log_func=None, parent=None, task_repository=None):
+    def __init__(self, config_key="default", log_func=None, parent=None):
         super().__init__(parent)
         self._external_log = log_func
 
         self.config_key = config_key
         self.config_manager = JSONManager(CONFIG_JSON)
-
-        self.task_repository = task_repository or JsonTaskRepository(str(INPUT_FILEPATH), log_func=log_func)
 
         # основные поля
         self.worksheet_index = None
@@ -39,7 +29,6 @@ class GoogleSheetsManager(QObject):
         self.file_path = None
 
         self.sheet = None
-        self._sites_db = SitesDbRegistry(log_func=log_func)
         self.load_settings()
 
     def _log(self, msg: str):
@@ -69,9 +58,14 @@ class GoogleSheetsManager(QObject):
 
             creds = ServiceAccountCredentials.from_json_keyfile_dict(
                 creds_data,
-                scopes=["https://spreadsheets.google.com/feeds",
-                        "https://www.googleapis.com/auth/spreadsheets",
-                        "https://www.googleapis.com/auth/drive"])
+                scopes=[
+                    "https://www.googleapis.com/auth/spreadsheets",
+                    "https://www.googleapis.com/auth/drive.file"
+                ]
+                # scopes=["https://spreadsheets.google.com/feeds",
+                #         "https://www.googleapis.com/auth/spreadsheets",
+                #         "https://www.googleapis.com/auth/drive"]
+            )
             return gspread.authorize(creds)
         except Exception as e:
             self._log(f"❌ Ошибка создания клиента Google: {e}")
@@ -82,6 +76,7 @@ class GoogleSheetsManager(QObject):
         if not isinstance(data, dict):
             self._log("❌ config_manager.load_json() вернул не dict - проверь CONFIG_JSON")
             return
+
 
         config_block = data.get("google_config", {})
         defaults = config_block.get("default", {}) or {}
@@ -96,6 +91,14 @@ class GoogleSheetsManager(QObject):
 
         self.file_path = str(custom.get("file_path") or defaults.get("file_path") or "").strip()
 
+        # print(f"🔍 Загружен config: {list(data.keys()) if data else 'None'}")
+        # print(f"🔍 google_config: {list(config_block.keys()) if config_block else 'None'}")
+        # print(f"🔍 defaults: {defaults}")
+        # print(f"🔍 custom: {custom}")
+        # print(f"🔍 creds_file = {self.creds_file}")
+        # print(f"🔍 sheet_id = {self.sheet_id}")
+        # #
+
         client = self._create_client()
         if not client:
             return
@@ -104,7 +107,7 @@ class GoogleSheetsManager(QObject):
             spreadsheet = client.open_by_key(self.sheet_id)
             self.spreadsheet = spreadsheet
             self._worksheets_cache = spreadsheet.worksheets()
-
+            # print(self._worksheets_cache)
             # если индекс вдруг вышел за границы
             if 0 <= self.worksheet_index < len(self._worksheets_cache):
                 self.sheet = self._worksheets_cache[self.worksheet_index]
@@ -117,38 +120,7 @@ class GoogleSheetsManager(QObject):
             self._log(f"❌ Ошибка подключения к Google Sheets: {e}")
             self.sheet = None
 
-    def _get_account_sheet(self, title: str = "Account", sheet_id: str | None = None):
-        """
-        Ищет лист с аккаунтами по названию в отдельной таблице.
-        sheet_id:
-          - если передан явно -> используем его
-          - иначе берем self.auth_sheet_id (из config.json)
-          - если и его нет, падаем обратно на self.sheet_id (основная таблица)
-        """
-        # приоритет: аргумент -> auth_sheet_id -> основная sheet_id
-        sheet_id = sheet_id or self.auth_sheet_id or self.sheet_id
-
-        if not sheet_id:
-            self._log("❌ Не указан ID таблицы для аккаунтов (auth_sheet_id/sheet_id).")
-            return None
-
-        spreadsheet = self._open_spreadsheet_by_id(sheet_id)
-        if not spreadsheet:
-            self._log("❌ Не удалось открыть таблицу с аккаунтами (проверь auth_sheet_id).")
-            return None
-
-        try:
-            for ws in spreadsheet.worksheets():
-                if ws.title.strip().lower() == title.strip().lower():
-                    return ws
-
-            self._log(f"⚠️ Лист '{title}' не найден в таблице с аккаунтами.")
-            return None
-        except Exception as e:
-            self._log(f"❌ Ошибка поиска листа '{title}' в таблице аккаунтов: {e}")
-            return None
-
-    def _open_spreadsheet_by_id(self, sheet_id: str):
+    def open_spreadsheet_by_id(self, sheet_id: str):
         """Открыть любую таблицу по ее ID, используя тот же creds_file."""
         if not sheet_id:
             self._log("❌ Не указан ID таблицы для авторизации.")
@@ -168,15 +140,79 @@ class GoogleSheetsManager(QObject):
         """Возвращает список листов: [{'title': str, 'index': int}, ...]"""
         try:
             if not getattr(self, "spreadsheet", None):
+                self._log("⚠️ spreadsheet не инициализирован")
                 return []
+
+            # Используем кэш, если он есть и актуален
+            if hasattr(self, '_worksheets_cache') and self._worksheets_cache:
+                result = [{"title": ws.title, "index": ws.index} for ws in self._worksheets_cache]
+                return result
+
+            # Иначе получаем свежие данные
             result = []
             for ws in self.spreadsheet.worksheets():
-                # ws.index у gspread 0-based, как у get_worksheet()
                 result.append({"title": ws.title, "index": ws.index})
+
             return result
+
         except Exception as e:
             self._log(f"⚠️ Не удалось получить список листов: {e}")
+            import traceback
+            self._log(traceback.format_exc())  # Добавить полный traceback
             return []
+
+    def reconnect(self):
+        """Переподключение к Google Sheets"""
+        try:
+            client = self._create_client()
+            if not client:
+                return False
+
+            spreadsheet = client.open_by_key(self.sheet_id)
+            self.spreadsheet = spreadsheet
+            self._worksheets_cache = spreadsheet.worksheets()
+
+            if 0 <= self.worksheet_index < len(self._worksheets_cache):
+                self.sheet = self._worksheets_cache[self.worksheet_index]
+            else:
+                self.worksheet_index = 0
+                self.sheet = self._worksheets_cache[0]
+
+            return True
+        except Exception as e:
+            self._log(f"❌ Ошибка переподключения: {e}")
+            return False
+
+    def get_worksheets_list(self):
+        """Безопасное получение списка листов"""
+        try:
+            if not self.spreadsheet:
+                return []
+
+            # Обновляем кэш
+            self._worksheets_cache = self.spreadsheet.worksheets()
+
+            return [{"title": ws.title, "index": ws.index}
+                    for ws in self._worksheets_cache]
+        except Exception as e:
+            self._log(f"⚠️ Ошибка получения листов: {e}")
+            return []
+    # def list_worksheets(self):
+    #     """Возвращает список листов: [{'title': str, 'index': int}, ...]"""
+    #     try:
+    #         if not getattr(self, "spreadsheet", None):
+    #             return []
+    #         result = []
+    #
+    #         for ws in self.spreadsheet.worksheets():
+    #             # ws.index у gspread 0-based, как у get_worksheet()
+    #             result.append({"title": ws.title, "index": ws.index})
+    #             print(str(result))
+    #         return result
+    #     except Exception as e:
+    #
+    #         self._log(f"⚠️ Не удалось получить список листов: {e}")
+    #         return []
 
     def set_active_worksheet(self, index: int):
         """Быстро переключает активный лист, без обращений к Google"""
@@ -266,176 +302,3 @@ class GoogleSheetsManager(QObject):
         except Exception as e:
             self._log(f"️❌ Ошибка загрузки данных с листа: {e}")
             return None
-
-    def append_to_cell(self, data, column=12):
-        # self._log(f"GSHEET append => sheet_id={self.sheet_id}, ws_index={self.worksheet_index}, col={column}")
-        self._sites_db.reload()
-        if isinstance(data, list):
-            for item in data:
-                self._append_entry(item, column)
-        elif isinstance(data, dict):
-            self._append_entry(data, column)
-
-    def _append_entry(self, item, column):
-        try:
-            if not self.sheet:
-                self._log("⚠️ Лист Google Sheets не инициализирован")
-                return
-
-            row_index = item.get("index")
-            if not row_index:
-                self._log("⚠️ Пропуск записи: нет индекса строки")
-                return
-
-            current_time = datetime.now().strftime("%d-%m %H:%M")
-
-            geo = item.get("гео") or ""
-            geo_zona = str(item.get("geo_zona") or "").strip()
-            coor = item.get("коор") or ""
-            speed = item.get("скорость")
-
-            zone_label = self._sites_db.match_geo_zona_to_zone_label(geo_zona, item)
-
-            if zone_label:
-                new_text = f"{current_time} {zone_label}"
-            elif geo == "нет навигации":
-                new_text = f"{current_time} нет навигации"
-            elif not geo and not coor:
-                self._log(f"⚠️ Пропуск строки {row_index}: нет гео/координат")
-                return
-            else:
-                status = "стоит" if isinstance(speed, (int, float)) and speed < 5 else "едет"
-                new_text = f"{current_time} {status} {geo}{' ' + coor if coor else ''}"
-
-            try:
-                cell_value = self.sheet.cell(row_index, column).value
-            except Exception as e:
-                self._log(f"⚠️ Не удалось прочитать ячейку {row_index}, кол. {column}: {e}")
-                cell_value = ""
-
-            updated_value = f"{cell_value}\n{new_text}" if cell_value else new_text
-            self.sheet.update_cell(row_index, column, updated_value)
-            self._log(f"🌎 Обновлена строка {row_index}, колонка {column}")
-
-        except Exception as e:
-            self._log(f"❌ Ошибка при записи строки {item.get('ТС')}: {e}")
-
-    def upload_new_row(self, entry: dict):
-        """Выгружает новую запись в Google Sheets"""
-        try:
-            row_index = entry["index"]
-            ts_with_phone = f"{entry.get('ТС', '')} {entry.get('Телефон', '')}".strip()
-
-            load_str = "; ".join(f"{blk.get(f'Время {i + 1}', '')} {blk.get(f'Погрузка {i + 1}', '')}".strip()
-                                 for i, blk in enumerate(entry.get("Погрузка", [])))
-
-            unload_str = "; ".join(f"{blk.get(f'Время {i + 1}', '')} {blk.get(f'Выгрузка {i + 1}', '')}".strip()
-                                   for i, blk in enumerate(entry.get("Выгрузка", [])))
-
-            row_data = [ts_with_phone,          # col D (ТС + телефон)
-                        entry.get("ФИО", ""),   # col E (ФИО)
-                        entry.get("КА", ""),    # col F (КА)
-                        load_str,               # col G (Погрузка)
-                        unload_str]             # col H (Выгрузка)
-
-            self.sheet.update(f"D{row_index}:H{row_index}", [row_data])
-            self._log(f"📤 Новая запись отправлена в Google Sheets (row={row_index})")
-
-        except Exception as e:
-            self._log(f"❌ Ошибка выгрузки новой строки: {e}")
-            raise
-
-    def write_all(self, items: list):
-        if not items:
-            self._log("⚠️ Нет данных для записи в Google Sheets")
-            return
-
-        try:
-            self.append_to_cell(items)
-            # self._log(f"📤 Обновлены все строки в Google Sheets ({len(items)} шт.)")
-        except Exception as e:
-            self._log(f"❌ Ошибка при записи в Google Sheets: {e}")
-
-    def check_user_credentials(self,
-                               login: str,
-                               password: str,
-                               account_sheet_title: str = "Account",
-                               sheet_id: str | None = None) -> tuple[bool, str]:
-        """
-        Проверяет логин/пароль по листу Account в таблице аккаунтов.
-
-        sheet_id:
-          - если передан явно -> использовать его
-          - иначе берется self.auth_sheet_id (из config.json)
-          - если и его нет, то self.sheet_id
-
-        Также проверяет поле 'Time able' (если есть):
-        - если дата в прошлом — доступ запрещён.
-        """
-        login = (login or "").strip()
-        password = (password or "").strip()
-
-        if not login or not password:
-            return False, "Введите логин и пароль."
-
-        ws = self._get_account_sheet(account_sheet_title, sheet_id=sheet_id)
-        if ws is None:
-            return False, f"Лист '{account_sheet_title}' не найден или нет доступа к таблице аккаунтов."
-
-        try:
-            rows = ws.get_all_values()
-            if not rows or len(rows) < 2:
-                return False, "Лист аккаунтов пуст или слишком короткий."
-
-            header = [c.strip().lower() for c in rows[0]]
-            try:
-                login_idx = header.index("login")
-                pass_idx = header.index("password")
-            except ValueError:
-                return False, "В листе аккаунтов нет колонок 'login'/'password'."
-
-            # индекс колонки с датой доступа (Time able), если она есть
-            time_idx = header.index("time able") if "time able" in header else None
-
-            for row in rows[1:]:
-                if len(row) <= max(login_idx, pass_idx):
-                    continue
-
-                row_login = row[login_idx].strip()
-                row_pass = row[pass_idx].strip()
-
-                if row_login == login and row_pass == password:
-                    #  1 проверка Time able
-                    if time_idx is not None and time_idx < len(row):
-                        time_val = (row[time_idx] or "").strip()
-                        if time_val:
-                            parsed_date = None
-                            # поддерживаем несколько форматов дат
-                            for fmt in ("%d.%m.%Y", "%Y-%m-%d", "%d/%m/%Y"):
-                                try:
-                                    parsed_date = datetime.strptime(time_val, fmt).date()
-                                    break
-                                except ValueError:
-                                    continue
-
-                            if parsed_date is None:
-                                return False, f"Некорректный формат даты доступа: '{time_val}'."
-
-                            today = date.today()
-                            if today > parsed_date:
-                                return False, f"Время доступа истекло ({time_val})."
-
-                    #  2 проверка active
-                    active_idx = header.index("active") if "active" in header else None
-                    if active_idx is not None and active_idx < len(row):
-                        active_val = (row[active_idx] or "").strip()
-                        if active_val and active_val not in ("1", "true", "True", "да", "Да"):
-                            return False, "Учетная запись отключена."
-
-                    self._log(f"✅ Успешный вход: {login}")
-                    return True, ""
-
-            return False, "Неверный логин или пароль."
-        except Exception as e:
-            self._log(f"❌ Ошибка проверки логина: {e}")
-            return False, f"Ошибка доступа к таблице аккаунтов: {e}"

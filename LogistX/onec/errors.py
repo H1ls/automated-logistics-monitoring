@@ -1,16 +1,16 @@
 # LogistX/controllers/onec/errors.py
 from __future__ import annotations
 
+import os
 import re
+import sys
 import shutil
-from dataclasses import dataclass
-from datetime import datetime
-from pathlib import Path
-
 import pyautogui
 import pytesseract
 from PIL import Image
-
+from pathlib import Path
+from dataclasses import dataclass
+from datetime import datetime
 from .session import OneCSession
 
 
@@ -25,15 +25,65 @@ class OneCErrorHandler:
     def __init__(self, session: OneCSession, log_func=print):
         self.session = session
         self.log = log_func
-        pytesseract.pytesseract.tesseract_cmd = r"C:\Program Files\Tesseract-OCR\tesseract.exe"
-        if not pytesseract.pytesseract.tesseract_cmd:
-            default_path = r"C:\Program Files\Tesseract-OCR\tesseract.exe"
-            if Path(default_path).exists():
-                pytesseract.pytesseract.tesseract_cmd = default_path
-            else:
-                found = shutil.which("tesseract")
-                if found:
-                    pytesseract.pytesseract.tesseract_cmd = found
+
+        # self.session = session
+        # self.log = log_func
+        # pytesseract.pytesseract.tesseract_cmd = r"D:\PycharmProjects\pet.project\Tesseract-OCR\tesseract.exe"
+        # pytesseract.pytesseract.tesseract_cmd = r"D:\PycharmProjects\pet.project\Tesseract-OCR\tesseract.exe"
+        # if not pytesseract.pytesseract.tesseract_cmd:
+        #     default_path = r"D:\PycharmProjects\pet.project\Tesseract-OCR\tesseract.exe"
+        #     if Path(default_path).exists():
+        #         pytesseract.pytesseract.tesseract_cmd = default_path
+        #     else:
+        #         found = shutil.which("tesseract")
+        #         if found:
+        #             pytesseract.pytesseract.tesseract_cmd = found
+
+        # 1. Определяем путь к tesseract.exe
+        tesseract_path = self._get_tesseract_path()
+        if tesseract_path and Path(tesseract_path).exists():
+            pytesseract.pytesseract.tesseract_cmd = tesseract_path
+            self.log(f"✅ Tesseract загружен: {tesseract_path}")
+        else:
+            self.log("❌ Tesseract не найден. OCR не будет работать.")
+
+    @staticmethod
+    def resource_path(relative_path: str) -> str:
+        """Возвращает абсолютный путь к ресурсу, работающий как в разработке, так и в собранном exe."""
+        try:
+            # PyInstaller создаёт временную папку _MEIPASS
+            base_path = sys._MEIPASS
+        except AttributeError:
+            # Обычный запуск (не скомпилированный)
+            base_path = os.path.abspath(".")
+        return os.path.join(base_path, relative_path)
+
+    def _get_tesseract_path(self) -> str:
+        # Сначала проверяем упакованный вариант (рядом с exe или внутри _MEIPASS)
+        packed_path = self.resource_path(os.path.join("Tesseract-OCR", "tesseract.exe"))
+        if Path(packed_path).exists():
+            return packed_path
+
+        # Потом проверяем стандартные пути установки
+        standard_paths = [
+            r"C:\Program Files\Tesseract-OCR\tesseract.exe",
+            r"C:\Program Files (x86)\Tesseract-OCR\tesseract.exe"
+        ]
+        for path in standard_paths:
+            if Path(path).exists():
+                return path
+
+        # Затем ищем в PATH
+        found = shutil.which("tesseract")
+        if found:
+            return found
+
+        # И последний резерв – локальная папка проекта (для отладки)
+        local_path = Path("Tesseract-OCR/tesseract.exe")
+        if local_path.exists():
+            return str(local_path.resolve())
+
+        return ""
 
     def is_error_dialog_present(self) -> bool:
         # 1. быстрый поиск по заголовку окна ошибки, error_header_region — только шапка окна

@@ -9,6 +9,9 @@ class RoutePoint:
     date: str = ""
     time: str = ""
     comment: str = ""
+    latitude: float | None = None
+    longitude: float | None = None
+    geocoding_source: str = ""
 
     def is_load(self) -> bool:
         return self.kind == "load"

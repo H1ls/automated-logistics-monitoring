@@ -3,6 +3,7 @@ from PyQt6.QtWidgets import QMenu
 
 from Navigation_Bot.gui.dialogs.add_note_dialog import AddNoteDialog
 from Navigation_Bot.core.domain.entities.note import Note
+from Navigation_Bot.core.task_identity import google_sheet_row, row_identity_for_gui, trip_number
 
 
 class TableContextMenuController:
@@ -22,6 +23,7 @@ class TableContextMenuController:
         real_idx = self._visual_to_real(visual_row)
         if real_idx is None:
             return
+
         # TODO: Изменить взаимодействия с task_repository
         data = self.gui.task_repository.get() or []
         if not (0 <= real_idx < len(data)):
@@ -29,8 +31,8 @@ class TableContextMenuController:
 
         rec = data[real_idx]
         menu = QMenu(self.table)
-        act_refresh = menu.addAction("🔄 Перезаписать из Google (по index)")
-        act_delete = menu.addAction("🗑 Удалить строку")
+        act_refresh = menu.addAction("🔄 Перезаписать из Google (по google_sheet_row)")
+        act_complete = menu.addAction("Завершить рейс")
         menu.addSeparator()
 
         # TODO: Заполнить act_stub2
@@ -45,8 +47,8 @@ class TableContextMenuController:
         if not chosen:
             return
 
-        if chosen == act_delete:
-            self._delete_row(real_idx)
+        if chosen == act_complete:
+            self._complete_row(real_idx)
         elif chosen == act_refresh:
             self._refresh_row(real_idx)
             return
@@ -68,9 +70,9 @@ class TableContextMenuController:
                 return
 
             row = data[real_idx] or {}
-            task_index = row.get("index")
-            if not task_index:
-                self.gui.log("⚠️ У строки нет index")
+            task_trip_number = trip_number(row)
+            if not task_trip_number:
+                self.gui.log("⚠️ У строки нет trip_number")
                 return
 
             note_service = getattr(self.gui, "note_history_service", None)
@@ -89,7 +91,7 @@ class TableContextMenuController:
             if not text and not media_paths:
                 return
 
-            note = Note(task_index=task_index,
+            note = Note(task_index=task_trip_number,
                         text=text,
                         media_paths=media_paths,
                         media_type=self._detect_media_type(media_paths),
@@ -137,9 +139,9 @@ class TableContextMenuController:
             if not (0 <= real_idx < len(data)):
                 return
 
-            index_key = data[real_idx].get("index")
-            if not index_key:
-                self.gui.log("⚠️ В строке нет 'index'")
+            row_identity = row_identity_for_gui(data[real_idx])
+            if not row_identity:
+                self.gui.log("⚠️ В строке нет google_sheet_row/trip_number")
                 return
 
             highlighter = getattr(self.gui, "row_highlighter", None)
@@ -147,13 +149,13 @@ class TableContextMenuController:
                 self.gui.log("⚠️ RowHighlighter не найден")
                 return
 
-            enabled = highlighter.toggle_highlight(index_key)
+            enabled = highlighter.toggle_highlight(row_identity)
 
             # TODO: Если highlighter есть какой то, то он не предлагает подстветить сразу
             if enabled:
-                self.gui.log(f"🟢 Подсветка включена: строки = {real_idx + 1},и ТС {data[real_idx].get("ТС")}")
+                self.gui.log(f"🟢 Подсветка включена: строки = {real_idx + 1},и ТС {data[real_idx].get('ТС')}")
             else:
-                self.gui.log(f"⚪ Подсветка снята: строки = {real_idx + 1}, и ТС {data[real_idx].get("ТС")}")
+                self.gui.log(f"⚪ Подсветка снята: строки = {real_idx + 1}, и ТС {data[real_idx].get('ТС')}")
 
         except Exception as e:
             self.gui.log(f"❌ Ошибка toggle_highlight: {e}")
@@ -166,17 +168,17 @@ class TableContextMenuController:
         except Exception:
             return None
 
-    def _delete_row(self, real_idx: int):
+    def _complete_row(self, real_idx: int):
         if not self.tasks:
             self.gui.log("⚠️ TasksService не подключён")
             return
 
-        ok, item, err = self.tasks.delete_row(real_idx)
+        ok, item, err = self.tasks.complete_row(real_idx, source="user")
         if not ok:
-            self.gui.log(f"❌ Не удалось удалить строку: {err}")
+            self.gui.log(f"❌ Не удалось завершить рейс: {err}")
             return
 
-        self.gui.log(f"🗑 Удалено: ТС={item.get('ТС')} index={item.get('index')}")
+        self.gui.log(f"✅ Рейс завершён: ТС={item.get('ТС')} google_sheet_row={google_sheet_row(item)} trip_number={trip_number(item)}")
         self.gui.reload_and_show()
 
     def _refresh_row(self, real_idx: int):
@@ -185,22 +187,22 @@ class TableContextMenuController:
             if not (0 <= real_idx < len(data)):
                 return
 
-            index_key = data[real_idx].get("index")
-            if not index_key:
-                self.gui.log("⚠️ В строке нет 'index'")
+            row_google_sheet_row = google_sheet_row(data[real_idx])
+            if not row_google_sheet_row:
+                self.gui.log("⚠️ В строке нет google_sheet_row")
                 return
 
             if not self.google_sync:
                 self.gui.log("⚠️ GoogleSyncService не подключён")
                 return
 
-            ok, updated_task, err = self.google_sync.refresh_row_by_index(index_key)
+            ok, updated_task, err = self.google_sync.refresh_row_by_google_sheet_row(row_google_sheet_row)
             if not ok:
                 self.gui.log(f"❌ Ошибка точечного обновления: {err}")
                 return
 
             self.gui.reload_and_show()
-            self.gui.log(f"✅ Точечное обновление выполнено: строки ={index_key} в Goggle.")
+            self.gui.log(f"✅ Точечное обновление выполнено: строки = {row_google_sheet_row} в Google.")
 
         except Exception as e:
             self.gui.log(f"❌ Ошибка точечного обновления: {e}")

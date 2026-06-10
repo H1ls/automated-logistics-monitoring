@@ -22,4 +22,4 @@ class StatusEvent:
     message: str = ""
 
     created_at: str = ""
-    source: str = ""         # "system", "user", "wialon", "maps", "1c"
+    source: str = "user"     # "user", "google", "cleaner", "maps"

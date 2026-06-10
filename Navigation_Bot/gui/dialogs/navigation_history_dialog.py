@@ -7,6 +7,7 @@ from PyQt6.QtCore import Qt, QUrl
 
 from Navigation_Bot.gui.dialogs.add_note_dialog import AddNoteDialog
 from Navigation_Bot.core.domain.entities.note import Note
+from datetime import datetime
 
 
 # TODO: Определить общую папку куда будет складываться все файлы со всех User
@@ -14,6 +15,9 @@ class NavigationHistoryDialog(QDialog):
     def __init__(self,
                  task_index: int,
                  nav_rows: list[dict],
+                 vehicle_monitoring_id=None,
+                 vehicle_plate: str = "",
+                 vehicle_nav_rows: list[dict] | None = None,
                  route_rows: list[dict] | None = None,
                  note_rows: list[dict] | None = None,
                  note_history_service=None,
@@ -21,11 +25,16 @@ class NavigationHistoryDialog(QDialog):
 
         super().__init__(parent)
         self.task_index = task_index
+        self.vehicle_monitoring_id = vehicle_monitoring_id
+        self.vehicle_plate = vehicle_plate
         self.note_rows = note_rows or []
         self.note_history_service = note_history_service
-        self.nav_rows = nav_rows or []
+        self.race_nav_rows = nav_rows or []
+        self.vehicle_nav_rows = vehicle_nav_rows or []
+        self.nav_rows = self.race_nav_rows
         self.route_rows = route_rows or []
-        self.rows = self._merge_history(self.nav_rows, self.route_rows, self.note_rows)
+        self.history_mode = "race"
+        self.rows = self._build_rows()
         self.setWindowTitle("История навигации")
         self.resize(1000, 500)
 
@@ -48,6 +57,16 @@ class NavigationHistoryDialog(QDialog):
         ])
         top = QHBoxLayout()
 
+        self.btn_race_history = QPushButton("История рейса")
+        self.btn_vehicle_history = QPushButton("История ТС")
+        self.btn_race_history.setCheckable(True)
+        self.btn_vehicle_history.setCheckable(True)
+        self.btn_race_history.setChecked(True)
+        self.btn_vehicle_history.setEnabled(bool(self.vehicle_monitoring_id))
+        self.btn_race_history.clicked.connect(lambda: self._set_history_mode("race"))
+        self.btn_vehicle_history.clicked.connect(lambda: self._set_history_mode("vehicle"))
+        top.addWidget(self.btn_race_history)
+        top.addWidget(self.btn_vehicle_history)
         self.btn_add_note = QPushButton("Добавить заметку")
         top.addStretch()
         top.addWidget(self.btn_add_note)
@@ -86,7 +105,9 @@ class NavigationHistoryDialog(QDialog):
                                "media_type": note.media_type,
                                "author": note.author, })
 
-        self.rows = self._merge_history(self.nav_rows, self.route_rows, self.note_rows)
+        self.history_mode = "race"
+        self._sync_mode_buttons()
+        self.rows = self._build_rows()
         self._fill()
 
     def _detect_media_type(self, paths: list[str]) -> str:
@@ -155,6 +176,7 @@ class NavigationHistoryDialog(QDialog):
         return label
 
     def _fill(self):
+        self.btn_add_note.setEnabled(self.history_mode == "race")
         self.table.setRowCount(len(self.rows))
 
         for row_idx, item in enumerate(self.rows):
@@ -209,6 +231,24 @@ class NavigationHistoryDialog(QDialog):
 
         self.table.resizeColumnsToContents()
 
+    def _set_history_mode(self, mode: str):
+        self.history_mode = mode if mode in {"race", "vehicle"} else "race"
+        self._sync_mode_buttons()
+        self.rows = self._build_rows()
+        self._fill()
+
+    def _sync_mode_buttons(self):
+        self.btn_race_history.setChecked(self.history_mode == "race")
+        self.btn_vehicle_history.setChecked(self.history_mode == "vehicle")
+
+    def _build_rows(self):
+        if self.history_mode == "vehicle":
+            self.nav_rows = self.vehicle_nav_rows
+            return self._merge_history(self.vehicle_nav_rows, [], [])
+
+        self.nav_rows = self.race_nav_rows
+        return self._merge_history(self.race_nav_rows, self.route_rows, self.note_rows)
+
     def _merge_history(self, nav_rows, route_rows, note_rows=None):
         note_rows = note_rows or []
         result = []
@@ -257,7 +297,33 @@ class NavigationHistoryDialog(QDialog):
                            "media_paths": note.get("media_paths", []),
                            })
 
-        result.sort(key=lambda x: x.get("time", ""))
+        def _parse_time(val):
+            if not val:
+                return datetime.min
+
+            if isinstance(val, datetime):
+                return val
+
+            s = str(val)
+            try:
+                return datetime.fromisoformat(s)
+            except Exception:
+                pass
+
+            fmts = ("%d.%m.%Y %H:%M:%S", "%d.%m.%Y %H:%M", "%d.%m.%Y",
+                    "%d.%m %H:%M:%S", "%d.%m %H:%M", "%d.%m")
+            for fmt in fmts:
+                try:
+                    dt = datetime.strptime(s, fmt)
+                    if "%Y" not in fmt:
+                        dt = dt.replace(year=datetime.now().year)
+                    return dt
+                except Exception:
+                    continue
+
+            return datetime.min
+
+        result.sort(key=lambda x: _parse_time(x.get("time", "")), reverse=True)
 
         return result
 
