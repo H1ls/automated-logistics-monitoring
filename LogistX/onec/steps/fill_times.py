@@ -1,10 +1,12 @@
 # LogistX/onec/steps/fill_times.py
 from __future__ import annotations
 
-from datetime import datetime
 from pathlib import Path
 
 from PIL import Image, ImageDraw
+
+from LogistX.onec.steps.base_code import (ceil_hours_positive, ensure_state, fmt_dt_1c, over_hours, parse_dt,
+                                          positive_minutes_between, round_hours_45m)
 
 
 class FillTimesStep:
@@ -16,56 +18,17 @@ class FillTimesStep:
         self.log = log_func
         self.debug_mode = debug_mode
 
-    @staticmethod
-    def _fmt_dt_1c(value: str | None) -> str:
-        value = (value or "").strip()
-        return value[:16] if len(value) >= 16 else value
-
-    @staticmethod
-    def _parse_dt(value: str | None) -> datetime | None:
-        value = (value or "").strip()
-        if not value: return None
-
-        candidates = [value[:19],  # dd.mm.yyyy HH:MM:SS
-                      value[:16], ]  # dd.mm.yyyy HH:MM
-
-        for item in candidates:
-            for fmt in ("%d.%m.%Y %H:%M:%S", "%d.%m.%Y %H:%M"):
-                try:
-                    return datetime.strptime(item, fmt)
-                except ValueError:
-                    pass
-        return None
-
     def _calc_lateness_minutes(self, fact_arrive: str | None, deadline_arrive: str | None) -> int | None:
-        fact_dt = self._parse_dt(fact_arrive)
-        deadline_dt = self._parse_dt(deadline_arrive)
+        fact_dt = parse_dt(fact_arrive)
+        deadline_dt = parse_dt(deadline_arrive)
         if not fact_dt or not deadline_dt:
             return None
 
-        minutes = int((fact_dt - deadline_dt).total_seconds() // 60)
-        return max(0, minutes)
+        minutes = positive_minutes_between(deadline_dt, fact_dt)
+        return minutes if minutes is not None else 0
 
     def _calc_stay_minutes(self, arrive_dt: str | None, depart_dt: str | None) -> int | None:
-        arrive = self._parse_dt(arrive_dt)
-        depart = self._parse_dt(depart_dt)
-        if not arrive or not depart:
-            return None
-
-        minutes = int((depart - arrive).total_seconds() // 60)
-        if minutes < 0:
-            return None
-        return minutes
-
-    @staticmethod
-    def _ceil_hours_positive(total_minutes: int | None) -> int:
-        if total_minutes is None or total_minutes <= 0:
-            return 0
-        hours = total_minutes // 60
-        rem = total_minutes % 60
-        if rem > 0:
-            hours += 1
-        return int(hours)
+        return positive_minutes_between(arrive_dt, depart_dt)
 
     @staticmethod
     def _round_hours_custom(total_minutes: int | None) -> int:
@@ -74,26 +37,14 @@ class FillTimesStep:
         - до 45 минут остатка не округляем вверх
         - > 45 минут округляем вверх
         """
-        if total_minutes is None or total_minutes <= 0:
-            return 0
-
-        hours = total_minutes // 60
-        rem = total_minutes % 60
-        if rem > 45:
-            hours += 1
-        return int(hours)
-
-    @staticmethod
-    def _over_6h_hours(stay_hours: int) -> int:
-        return max(0, int(stay_hours) - 6)
+        return round_hours_45m(total_minutes)
 
     def _ensure_calc_state(self, ctx) -> dict:
-        if not hasattr(ctx, "state") or ctx.state is None:
-            ctx.state = {}
-        calc = ctx.state.get("calc")
+        state = ensure_state(ctx)
+        calc = state.get("calc")
         if not isinstance(calc, dict):
             calc = {}
-            ctx.state["calc"] = calc
+            state["calc"] = calc
         return calc
 
     def _copy_deadline(self, x_dep: int, y_row: int, plan_dy: int, label: str) -> str:
@@ -104,7 +55,7 @@ class FillTimesStep:
         return text
 
     def _set_cell(self, x: int, y: int, value: str, label: str):
-        value = self._fmt_dt_1c(value)
+        value = fmt_dt_1c(value)
         self.log(f"📝 {label}: {value} -> ({x}, {y})")
         self.session.replace_cell(x, y, value, submit=True)
         self.session.sleep(0.25)
@@ -117,22 +68,20 @@ class FillTimesStep:
     def _store_calc(self, ctx):
         calc = self._ensure_calc_state(ctx)
 
-        load_lateness_minutes = self._calc_lateness_minutes(ctx.load_in,
-                                                            getattr(ctx, "load_arrive_deadline", None))
-        unload_lateness_minutes = self._calc_lateness_minutes(ctx.unload_in,
-                                                              getattr(ctx, "unload_arrive_deadline", None))
+        load_lateness_minutes = self._calc_lateness_minutes(ctx.load_in, getattr(ctx, "load_arrive_deadline", None))
+        unload_lateness_minutes = self._calc_lateness_minutes(ctx.unload_in,getattr(ctx, "unload_arrive_deadline", None))
 
         load_stay_minutes = self._calc_stay_minutes(ctx.load_in, ctx.load_out)
         unload_stay_minutes = self._calc_stay_minutes(ctx.unload_in, ctx.unload_out)
 
-        load_late_hours = self._ceil_hours_positive(load_lateness_minutes)
-        unload_late_hours = self._ceil_hours_positive(unload_lateness_minutes)
+        load_late_hours = ceil_hours_positive(load_lateness_minutes)
+        unload_late_hours = ceil_hours_positive(unload_lateness_minutes)
 
         load_stay_hours = self._round_hours_custom(load_stay_minutes)
         unload_stay_hours = self._round_hours_custom(unload_stay_minutes)
 
-        load_over_6h_hours = self._over_6h_hours(load_stay_hours)
-        unload_over_6h_hours = self._over_6h_hours(unload_stay_hours)
+        load_over_6h_hours = over_hours(load_stay_hours, 6)
+        unload_over_6h_hours = over_hours(unload_stay_hours, 6)
 
         calc.update({"load_arrive_deadline": getattr(ctx, "load_arrive_deadline", None),
                      "unload_arrive_deadline": getattr(ctx, "unload_arrive_deadline", None),

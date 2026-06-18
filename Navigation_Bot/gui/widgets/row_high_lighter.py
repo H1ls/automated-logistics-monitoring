@@ -12,6 +12,8 @@ class RowHighlighter:
         self.log = log
         self.hours_default = hours_default
         self.duration_minutes = hours_default * 60
+        self.expired_unload_grace_minutes = 0
+        self.enabled_types = {"manual", "expired_unloads", "future_load"}
         self.until_map = {}
         self.key_to_visual = None  # callable: row_identity -> visual_row
 
@@ -28,6 +30,20 @@ class RowHighlighter:
             self.duration_minutes = max(1, int(minutes))
         except Exception:
             self.duration_minutes = 120  # fallback 2 часа
+
+        try:
+            self.expired_unload_grace_minutes = max(0, int(highlight.get("expired_unload_grace_minutes", 0)))
+        except (TypeError, ValueError):
+            self.expired_unload_grace_minutes = 0
+
+        enabled_types = highlight.get("enabled_types")
+        if isinstance(enabled_types, list):
+            self.enabled_types = {str(v) for v in enabled_types}
+        else:
+            self.enabled_types = {"manual", "expired_unloads", "future_load"}
+
+        if "manual" not in self.enabled_types:
+            self.until_map.clear()
 
     def clear_all_highlight_until(self):
         data = self.task_repository.get() or []
@@ -46,6 +62,9 @@ class RowHighlighter:
         return changed
 
     def toggle_highlight(self, row_identity: int):
+        if "manual" not in self.enabled_types:
+            return False
+
         data = self.task_repository.get() or []
 
         rec = None
@@ -72,7 +91,7 @@ class RowHighlighter:
             self.task_repository.save(source="user")
             return False  # выключили
 
-        # если нет → включить
+        # если нет → включить на длительность из настроек
         self.highlight_for(row_identity)
         return True  # включили
 
@@ -99,17 +118,25 @@ class RowHighlighter:
         """
         Подсветить запись (и строку в таблице) по стабильному ключу row_identity.
         Хранит highlight_until в самой записи JSON (rec["highlight_until"]).
-        ВАЖНО: highlight_until трактуется как "время постановки на слежение".
+        highlight_until трактуется как конкретное время окончания подсветки.
         until_map хранит key -> expiry datetime (когда нужно снять подсветку).
         """
+        minutes = self.duration_minutes if hours is None else int(hours * 60)
+        self._set_highlight_for_minutes(row_identity, minutes)
+
+    def set_highlight_for(self, row_identity: int, hours: int):
+        self._set_highlight_for_minutes(row_identity, int(hours * 60))
+
+    def _set_highlight_for_minutes(self, row_identity: int, minutes: int):
+        if "manual" not in self.enabled_types:
+            return
         if row_identity is None:
             self.log("⚠️ highlight_for: row_identity=None")
             return
 
-        minutes = self.duration_minutes if hours is None else int(hours * 60)
-        started_at = datetime.now()
-        started_iso = started_at.strftime("%Y-%m-%d %H:%M:%S")
-        expiry_dt = started_at + timedelta(minutes=minutes)
+        minutes = max(1, int(minutes))
+        expiry_dt = datetime.now() + timedelta(minutes=minutes)
+        expiry_iso = expiry_dt.strftime("%Y-%m-%d %H:%M:%S")
 
         data = self.task_repository.get() or []
 
@@ -125,7 +152,7 @@ class RowHighlighter:
             return
 
         # сохранить в JSON запись
-        rec["highlight_until"] = started_iso
+        rec["highlight_until"] = expiry_iso
         self.task_repository.save(source="user")
 
         # сохранить в runtime-map
@@ -146,14 +173,37 @@ class RowHighlighter:
         # поставить таймер на авто-снятие (если к тому моменту истечёт)
         QTimer.singleShot(minutes * 60 * 1000, lambda: self._clear_if_expired(row_identity))
 
-    def reapply_from_json(self):
+    def _parse_highlight_until(self, value: str) -> datetime | None:
+        text = str(value or "").strip()
+        if not text:
+            return None
+
+        try:
+            return datetime.strptime(text, "%Y-%m-%d %H:%M:%S")
+        except Exception:
+            pass
+
+        try:
+            parsed = self._from_iso_utc(text)
+            if parsed.tzinfo is not None:
+                parsed = parsed.astimezone().replace(tzinfo=None)
+            return parsed
+        except Exception:
+            return None
+
+    def reapply_from_rows(self):
         """
         Вызывается после перерисовки таблицы (after_display).
         Смотрит highlight_until в каждой записи и заново красит строки
         по ключу row_identity (через mapper key->visual_row).
         """
+        if "manual" not in self.enabled_types:
+            self.until_map.clear()
+            return
+
         data = self.task_repository.get() or []
         now = datetime.now()
+        changed = False
 
         self.until_map.clear()
 
@@ -163,13 +213,13 @@ class RowHighlighter:
             if row_identity is None or not iso:
                 continue
 
-            try:
-                started_at = datetime.strptime(iso, "%Y-%m-%d %H:%M:%S")
-            except Exception:
+            expiry_dt = self._parse_highlight_until(iso)
+            if expiry_dt is None:
                 continue
 
-            expiry_dt = started_at + timedelta(minutes=self.duration_minutes)
             if now >= expiry_dt:
+                rec["highlight_until"] = ""
+                changed = True
                 continue
 
             # сохраняем в runtime-map: key -> datetime
@@ -192,6 +242,9 @@ class RowHighlighter:
             # авто-снятие после оставшегося времени
             remaining_ms = int(max(1, (expiry_dt - now).total_seconds() * 1000))
             QTimer.singleShot(remaining_ms, lambda k=row_identity: self._clear_if_expired(k))
+
+        if changed:
+            self.task_repository.save(source="user")
 
     def _clear_if_expired(self, row_identity: int):
         expiry_dt = self.until_map.get(row_identity)
@@ -251,6 +304,8 @@ class RowHighlighter:
         Подсвечивает ячейку выгрузки КРАСНЫМ, если время первой НЕобработанной выгрузки меньше текущего.
         Подсветка НЕ сохраняется в JSON (её можно пересчитать при перерисовке).
         """
+        if "expired_unloads" not in self.enabled_types:
+            return
 
         data = self.task_repository.get() or []
         now = datetime.now()
@@ -304,10 +359,106 @@ class RowHighlighter:
                         time_str += ":00"
                     dt_unload = datetime.strptime(f"{date_str} {time_str}", "%d.%m.%Y %H:%M:%S")
 
-                    if dt_unload < now:
+                    if dt_unload + timedelta(minutes=self.expired_unload_grace_minutes) < now:
                         item = self.table.item(visual_row, 5)
                         if item:
                             item.setBackground(self._unload_expired_brush)
                         break
                 except Exception:
                     continue
+
+    def highlight_expired_unloads(self):
+        if "expired_unloads" not in self.enabled_types:
+            return
+
+        data = self.task_repository.get() or []
+        now = datetime.now()
+
+        for rec in data:
+            points = self._highlight_unload_points(rec)
+            if not points:
+                continue
+
+            row_identity = row_identity_for_gui(rec)
+            if row_identity is None or not callable(self.key_to_visual):
+                continue
+
+            try:
+                visual_row = self.key_to_visual(row_identity)
+            except Exception as e:
+                self.log(f"key_to_visual mapper error: {e}")
+                continue
+
+            for unload in points:
+                if unload.get("processed"):
+                    continue
+
+                date_str = str(unload.get("date") or "")
+                time_str = str(unload.get("time") or "")
+                if not date_str or not time_str:
+                    continue
+
+                try:
+                    if time_str.count(":") == 1:
+                        time_str += ":00"
+                    dt_unload = datetime.strptime(f"{date_str} {time_str}", "%d.%m.%Y %H:%M:%S")
+                except Exception:
+                    continue
+
+                if dt_unload + timedelta(minutes=self.expired_unload_grace_minutes) < now:
+                    item = self.table.item(visual_row, 5)
+                    if item:
+                        item.setBackground(self._unload_expired_brush)
+                    break
+
+    def _highlight_unload_points(self, rec: dict) -> list[dict]:
+        unloads = rec.get("unloads")
+        if isinstance(unloads, list):
+            processed = rec.get("processed_unloads")
+            if not isinstance(processed, list):
+                processed = rec.get("processed", [])
+
+            points = []
+            for index, item in enumerate(unloads):
+                if not isinstance(item, dict) or not item.get("address"):
+                    continue
+                points.append(
+                    {
+                        "date": item.get("date") or "",
+                        "time": item.get("time") or "",
+                        "processed": processed[index] if index < len(processed) else False,
+                    }
+                )
+            if points:
+                return points
+
+        legacy_unloads = rec.get("Выгрузка", [])
+        processed = rec.get("processed", [])
+        if not isinstance(legacy_unloads, list):
+            return []
+
+        points = []
+        for item in legacy_unloads:
+            if not isinstance(item, dict):
+                continue
+            if "Комментарий" in item or "Выгрузка другое" in item:
+                continue
+
+            unload_keys = [key for key in item.keys() if key.startswith("Выгрузка ")]
+            if not unload_keys:
+                continue
+
+            try:
+                index = int(unload_keys[0].rsplit(" ", 1)[1])
+            except (TypeError, ValueError, IndexError):
+                index = len(points) + 1
+
+            points.append(
+                {
+                    "date": item.get(f"Дата {index}") or "",
+                    "time": item.get(f"Время {index}") or "",
+                    "processed": processed[index - 1] if index - 1 < len(processed) else False,
+                }
+            )
+
+        return points

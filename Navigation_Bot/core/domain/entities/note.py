@@ -8,7 +8,7 @@ from typing import Optional
 class Note:
     id: Optional[int] = None
 
-    task_index: int = 0
+    trip_number: int = 0
 
     created_at: str = ""
     author: str = ""

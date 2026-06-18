@@ -1,7 +1,7 @@
 import sys, faulthandler
 import os
 from PyQt6.QtWidgets import QApplication, QDialog, QMessageBox
-from Navigation_Bot.gui.main_window.Gui import NavigationGUI
+from Navigation_Bot.gui.main_window.navigation_gui import NavigationGUI
 
 if sys.stderr is None:
     sys.stderr = open(os.devnull, "w", encoding="utf-8")

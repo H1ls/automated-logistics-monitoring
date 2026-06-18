@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime
+from LogistX.onec.steps.base_code import ensure_state, positive_minutes_between
 
 
 class DriverRatingStep:
@@ -17,54 +17,6 @@ class DriverRatingStep:
         calc = state.get("calc") or {}
         items = calc.get("driver_rating_items") or []
         return [x for x in items if isinstance(x, dict)]
-
-    def _parse_dt(self, s: str) -> datetime | None:
-        s = (s or "").strip()
-        if not s:
-            return None
-
-        for fmt in ("%d.%m.%Y %H:%M", "%d.%m.%Y %H:%M:%S"):
-            try:
-                return datetime.strptime(s[:19], fmt)
-            except Exception:
-                pass
-        return None
-
-    def _calc_minutes_diff(self, a: str, b: str) -> int | None:
-        da = self._parse_dt(a)
-        db = self._parse_dt(b)
-        if not da or not db:
-            return None
-        return int((da - db).total_seconds() // 60)
-
-    def _calc_stay_minutes(self, start: str, end: str) -> int | None:
-        ds = self._parse_dt(start)
-        de = self._parse_dt(end)
-        if not ds or not de:
-            return None
-        mins = int((de - ds).total_seconds() // 60)
-        return mins if mins >= 0 else None
-
-    def _round_stay_hours(self, total_minutes: int | None) -> int:
-        if total_minutes is None or total_minutes <= 0:
-            return 0
-        hours = total_minutes // 60
-        rem = total_minutes % 60
-        if rem > 45:
-            hours += 1
-        return int(hours)
-
-    def _ceil_late_hours(self, total_minutes: int | None) -> int:
-        if total_minutes is None or total_minutes <= 0:
-            return 0
-        hours = total_minutes // 60
-        rem = total_minutes % 60
-        if rem > 0:
-            hours += 1
-        return int(hours)
-
-    def _over_6h_hours(self, stay_hours: int) -> int:
-        return max(0, int(stay_hours) - 6)
 
     def _get_ctx_point(self, ctx, name: str):
         if not ctx:
@@ -106,6 +58,22 @@ class DriverRatingStep:
         self.log("⭐ Перехожу на вкладку оценки водителя")
         self._click_point("driver_rating_tab", ctx=ctx)
         self.session.sleep(0.4)
+
+    def _apply_wait_load_if_needed(self, ctx, threshold_hours: int = 10):
+        wait_minutes = positive_minutes_between(getattr(ctx, "departure_dt", None),
+                                                getattr(ctx, "load_in", None))
+        ensure_state(ctx)["wait_load_minutes"] = wait_minutes
+
+        if wait_minutes is None or wait_minutes <= threshold_hours * 60:
+            return
+
+        self.log(f"⏳ Ожидание погрузки {wait_minutes} мин > {threshold_hours}ч - ставлю галку")
+        self._click_point("wait_load", ctx=ctx)
+        self.session.sleep(0.25)
+
+        err = self.errors.handle_generic()
+        if err:
+            raise RuntimeError(f"Ошибка при установке галки 'Ожидание погрузки': {err.kind}")
 
     def _click_insert_button(self) -> bool:
         region = self.session.ui_map.get_optional_region("rating_region")
@@ -176,7 +144,7 @@ class DriverRatingStep:
         self.log("Возврат на Основную вкладку")
         self._click_point("start_page_tab", ctx=ctx)
         self.session.sleep(0.5)
-
+        self._apply_wait_load_if_needed(ctx)
         self._open_driver_rating(ctx=ctx)
         self.session.sleep(0.5)
 

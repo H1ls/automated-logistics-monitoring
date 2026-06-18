@@ -22,6 +22,7 @@ class GoogleSyncService:
     google_writer: Any
     tasks_service: Any
     task_repository: Any
+    vehicle_repository: Any
     cleaner: Any | None = None
     log: Callable[[str], None] | None = None
 
@@ -33,11 +34,20 @@ class GoogleSyncService:
         if self.cleaner is not None:
             return self.cleaner
         from Navigation_Bot.bots.data_cleaner import DataCleaner
-        return DataCleaner(task_repository=self.task_repository, log_func=self._log)
+        return DataCleaner(
+            task_repository=self.task_repository,
+            id_context=self.vehicle_repository,
+            log_func=self._log,
+        )
 
     # --- Helpers: common
     def _ensure_google_ready(self) -> tuple[bool, None, str | None]:
         if not getattr(self.gsheet, "sheet", None):
+            reconnect = getattr(self.gsheet, "reconnect", None)
+            if callable(reconnect):
+                self._log("⚠️ Google Sheets не инициализирован, пробую переподключиться...")
+                if reconnect() and getattr(self.gsheet, "sheet", None):
+                    return True, None, None
             return False, None, "google_not_initialized"
         return True, None, None
 
@@ -208,10 +218,18 @@ class GoogleSyncService:
             ok, remove_stats, err = self._remove_completed(active_indexes)
             if not ok:
                 return False, err or "remove_completed_tasks_failed"
-            # почистить локальные данные
-            ok, err = self._clean_local_data()
-            if not ok:
-                return False, err
+
+            changed_count = (
+                add_stats.get("added", 0)
+                + add_stats.get("updated", 0)
+                + add_stats.get("replaced", 0)
+                + remove_stats.get("deleted", 0)
+            )
+            if changed_count:
+                # почистить локальные данные только после реальных изменений.
+                ok, err = self._clean_local_data()
+                if not ok:
+                    return False, err
             # reload
             ok, err = self._reload_after_sheet_sync()
             if not ok:
@@ -219,6 +237,7 @@ class GoogleSyncService:
 
             self._log(f"🌎 Загрузка из Google: добавлено {add_stats['added']}, "
                       f"обновлено {add_stats.get('updated', 0)}, "
+                      f"без изменений {add_stats.get('unchanged', 0)}, "
                       f"заменено строк Google {add_stats.get('replaced', 0)}, "
                       f"завершено {remove_stats['deleted']}")
             return True, None

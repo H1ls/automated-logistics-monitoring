@@ -1,7 +1,9 @@
 from __future__ import annotations
 
-import re
-from datetime import date, datetime, timedelta
+from datetime import datetime, timedelta
+
+from LogistX.onec.steps.base_code import (ensure_progress, ensure_state, fmt_date, fmt_dt_minute, fmt_time,
+                                          minute_floor, parse_race_dt, require_dt)
 
 
 class FillDepartureStep:
@@ -12,47 +14,6 @@ class FillDepartureStep:
         self.errors = errors
         self.log = log_func
         self.max_rounds = max_rounds
-
-    def _parse_dt(self, value: str | datetime | date | None) -> datetime:
-        """Строка в формате дд.мм.гггг чч:мм[(:сс)] или уже datetime/date."""
-        if isinstance(value, datetime):
-            return value
-        if isinstance(value, date) and not isinstance(value, datetime):
-            return datetime.combine(value, datetime.min.time())
-        value = (value or "").strip()
-        for fmt in ("%d.%m.%Y %H:%M", "%d.%m.%Y %H:%M:%S"):
-            try:
-                return datetime.strptime(value, fmt)
-            except ValueError:
-                pass
-        raise ValueError(f"Не удалось распарсить datetime: {value!r}")
-
-    @staticmethod
-    def _parse_race_dt(race_name: str) -> datetime | None:
-        """Поддерживает: '... от 07.03.2026 19:38:35', '... от 16.03.2026 9:43:59'"""
-        text = (race_name or "").strip()
-        m = re.search(r"от\s+(\d{2}\.\d{2}\.\d{4})\s+(\d{1,2}:\d{2})(?::\d{2})?", text)
-        if not m:
-            return None
-
-        try:
-            return datetime.strptime(f"{m.group(1)} {m.group(2)}", "%d.%m.%Y %H:%M")
-        except ValueError:
-            return None
-
-    @staticmethod
-    def _fmt_date(dt: datetime) -> str:
-        return dt.strftime("%d.%m.%Y")
-
-    @staticmethod
-    def _fmt_time(dt: datetime) -> str:
-        return dt.strftime("%H:%M")
-
-    @staticmethod
-    def _ensure_state(ctx) -> dict:
-        if not hasattr(ctx, "state") or ctx.state is None:
-            ctx.state = {}
-        return ctx.state
 
     def _saved_progress(self, ctx) -> dict:
         meta = getattr(ctx, "meta", {}) or {}
@@ -81,39 +42,17 @@ class FillDepartureStep:
         """
         Восстанавливаем время в ctx без повторного ввода в 1С.
         """
-        state = self._ensure_state(ctx)
+        state = ensure_state(ctx)
 
-        dt = self._parse_dt(saved_value).replace(second=0, microsecond=0)
+        dt = minute_floor(require_dt(saved_value))
 
-        ctx.departure_dt = dt.strftime("%d.%m.%Y %H:%M")
+        ctx.departure_dt = fmt_dt_minute(dt)
         state["final_departure_dt"] = dt
         state["suggested_departure_dt"] = dt
 
-        progress = state.get("onec_progress")
-        if not isinstance(progress, dict):
-            progress = {}
-            state["onec_progress"] = progress
-        progress["departure_filled"] = True
+        ensure_progress(ctx)["departure_filled"] = True
 
         self.log(f"ℹ️ Пропускаю FillDepartureStep — уже было выставлено ранее: {ctx.departure_dt}")
-
-    def _resolve_initial_dt(self, ctx) -> datetime:
-        suggested = ctx.state.get("suggested_departure_dt")
-        if isinstance(suggested, datetime):
-            self.log(f"🧠 Базовое время из suggested_departure_dt: {suggested:%d.%m.%Y %H:%M}")
-            return suggested.replace(second=0, microsecond=0)
-
-        if ctx.departure_dt:
-            dt = self._parse_dt(ctx.departure_dt).replace(second=0, microsecond=0)
-            self.log(f"🧠 Базовое время из ctx.departure_dt: {dt:%d.%m.%Y %H:%M}")
-            return dt
-
-        race_dt = self._parse_race_dt(ctx.race_name)
-        if race_dt:
-            self.log(f"🧠 Базовое время из race_name: {race_dt:%d.%m.%Y %H:%M}")
-            return race_dt
-
-        raise RuntimeError(f"Не удалось определить стартовое время отправления из race_name={ctx.race_name!r}")
 
     def _set_field(self, anchor_name: str, value: str, label: str, submit: bool = False, ctx=None):
         self.log(f"📝 {label}: {value}")
@@ -134,7 +73,7 @@ class FillDepartureStep:
         self.session.sleep(0.15)
 
     def _apply_conflict(self, ctx, current_dt: datetime, finish_dt: datetime) -> tuple[datetime, bool]:
-        candidate = finish_dt.replace(second=0, microsecond=0) + timedelta(minutes=1)
+        candidate = minute_floor(finish_dt) + timedelta(minutes=1)
 
         self.log(f"⚠️ finish_dt={finish_dt:%d.%m.%Y %H:%M:%S}, "
                  f"candidate={candidate:%d.%m.%Y %H:%M}, "
@@ -153,17 +92,17 @@ class FillDepartureStep:
         suggested = ctx.state.get("suggested_departure_dt")
         if isinstance(suggested, datetime):
             self.log(f"🧠 Базовое время из suggested_departure_dt: {suggested:%d.%m.%Y %H:%М}")
-            return suggested.replace(second=0, microsecond=0)
+            return minute_floor(suggested)
 
         if ctx.departure_dt:
-            dt = self._parse_dt(ctx.departure_dt).replace(second=0, microsecond=0)
+            dt = minute_floor(require_dt(ctx.departure_dt))
             self.log(f"🧠 Базовое время из ctx.departure_dt: {dt:%d.%m.%Y %H:%M}")
             return dt
 
-        race_dt = self._parse_race_dt(ctx.race_name)
+        race_dt = parse_race_dt(ctx.race_name)
         if race_dt:
             self.log(f"🧠 Базовое время из race_name: {race_dt:%d.%m.%Y %H:%M}")
-            return race_dt.replace(second=0, microsecond=0)
+            return minute_floor(race_dt)
 
         raise RuntimeError(f"Не удалось определить базовое время отправления из race_name={ctx.race_name!r}")
 
@@ -188,12 +127,12 @@ class FillDepartureStep:
         self.session.sleep(0.15)
 
     def _probe_departure_finish_dt(self, base_dt: datetime, max_attempts: int = 4) -> tuple[datetime | None, datetime]:
-        last_probe_dt = base_dt.replace(second=0, microsecond=0)
+        last_probe_dt = minute_floor(base_dt)
 
         for attempt in range(1, max_attempts + 1):
-            probe_dt = (base_dt - timedelta(days=(attempt - 1))).replace(second=0, microsecond=0)
+            probe_dt = minute_floor(base_dt - timedelta(days=(attempt - 1)))
             last_probe_dt = probe_dt
-            probe_date = self._fmt_date(probe_dt)
+            probe_date = fmt_date(probe_dt)
 
             self.log(f"🧪 Probe attempt {attempt}: ставлю только дату {probe_date}")
 
@@ -229,13 +168,13 @@ class FillDepartureStep:
     def _resolve_start_dt(self, ctx) -> datetime:
         suggested = ctx.state.get("suggested_departure_dt")
         if isinstance(suggested, datetime):
-            return suggested.replace(second=0, microsecond=0)
+            return minute_floor(suggested)
 
         base_dt = self._resolve_base_dt(ctx)
         finish_dt, last_probe_dt = self._probe_departure_finish_dt(base_dt)
 
         if finish_dt:
-            candidate = finish_dt.replace(second=0, microsecond=0) + timedelta(minutes=1)
+            candidate = minute_floor(finish_dt) + timedelta(minutes=1)
             ctx.state["finish_dt"] = finish_dt
             ctx.state["suggested_departure_dt"] = candidate
             self.log(f"🧠 Probe дал suggested_departure_dt={candidate:%d.%m.%Y %H:%M}")
@@ -247,7 +186,7 @@ class FillDepartureStep:
         return last_probe_dt
 
     def run(self, ctx):
-        state = self._ensure_state(ctx)
+        state = ensure_state(ctx)
 
         skip, saved_departure = self._should_skip_by_saved_state(ctx)
         if skip:
@@ -266,7 +205,7 @@ class FillDepartureStep:
                 self.session.sleep(0.35)
 
             self._set_field("departure_date_field",
-                            self._fmt_date(current_dt),
+                            fmt_date(current_dt),
                             "Дата отправления",
                             submit=False, ctx=ctx, )
 
@@ -289,7 +228,7 @@ class FillDepartureStep:
 
             self._refocus_time_field()
             self._set_field("departure_time_field",
-                            self._fmt_time(current_dt),
+                            fmt_time(current_dt),
                             "Время отправления",
                             submit=True,
                             ctx=ctx, )
@@ -313,15 +252,11 @@ class FillDepartureStep:
                 self._close_error_and_wait()
                 raise RuntimeError(f"Ошибка после ввода времени: {err.kind}")
 
-            ctx.departure_dt = current_dt.strftime("%d.%m.%Y %H:%M")
+            ctx.departure_dt = fmt_dt_minute(current_dt)
             state["final_departure_dt"] = current_dt
             state["suggested_departure_dt"] = current_dt
 
-            progress = state.get("onec_progress")
-            if not isinstance(progress, dict):
-                progress = {}
-                state["onec_progress"] = progress
-            progress["departure_filled"] = True
+            ensure_progress(ctx)["departure_filled"] = True
 
             self.log(f"✅ Время отправления установлено: {ctx.departure_dt}")
             return

@@ -1,13 +1,13 @@
 ﻿import json
-from pathlib import Path
 
 from PyQt6.QtWidgets import (QDialog, QHeaderView, QMessageBox, QPushButton, QTableWidget, QTableWidgetItem,
                              QVBoxLayout, )
 
+from LogistX.config.paths import SITES_DB_FILE
 from Navigation_Bot.gui.dialogs.aliases_editor_dialog import AliasesEditorDialog
 from Navigation_Bot.gui.dialogs.dialog_helpers import button_row_split
 
-SITES_DB_PATH = Path("LogistX/config") / "sites_db.json"
+SITES_DB_PATH = SITES_DB_FILE
 
 HEADERS = ["Адрес", "site_id", "geofence", "type", "aliases"]
 

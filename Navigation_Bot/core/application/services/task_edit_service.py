@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Callable
+from typing import Any, Callable
 
 
 @dataclass(slots=True)
@@ -13,7 +13,10 @@ class TaskEditService:
             return False, None, "empty_load_block"
 
         meta = meta or {}
-        patch = {"Погрузка": data_block}
+        patch = {
+            "loads": self._legacy_blocks_to_points(data_block, "Погрузка"),
+            "Погрузка": data_block,
+        }
 
         if meta.get("Время отправки"):
             patch["Время отправки"] = meta["Время отправки"]
@@ -26,10 +29,18 @@ class TaskEditService:
         if not data_block:
             return False, None, "empty_unload_block"
 
-        return True, {"Выгрузка": data_block}, None
+        return True, {
+            "unloads": self._legacy_blocks_to_points(data_block, "Выгрузка"),
+            "Выгрузка": data_block,
+        }, None
 
-    def build_task_from_buffer(self, ts_phone: str, ka: str, fio: str, buffer: dict, ) -> tuple[
-        bool, dict | None, str | None]:
+    def build_task_from_buffer(
+        self,
+        ts_phone: str,
+        ka: str,
+        fio: str,
+        buffer: dict,
+    ) -> tuple[bool, dict | None, str | None]:
         ts_phone = (ts_phone or "").strip()
         ka = (ka or "").strip()
         fio = (fio or "").strip()
@@ -49,13 +60,23 @@ class TaskEditService:
         parts = ts_phone.split()
         ts = " ".join(parts[:-1]) if len(parts) > 1 else ts_phone
         phone = parts[-1] if len(parts) > 1 else ""
+        loads = buffer.get("Погрузка", [])
+        unloads = buffer.get("Выгрузка", [])
 
-        task = {"ТС": ts,
-                "Телефон": phone,
-                "ФИО": fio,
-                "КА": ka,
-                "Погрузка": buffer.get("Погрузка", []),
-                "Выгрузка": buffer.get("Выгрузка", []),}
+        task = {
+            "vehicle_plate": ts,
+            "driver_phone": phone,
+            "driver_name": fio,
+            "carrier_name": ka,
+            "loads": self._legacy_blocks_to_points(loads, "Погрузка"),
+            "unloads": self._legacy_blocks_to_points(unloads, "Выгрузка"),
+            "ТС": ts,
+            "Телефон": phone,
+            "ФИО": fio,
+            "КА": ka,
+            "Погрузка": loads,
+            "Выгрузка": unloads,
+        }
 
         if "Время отправки" in buffer:
             task["Время отправки"] = buffer["Время отправки"]
@@ -63,3 +84,41 @@ class TaskEditService:
             task["Транзит"] = buffer["Транзит"]
 
         return True, task, None
+
+    @staticmethod
+    def _legacy_blocks_to_points(blocks: list[dict[str, Any]], prefix: str) -> list[dict[str, Any]]:
+        points: list[dict[str, Any]] = []
+        for idx, block in enumerate(blocks or [], 1):
+            if not isinstance(block, dict):
+                continue
+            if "Комментарий" in block and not any(str(key).startswith(f"{prefix} ") for key in block):
+                points.append({
+                    "sequence": idx + 1000,
+                    "address": "",
+                    "date": "",
+                    "time": "",
+                    "comment": str(block.get("Комментарий") or ""),
+                })
+                continue
+
+            sequence = TaskEditService._sequence_from_block(block, prefix) or idx
+            points.append({
+                "sequence": sequence,
+                "address": str(block.get(f"{prefix} {sequence}") or ""),
+                "date": str(block.get(f"Дата {sequence}") or ""),
+                "time": str(block.get(f"Время {sequence}") or ""),
+                "comment": str(block.get("Комментарий") or ""),
+            })
+        return points
+
+    @staticmethod
+    def _sequence_from_block(block: dict[str, Any], prefix: str) -> int | None:
+        for key in block:
+            text = str(key)
+            if not text.startswith(f"{prefix} "):
+                continue
+            try:
+                return int(text.rsplit(" ", 1)[-1])
+            except ValueError:
+                return None
+        return None

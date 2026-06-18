@@ -11,7 +11,7 @@ from typing import Optional
 class RouteEstimate:
     id: Optional[int] = None
 
-    task_index: int = 0
+    trip_number: int = 0
     target_sequence: int = 0  # номер выгрузки
 
     calculated_at: str = ""

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from PyQt6.QtGui import QFontMetrics
-from Navigation_Bot.gui.widgets.table.sites_db_registry import SitesDbRegistry
+from Navigation_Bot.core.sites_db_registry import SitesDbRegistry
 
 
 class TableDisplayFormatter:
@@ -110,6 +110,68 @@ class TableDisplayFormatter:
             lines.append(comment)
 
         return "\n".join(lines)
+
+    def points_text(self, points: list[dict], *, point_suffixes: list[str] | None = None, separator_table=None,
+                    separator_col: int | None = None, ) -> str:
+
+        if not isinstance(points, list):
+            return ""
+
+        lines = []
+        for idx, point in enumerate(points, 1):
+            if not isinstance(point, dict):
+                continue
+
+            date = str(point.get("date") or "").strip()
+            time = str(point.get("time") or "").strip()
+            address = str(point.get("address") or "").strip()
+            comment = str(point.get("comment") or "").strip()
+            dt = f"{date} {time}".strip()
+
+            if dt:
+                lines.append(dt)
+            if address:
+                address_line = self._format_address_line(address)
+                if point_suffixes and idx - 1 < len(point_suffixes):
+                    suffix = point_suffixes[idx - 1]
+                    if suffix:
+                        address_line = f"{address_line}  {suffix}"
+                lines.append(address_line)
+            if comment:
+                lines.append("Комментарий:")
+                lines.append(comment)
+            if idx < len(points):
+                lines.append(self._column_separator_line(separator_table, separator_col))
+
+        return "\n".join(lines)
+
+    def unload_points_text_with_status(
+            self,
+            row: dict,
+            *,
+            separator_table=None,
+            separator_col: int | None = None,
+    ) -> str:
+
+        points = row.get("unloads")
+        if not isinstance(points, list):
+            return ""
+
+        processed = row.get("processed_unloads")
+        if not isinstance(processed, list):
+            processed = []
+
+        point_suffixes = None
+        if len(points) > 1:
+            point_suffixes = ["☑️" if (idx < len(processed) and processed[idx]) else "⬜️"
+                              for idx in range(len(points))
+                              ]
+
+        return self.points_text(points,
+                                point_suffixes=point_suffixes,
+                                separator_table=separator_table,
+                                separator_col=separator_col,
+                                )
 
     def unload_text_with_status(
             self,

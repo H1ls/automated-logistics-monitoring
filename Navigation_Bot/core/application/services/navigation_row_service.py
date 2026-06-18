@@ -34,6 +34,8 @@ class NavigationRowService:
         self.updated_rows = updated_rows if updated_rows is not None else []
         self.navigation_history_service = navigation_history_service
         self.route_estimate_history_service = route_estimate_history_service
+        self._pending_navigation_snapshots: list[NavigationSnapshot] = []
+        self._pending_route_estimates: list[RouteEstimate] = []
 
     # TODO: Найти нормальное место для _save_route_estimate
     def _save_route_estimate(self, task, unload_idx: int, task_trip_number: int | None) -> None:
@@ -43,7 +45,7 @@ class NavigationRowService:
 
             forecast = task.forecast
 
-            estimate = RouteEstimate(task_index=task_trip_number or task.index,
+            estimate = RouteEstimate(trip_number=task_trip_number or task.index,
                                      target_sequence=unload_idx + 1,
                                      distance_km=forecast.distance_km,
                                      duration_minutes=forecast.duration_minutes,
@@ -53,7 +55,10 @@ class NavigationRowService:
                                      time_buffer_text=forecast.time_buffer_text,
                                      )
 
-            self.route_estimate_history_service.append(estimate)
+            if self._single_row_processing:
+                self.route_estimate_history_service.append(estimate)
+            else:
+                self._pending_route_estimates.append(estimate)
         except Exception as e:
             self.log(f"❌ Ошибка в NavigationRowService._save_route_estimate: {e}")
 
@@ -65,7 +70,7 @@ class NavigationRowService:
 
             nav = task.navigation
 
-            snapshot = NavigationSnapshot(task_index=task_trip_number or task.index,
+            snapshot = NavigationSnapshot(trip_number=task_trip_number or task.index,
                                           vehicle_plate=task.vehicle.plate_number,
                                           vehicle_monitoring_id=task.vehicle.monitoring_id,
                                           geo_text=nav.geo_text or "",
@@ -78,7 +83,10 @@ class NavigationRowService:
                                                                    and nav.gps_fix_age_seconds >= 3600),
                                           )
 
-            self.navigation_history_service.append(snapshot)
+            if self._single_row_processing:
+                self.navigation_history_service.append(snapshot)
+            else:
+                self._pending_navigation_snapshots.append(snapshot)
         except Exception as e:
             self.log(f"❌ Ошибка в NavigationRowService._save_navigation_snapshot: {e}")
 
@@ -102,6 +110,28 @@ class NavigationRowService:
             patch["Маршрут"] = legacy["Маршрут"]
 
         return patch
+
+    def flush_history_buffers(self) -> None:
+        self._flush_items(self.navigation_history_service,
+                          self._pending_navigation_snapshots,
+                          "navigation snapshots")
+        self._flush_items(self.route_estimate_history_service,
+                          self._pending_route_estimates,
+                          "route estimates")
+
+    def _flush_items(self, service, items: list, label: str) -> None:
+        if not service or not items:
+            return
+        batch = list(items)
+        items.clear()
+        try:
+            if hasattr(service, "append_many"):
+                service.append_many(batch)
+            else:
+                for item in batch:
+                    service.append(item)
+        except Exception as e:
+            self.log(f"Failed to save batch {label}: {e}")
 
     def _task_to_legacy_row(self, task):
         return TaskMapper.to_dict(task)
@@ -257,16 +287,22 @@ class NavigationRowService:
 
         return task
 
-    # TODO: разделить на 3 heplers, _sync_single_row_to_google(car), _refresh_ui, _log_finalize(car)
     def _finalize_row(self, car: dict) -> None:
+        self._sync_single_row_to_google(car)
+        self._refresh_ui()
+        self._log_finalize(car)
+
+    def _sync_single_row_to_google(self, car: dict) -> None:
         if self._single_row_processing:
             self.gsheet.append_to_cell(car)
 
+    def _refresh_ui(self) -> None:
         if self.ui_bridge:
             self.ui_bridge.refresh.emit()
         elif self.display_callback:
             self.display_callback()
 
+    def _log_finalize(self, car: dict) -> None:
         self.log(f"✅ Завершено для ТС: {car.get('ТС')}")
 
     def set_single_row_processing(self, enabled: bool) -> None:

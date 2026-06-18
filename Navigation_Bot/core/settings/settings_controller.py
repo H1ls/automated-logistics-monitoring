@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from Navigation_Bot.core.json_manager import JSONManager
+from Navigation_Bot.core.paths import CONFIG_JSON
 
 
 class SettingsController:
@@ -77,7 +79,7 @@ class SettingsController:
 
             # fallback: если вкладки не активировались
             if getattr(gui, "task_repository", None):
-                gui.task_repository.set_source_key(gui._get_sheet_source_key())
+                gui.task_repository.set_source_key(gui._get_sheet_source_key(), reload=False)
 
             gui.reload_and_show()
             self.log("✅ Настройки Google Sheets применены")
@@ -156,6 +158,15 @@ class SettingsController:
         except Exception as e:
             self.log(f"❌ Ошибка смены режима размещения: {e}")
 
+    def apply_processing_settings(self):
+        processor = self._get_processor()
+        if not processor:
+            return
+
+        settings = JSONManager.get_selectors("processing", CONFIG_JSON)
+        timeout_seconds = settings.get("timeout_seconds", processor.DEFAULT_TIMEOUT_SECONDS)
+        processor.set_timeout_seconds(timeout_seconds)
+
     # --- public
     def on_settings_changed(self, sections: set):
         sections = set(sections or [])
@@ -168,6 +179,9 @@ class SettingsController:
 
         if "layout_mode" in sections:
             self._handle_layout_changed()
+
+        if "processing" in sections:
+            self.apply_processing_settings()
 
         # 2. Тяжёлое переподключение к Google — только если реально меняли google_config
         if "google_config" in sections:

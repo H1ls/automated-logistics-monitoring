@@ -9,11 +9,9 @@ from Navigation_Bot.gui.dialogs.add_note_dialog import AddNoteDialog
 from Navigation_Bot.core.domain.entities.note import Note
 from datetime import datetime
 
-
-# TODO: Определить общую папку куда будет складываться все файлы со всех User
 class NavigationHistoryDialog(QDialog):
     def __init__(self,
-                 task_index: int,
+                 trip_number: int,
                  nav_rows: list[dict],
                  vehicle_monitoring_id=None,
                  vehicle_plate: str = "",
@@ -24,7 +22,7 @@ class NavigationHistoryDialog(QDialog):
                  parent=None, ):
 
         super().__init__(parent)
-        self.task_index = task_index
+        self.trip_number = trip_number
         self.vehicle_monitoring_id = vehicle_monitoring_id
         self.vehicle_plate = vehicle_plate
         self.note_rows = note_rows or []
@@ -89,7 +87,7 @@ class NavigationHistoryDialog(QDialog):
         if not text and not media_paths:
             return
 
-        note = Note(task_index=self.task_index,
+        note = Note(trip_number=self.trip_number,
                     text=text,
                     media_paths=media_paths,
                     media_type=self._detect_media_type(media_paths),
@@ -98,7 +96,7 @@ class NavigationHistoryDialog(QDialog):
         if self.note_history_service:
             self.note_history_service.append(note)
 
-        self.note_rows.append({"task_index": note.task_index,
+        self.note_rows.append({"trip_number": note.trip_number,
                                "created_at": note.created_at,
                                "text": note.text,
                                "media_paths": note.media_paths,

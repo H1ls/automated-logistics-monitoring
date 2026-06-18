@@ -1,4 +1,3 @@
-import json
 import pickle
 import time
 
@@ -14,8 +13,6 @@ from Navigation_Bot.core.secrets_manager import SecretsManager
 from Navigation_Bot.core.paths import CREDENTIALS_WIALON, COOKIES_FILE
 
 """6. Настройка WebDriver"""
-
-# TODO: 1. чтение json -> JSONManager
 
 WIALON_URL = "https://gps.skyglonass.ru/"
 YANDEX_MAPS_URL = "https://yandex.ru/maps"

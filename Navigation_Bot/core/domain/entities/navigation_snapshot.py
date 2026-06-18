@@ -8,7 +8,7 @@ from typing import Optional
 class NavigationSnapshot:
     id: Optional[int] = None
 
-    task_index: int = 0          # связь с Task (пока через index)
+    trip_number: int = 0
     vehicle_plate: str = ""
     # vehicle_id: Optional[int] = None
     vehicle_monitoring_id: Optional[int] = None

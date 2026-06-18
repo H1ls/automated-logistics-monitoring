@@ -12,6 +12,8 @@ import pyperclip
 from openpyxl import Workbook
 from openpyxl.utils import get_column_letter
 
+from LogistX.config.paths import ONEC_UI_MAP, LOGISTX_SAMPLE, ONEC_UNCLOSED_RACES_XLSX
+
 
 class OneCReportImporter:
     def __init__(self, log_func=print, config_path=None):
@@ -19,43 +21,25 @@ class OneCReportImporter:
 
         # путь к конфигу по умолчанию
         if config_path is None:
-            config_path = Path("LogistX/config/onec_ui_map_v2.json")
+            config_path = ONEC_UI_MAP
         self.config_path = Path(config_path)
 
         # загружаем конфиг или используем значения по умолчанию
         self.rdp_title_hint, self.rdp_title_fallbacks = self._load_window_config()
 
         # остальные пути (тоже можно вынести в конфиг)
-        self.out_json_path = Path("LogistX/config") / "logistx_sample.json"
-        self.out_xlsx_path = Path("LogistX/config") / "1c_unclosed_races.xlsx"
+        self.out_json_path = LOGISTX_SAMPLE
+        self.out_xlsx_path = ONEC_UNCLOSED_RACES_XLSX
 
         pyautogui.FAILSAFE = True
-        # # TODO: Вынести в настройки и убрать хардкод
-        # # куда сохраняем результат JSON
-        # self.out_json_path = Path("LogistX/config") / "logistx_sample.json"
-        #
-        # # куда сохраняем “сырой” отчет xlsx
-        # self.out_xlsx_path = Path("LogistX/config") / "1c_unclosed_races.xlsx"
-        #
-        # # подсказка заголовка окна RDP (поменяешь под себя)
-        # self.rdp_title_hint = "1C:Предприятие - Управление транспортом Верус (рабочая база)"
-        # # запасные варианты
-        # self.rdp_title_fallbacks = ["176.57.78.6:2025 — Подключение к удаленному рабочему столу",
-        #                             "Подключение к удаленному рабочему столу",
-        #                             "Remote Desktop Connection", ]
-        #
-        # self._rdp_win = None
-        # # pyautogui safety
-        # pyautogui.FAILSAFE = True
 
     def _load_window_config(self):
         """Загружает настройки окна из JSON, возвращает (title_hint, title_fallbacks)."""
         default_hint = "1С:Предприятие - Управление транспортом Верус (рабочая база)"
-        default_fallbacks = [
-            "176.57.78.6:2025 — Подключение к удаленному рабочему столу",
-            "Подключение к удаленному рабочему столу",
-            "Remote Desktop Connection"
-        ]
+        default_fallbacks = ["176.57.78.6:2025 — Подключение к удаленному рабочему столу",
+                             "Подключение к удаленному рабочему столу",
+                             "Remote Desktop Connection",
+                             ]
 
         if not self.config_path.exists():
             self.log(f"⚠️ Конфиг не найден: {self.config_path}, используются значения по умолчанию")

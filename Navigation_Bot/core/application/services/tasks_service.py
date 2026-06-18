@@ -5,12 +5,27 @@ from typing import Any, Callable
 
 from Navigation_Bot.core.domain.entities.task import Task
 from Navigation_Bot.core.domain.mappers.task_mapper import TaskMapper
+from Navigation_Bot.core.application.services.task_processing_selector import TaskProcessingSelector
 from Navigation_Bot.core.processed_flags import init_processed_flags
-from Navigation_Bot.core.application.mappers.google_row_mapper import GoogleRowMapper
+from Navigation_Bot.core.application.services.google.task_merge_service import GoogleTaskMergeService
 from Navigation_Bot.core.domain.entities.status_event import StatusEvent
 from Navigation_Bot.core.task_identity import google_sheet_row, row_identity_for_gui, trip_number
 
-AUDITED_USER_FIELDS = {"id", "Телефон", "ФИО", "КА", "status"}
+AUDITED_USER_FIELDS = {
+    "id",
+    "Телефон",
+    "ФИО",
+    "КА",
+    "vehicle_monitoring_id",
+    "driver_phone",
+    "driver_name",
+    "carrier_name",
+    "loads",
+    "unloads",
+    "Погрузка",
+    "Выгрузка",
+    "status",
+}
 
 
 @dataclass(slots=True)
@@ -49,11 +64,6 @@ class TasksService:
         task.ensure_processing_consistency()
         return self.save_task(real_idx, task)
 
-    # TODO:  save_task() не пересчитывает processed
-    # либо валидировать Task перед сохранением
-    # либо нормализовать processed под число выгрузок
-    # либо вспомогательный метод _normalize_task_before_save(task)
-    # ---
     # Полностью заменяет строку данными из TaskMapper.to_dict(task).
     # Использовать только там, где нужна полная пересборка строки.
     # Пересохранения для highlight_for
@@ -148,18 +158,13 @@ class TasksService:
         task_trip_number = trip_number(row)
         old_status = str(row.get("status") or "active")
 
-        if hasattr(self.task_repository, "complete_row"):
-            ok, removed, complete_err = self.task_repository.complete_row(real_idx, source=source)
-        else:
-            removed = data.pop(real_idx)
-            self.task_repository.save(source=source)
-            ok, complete_err = True, None
+        ok, removed, complete_err = self.task_repository.complete_row(real_idx, source=source)
 
         if not ok:
             return False, None, complete_err
 
         if task_trip_number:
-            self._save_status_event(task_index=task_trip_number,
+            self._save_status_event(trip_number=task_trip_number,
                                     event_type="task_completed",
                                     field_name="status",
                                     old_value=old_status,
@@ -182,9 +187,10 @@ class TasksService:
         if not isinstance(patch, dict) or not patch:
             return False, None, "empty_patch"
 
-        if source == "google" and self._looks_like_reused_google_row(row, patch):
+        if source == "google" and GoogleTaskMergeService.looks_like_reused_google_row(row, patch):
             row.clear()
             row.update(patch)
+            self._sync_row_task_formats(row)
             init_processed_flags(data, data, loads_key="Выгрузка")
             self.task_repository.save(source=source)
             return True, row, None
@@ -196,8 +202,12 @@ class TasksService:
                 row[key] = value
                 changed = True
 
-        if "Выгрузка" in patch or "Погрузка" in patch:
+        if changed:
+            self._sync_row_task_formats(row)
+
+        if any(key in patch for key in ("Выгрузка", "Погрузка", "unloads", "loads")):
             init_processed_flags(data, data, loads_key="Выгрузка")
+            self._sync_row_task_formats(row)
             changed = True
 
         if changed:
@@ -221,7 +231,17 @@ class TasksService:
         else:
             normalized_value = str(value)
 
-        return self.apply_patch(real_idx, {header: normalized_value})
+        patch = {header: normalized_value}
+        if header == "Телефон":
+            patch["driver_phone"] = normalized_value
+        elif header == "ФИО":
+            patch["driver_name"] = normalized_value
+        elif header == "КА":
+            patch["carrier_name"] = normalized_value
+        elif header == "id":
+            patch["vehicle_monitoring_id"] = normalized_value
+
+        return self.apply_patch(real_idx, patch)
 
     def add_task(self, task: dict) -> tuple[bool, dict | None, str | None]:
         data, err = self._get_data()
@@ -235,14 +255,27 @@ class TasksService:
         new_task.pop("google_sheet_row", None)
 
         data.append(new_task)
+        self._sync_row_task_formats(new_task)
         init_processed_flags(data, data, loads_key="Выгрузка")
         self.task_repository.save(source="user")
 
         return True, new_task, None
 
-    # TODO:В перспективе вынести либо в:GoogleSyncService, отдельный mapper типа GoogleRowMapper
+    def _sync_row_task_formats(self, row: dict) -> None:
+        try:
+            task = TaskMapper.from_dict(row)
+            synced = TaskMapper.to_dict(task)
+        except Exception as exc:
+            self._log(f"⚠️ Не удалось синхронизировать форматы строки: {exc}")
+            return
+
+        preserved = {key: value for key, value in row.items() if key not in synced}
+        row.clear()
+        row.update(synced)
+        row.update(preserved)
+
     def build_row_from_google_dh(self, google_sheet_row_value: int, dh: list[str]) -> dict:
-        return GoogleRowMapper.build_row(google_sheet_row_value, dh)
+        return GoogleTaskMergeService.build_row_from_dh(google_sheet_row_value, dh)
 
     def add_only_missing_rows_from_google(self, rows_map: dict[int, list[str]]) -> tuple[bool, dict | None, str | None]:
         """
@@ -252,7 +285,7 @@ class TasksService:
 
         Возвращает:
             (ok, stats, err)
-        где stats = {"added": int, "updated": int, "replaced": int}
+        где stats = {"added": int, "updated": int, "replaced": int, "unchanged": int}
         """
         data, err = self._get_data()
         if err or data is None:
@@ -261,71 +294,13 @@ class TasksService:
         if not isinstance(rows_map, dict):
             return False, None, "rows_map_invalid"
 
-        existing_google_rows = {google_sheet_row(row): i
-                                for i, row in enumerate(data)
-                                if isinstance(row, dict) and google_sheet_row(row) is not None
-                                }
+        stats = GoogleTaskMergeService.merge_rows_into_data(data, rows_map)
 
-        added_count = 0
-        updated_count = 0
-        replaced_count = 0
+        if stats["added"] or stats["updated"] or stats["replaced"]:
+            init_processed_flags(data, data, loads_key="Выгрузка")
+            self.task_repository.save(source="google")
 
-        for google_sheet_row_value, dh in rows_map.items():
-            if not isinstance(google_sheet_row_value, int):
-                continue
-            if not isinstance(dh, list):
-                continue
-
-            fresh = self.build_row_from_google_dh(google_sheet_row_value, dh)
-
-            # защита от полностью пустой строки
-            if not any([fresh.get("ТС"),
-                        fresh.get("Телефон"),
-                        fresh.get("ФИО"),
-                        fresh.get("КА"),
-                        fresh.get("Погрузка"),
-                        fresh.get("Выгрузка"), ]):
-                continue
-
-            existing_idx = existing_google_rows.get(google_sheet_row_value)
-            if existing_idx is None:
-                data.append(fresh)
-                existing_google_rows[google_sheet_row_value] = len(data) - 1
-                added_count += 1
-                continue
-
-            old_row = data[existing_idx] if 0 <= existing_idx < len(data) else {}
-            if isinstance(old_row, dict) and self._looks_like_reused_google_row(old_row, fresh):
-                data[existing_idx] = fresh
-                replaced_count += 1
-            elif isinstance(old_row, dict):
-                data[existing_idx] = {**old_row, **fresh}
-                updated_count += 1
-
-        init_processed_flags(data, data, loads_key="Выгрузка")
-        self.task_repository.save(source="google")
-
-        return (True, {"added": added_count,
-                       "updated": updated_count,
-                       "replaced": replaced_count, },
-                None)
-
-    @staticmethod
-    def _looks_like_reused_google_row(old_row: dict, fresh_row: dict) -> bool:
-        old_plate = TasksService._signature_text(old_row.get("ТС"))
-        new_plate = TasksService._signature_text(fresh_row.get("ТС"))
-        old_load = TasksService._signature_text(old_row.get("raw_load") or old_row.get("Погрузка"))
-        new_load = TasksService._signature_text(fresh_row.get("raw_load") or fresh_row.get("Погрузка"))
-        old_unload = TasksService._signature_text(old_row.get("raw_unload") or old_row.get("Выгрузка"))
-        new_unload = TasksService._signature_text(fresh_row.get("raw_unload") or fresh_row.get("Выгрузка"))
-        if not old_plate or not new_plate:
-            return False
-        return old_plate != new_plate and (old_load != new_load or old_unload != new_unload)
-
-    @staticmethod
-    def _signature_text(value: Any) -> str:
-        return " ".join(str(value or "").lower().split())
-
+        return True, stats, None
     def _save_patch_status_events(self, old_row: dict, new_row: dict, patch: dict, source: str) -> None:
         if source != "user":
             return
@@ -343,7 +318,7 @@ class TasksService:
                 continue
 
             self._save_status_event(
-                task_index=task_trip_number,
+                trip_number=task_trip_number,
                 event_type="task_field_updated",
                 field_name=field_name,
                 old_value=str(old_value or ""),
@@ -416,11 +391,9 @@ class TasksService:
         # новое состояние ПОСЛЕ
         new_processed = list(task.processing.processed_unloads)
 
-        # записать событие
-        # TODO: Временно не используется, вернутся после FastApi, для отслеживания действия Users
         saved_row = self.get_row(real_idx)
         event_trip_number = trip_number(saved_row) or google_sheet_row_value
-        self._save_status_event(task_index=event_trip_number,
+        self._save_status_event(trip_number=event_trip_number,
                                 event_type="unload_done",
                                 field_name=f"processed[{unload_idx}]",
                                 old_value=str(old_processed),
@@ -441,42 +414,11 @@ class TasksService:
         if err or data is None:
             return []
 
-        result: list[tuple[int, int | None]] = []
-
-        for row_idx, row in enumerate(data):
-            if not isinstance(row, dict):
-                continue
-            if not row.get("id") or not row.get("ТС"):
-                continue
-            
-            # Пропускать строки с будущими погрузками (подсвечены светло синим)
-            if self._is_future_load(row):
-                continue
-                
-            result.append((row_idx, row_identity_for_gui(row)))
-
-        return result
+        return TaskProcessingSelector.get_processible_rows(data)
     
     def _is_future_load(self, row: dict) -> bool:
         """Проверить, является ли погрузка будущей (более чем через 3 часа)"""
-        from datetime import datetime, timedelta
-        
-        pg = row.get("Погрузка", [])
-        if not (pg and isinstance(pg, list) and isinstance(pg[0], dict)):
-            return False
-
-        date_str = pg[0].get("Дата 1", "")
-        time_str = pg[0].get("Время 1", "")
-
-        try:
-            if time_str and time_str.count(":") == 1:
-                time_str += ":00"
-            dt = datetime.strptime(f"{date_str} {time_str}", "%d.%m.%Y %H:%M:%S")
-
-            # Пропускать если погрузка через более чем 3 дня
-            return dt > datetime.now() + timedelta(hours=3)
-        except Exception:
-            return False
+        return TaskProcessingSelector.is_future_load(row)
 
     def get_row_identity_by_row(self, real_idx: int) -> int | None:
         row = self.get_row(real_idx)
@@ -494,30 +436,33 @@ class TasksService:
             return None
         return trip_number(row)
 
-    # TODO: Временно на паузе
     def _save_status_event(self,
                            *,
-                           task_index: int,
+                           trip_number: int | None = None,
                            event_type: str,
                            field_name: str = "",
                            old_value: str = "",
                            new_value: str = "",
                            message: str = "",
                            source: str = "user", ) -> None:
-        self._log(f"🧪 _save_status_event вызван: {event_type}, task_index={task_index}")
+        event_trip_number = trip_number
+        # self._log(f"🧪 _save_status_event вызван: {event_type}, trip_number={event_trip_number}")
         if not self.status_event_service:
             self._log("⚠️ status_event_service не подключён")
             return
+        if event_trip_number is None:
+            self._log("⚠️ StatusEvent skipped: missing trip_number")
+            return
 
         try:
-            event = StatusEvent(task_index=task_index,
+            event = StatusEvent(trip_number=int(event_trip_number or 0),
                                 event_type=event_type,
                                 field_name=field_name,
                                 old_value=str(old_value or ""),
                                 new_value=str(new_value or ""),
                                 message=message,
                                 source=source, )
-            self._log(f"📝 StatusEvent сохранён: {event_type} / {message}")
+            # self._log(f"📝 StatusEvent сохранён: {event_type} / {message}")
             self.status_event_service.append(event)
         except Exception as e:
             self._log(f"⚠️ Не удалось сохранить StatusEvent: {e}")

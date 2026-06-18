@@ -4,16 +4,12 @@ from PyQt6.QtWidgets import (
     QTableWidget, QTableWidgetItem, QPushButton
 )
 
-from Navigation_Bot.core.paths import SQLITE_DB_FILEPATH
-from Navigation_Bot.core.repositories.sqlite_vehicle_repository import (
+from Navigation_Bot.core.repositories.vehicle_registry_fields import (
     CENTER_FIELD,
-    DB_ID_FIELD,
     ID_FIELD,
     NAME_FIELD,
     TS_FIELD,
-    SqliteVehicleRepository,
 )
-from Navigation_Bot.core.storage.sqlite_connection import open_database
 from Navigation_Bot.gui.dialogs.dialog_helpers import button_row_trailing
 
 _ID = ID_FIELD
@@ -29,11 +25,9 @@ class IDManagerDialog(QDialog):
         self.resize(550, 600)
 
         self.log_func = getattr(parent, "log", print)
-        connection = getattr(parent, "sqlite_connection", None) or open_database(SQLITE_DB_FILEPATH)
-        self.vehicle_repository = getattr(parent, "vehicle_repository", None) or SqliteVehicleRepository(
-            connection,
-            log=self.log_func,
-        )
+        self.vehicle_repository = getattr(parent, "vehicle_repository", None)
+        if self.vehicle_repository is None:
+            raise RuntimeError("IDManagerDialog requires parent.vehicle_repository")
         self.original_entries = self.vehicle_repository.list_registry_entries()
         self.changed_rows = set()
         self._initializing = True

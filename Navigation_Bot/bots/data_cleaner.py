@@ -3,10 +3,7 @@ import re
 from datetime import datetime
 from typing import List, Dict, Any
 
-from Navigation_Bot.core.repositories.sqlite_task_repository import SqliteTaskRepository
-from Navigation_Bot.core.repositories.sqlite_vehicle_repository import SqliteVehicleRepository
-from Navigation_Bot.core.paths import SQLITE_DB_FILEPATH
-from Navigation_Bot.core.storage.sqlite_connection import open_database
+from Navigation_Bot.core.repositories.vehicle_registry_fields import compact_vehicle_key
 
 """2. Очистка данных"""
 
@@ -18,19 +15,23 @@ class DataCleaner:
 
         self.log = log_func
 
-        self.task_repository = task_repository or SqliteTaskRepository(open_database(SQLITE_DB_FILEPATH), log=log_func)
-        connection = getattr(self.task_repository, "connection", None) or open_database(SQLITE_DB_FILEPATH)
-        self.vehicle_repository = id_context or SqliteVehicleRepository(connection, log=log_func)
+        if task_repository is None:
+            raise RuntimeError("DataCleaner requires task_repository")
+        if id_context is None:
+            raise RuntimeError("DataCleaner requires vehicle repository")
 
-        self.json_data: List[Dict[str, Any]] = self.task_repository.get() or []
+        self.task_repository = task_repository
+        self.vehicle_repository = id_context
+
+        self.task_rows: List[Dict[str, Any]] = self.task_repository.get() or []
         self.vehicle_lookup: dict[str, dict] = self.vehicle_repository.registry_lookup()
 
-        self.date_re = re.compile(r"\b\d{1,2}[./]\d{1,2}(?:[./]\d{2,4})?\b")
-        self.time_re = re.compile(r"\b(\d{1,2}[:\-]\d{2}(?::\d{2})?)\b")
-        self.numbered_re = re.compile(r"(?<![\wА-Яа-я])(\d{1,2})[).]\s*")
+        self.date_re = re.compile(r"\b(?:[0-3]?\d\.(?:0?[1-9]|1[0-2])(?:\.\d{2,4})?|[0-3]?\d/(?:0?[1-9]|1[0-2])/\d{2,4})\b")
+        self.time_re = re.compile(r"\b([0-2]?\d[:\-][0-5]\d(?::[0-5]\d)?)\b")
+        self.numbered_re = re.compile(r"(?<![\wА-Яа-я/])(\d{1,2})[).]\s*")
 
         self.comment_start_re = re.compile(r"\b(?:Расположение|координаты|Контрагент|Контактное\s+лицо|Комментарий|"
-                                           r"Оператор\s+склада|Диспетчер|кладовщики|логисты|ориентир)\b\s*:?"
+                                           r"Оператор\s+склада|Диспетчер|кладовщики|логисты|ориентир|номер\s+склада|заезд\s+с[о]?)\b\s*:?"
                                            r"|[+78][\d\s()\-]{8,}"
                                            r"|\b(?:тел|моб|раб)\.?\s*:?",
                                            re.IGNORECASE, )
@@ -38,10 +39,13 @@ class DataCleaner:
         self.address_start_re = re.compile(r"\b(?:Россия|РФ|МО|Москва|Санкт-Петербург|"
                                            r"[А-ЯЁ][а-яё-]+(?:ская|ский|ское|ая|ий|ой)\s+"
                                            r"(?:обл\.?|область|край|респ\.?|республика|р-н|район|АО)|"
+                                           r"[А-ЯЁ][а-яё-]+\s+Респ\.?|"
+                                           r"[А-ЯЁ][а-яё-]+\s+городской\s+округ|"
                                            r"г\.?\s*[А-ЯЁа-яё]|город\s+[А-ЯЁа-яё]|"
                                            r"ул\.?\s*[А-ЯЁа-яё]|ш\.?\s*[А-ЯЁа-яё]|"
                                            r"пер\.?\s*[А-ЯЁа-яё]|пр-д\s+[А-ЯЁа-яё]|"
-                                           r"п\.?\s*[А-ЯЁа-яё]|пос\.?\s*[А-ЯЁа-яё]|"
+                                           r"п\.?\s*[А-ЯЁа-яё]|пос\.?\s*[А-ЯЁа-яё]|поселок\s+[А-ЯЁа-яё]|"
+                                           r"вл\.?\s*\d|владение\s+\d|"
                                            r"с\.?\s*[А-ЯЁа-яё]|д\.?\s*[А-ЯЁа-яё])",
                                            re.IGNORECASE,
                                            )
@@ -57,6 +61,7 @@ class DataCleaner:
                              r"\bГО\b",
                              r"\bтел\.?\s",
                              r"\bООО\b",
+                             r"\bПАО\b",
                              r"\bКонтрагент\b",
                              r"\bпо\s+ттн\b", ]
 
@@ -111,12 +116,20 @@ class DataCleaner:
         points: list[dict] = []
         comments: list[str] = []
 
-        first_prefix = self._clean_comment(self._strip_route_label(text[:matches[0].start()]))
-        if first_prefix:
+        raw_first_prefix = self._strip_route_label(text[:matches[0].start()])
+        first_prefix_is_address = bool(raw_first_prefix and self.address_start_re.search(raw_first_prefix))
+        first_prefix_time = list(self.time_re.finditer(raw_first_prefix))
+        first_prefix = self._clean_comment(raw_first_prefix)
+        if first_prefix and not first_prefix_is_address and not first_prefix_time:
             comments.append(first_prefix)
 
         for match_index, match in enumerate(matches):
             start = match.start()
+            if match_index == 0:
+                if first_prefix_is_address:
+                    start = 0
+                elif first_prefix_time:
+                    start = first_prefix_time[-1].start()
             end = matches[match_index + 1].start() if match_index + 1 < len(matches) else len(text)
             segment = text[start:end]
             date = self._normalize_date(match.group(0))
@@ -125,7 +138,9 @@ class DataCleaner:
 
             numbered_addresses, intro = self._split_numbered_sections(address)
             if len(numbered_addresses) > 1:
-                if intro:
+                if intro and self._looks_like_point(intro):
+                    numbered_addresses.insert(0, intro)
+                elif intro:
                     comments.append(self._clean_comment(intro))
                 for address_part in numbered_addresses:
                     cleaned, extra_comments = self._clean_address_parts(address_part)
@@ -202,8 +217,8 @@ class DataCleaner:
             time = self._normalize_time(before_times[-1].group(1))
             before = before[:before_times[-1].start()] + " " + before[before_times[-1].end():]
         else:
-            after_time = re.match(r"\s*,?\s*(?:прибыть\s+(?:к|до)|в|к)?\s*,?\s*"
-                                  r"(\d{1,2}[:\-]\d{2}(?::\d{2})?)",
+            after_time = re.match(r"\s*,?\s*(?:прибыть\s+(?:к|до)|в|к|до)?\s*,?\s*"
+                                  r"([0-2]?\d[:\-][0-5]\d(?::[0-5]\d)?)",
                                   after,
                                   flags=re.IGNORECASE)
             if after_time:
@@ -246,6 +261,7 @@ class DataCleaner:
 
     def _clean_comment(self, text: str) -> str:
         text = self._strip_route_label(text)
+        text = re.sub(r"^\s*\d{1,2}[).]\s*$", "", text)
         text = re.sub(r"\b\d+\s*точк[аи]?\b", "", text, flags=re.IGNORECASE)
         text = re.sub(r"[-–—]{2,}.*$", "", text).strip(" ,;|\n\t")
         return text
@@ -254,6 +270,7 @@ class DataCleaner:
         comments: list[str] = []
         addr = self._normalize_route_text(addr)
         addr = self._strip_route_label(addr)
+        addr = self._normalize_service_phrases(addr)
         addr, inline_comments = self._extract_inline_comments(addr)
         comments.extend(inline_comments)
 
@@ -277,9 +294,25 @@ class DataCleaner:
 
         addr = re.sub(r"[-–—]{2,}.*$", "", addr)
         addr = re.sub(r"\s*\|\s*", "\n", addr)
+        addr = self._normalize_address_tail(addr)
         addr = re.sub(r"[ \t]+", " ", addr)
         addr = re.sub(r"\n\s*\n+", "\n", addr)
         return addr.strip(" ,;|\n\t"), [c for c in comments if c]
+
+    def _normalize_service_phrases(self, addr: str) -> str:
+        addr = re.sub(r"\bпо\s+ТТН\b\s*,?", " ", addr, flags=re.IGNORECASE)
+        addr = re.sub(r"\bпо\s+звонку\b\s*", " ", addr, flags=re.IGNORECASE)
+        addr = re.sub(r"\bМ/?О\b", " ", addr, flags=re.IGNORECASE)
+        addr = re.sub(r"\bадрес\s*-\s*", " ", addr, flags=re.IGNORECASE)
+        addr = re.sub(r"\s+", " ", addr)
+        return addr.strip()
+
+    def _normalize_address_tail(self, addr: str) -> str:
+        addr = re.sub(r"\b([А-ЯЁ][а-яё-]+)\s+г\.?,?\s*г\.?\s*\1\b", r"г.\1", addr, flags=re.IGNORECASE)
+        addr = re.sub(r"\b([А-ЯЁ][а-яё-]+)\s+г\.?\s+г\.?\s*\1\b", r"г.\1", addr, flags=re.IGNORECASE)
+        addr = re.sub(r"\b([А-ЯЁ][а-яё-]+)\s+г,?\s+(ул\.?)", r"\1 \2", addr, flags=re.IGNORECASE)
+        addr = re.sub(r"\s+\.", ".", addr)
+        return addr.rstrip(".")
 
     def _extract_inline_comments(self, addr: str) -> tuple[str, list[str]]:
         comments: list[str] = []
@@ -292,16 +325,28 @@ class DataCleaner:
         address_start = self.address_start_re.search(addr)
         if address_start and address_start.start() > 0:
             prefix = addr[:address_start.start()].strip(" ,;|\n\t")
-            if prefix and not self.date_re.search(prefix):
+            city_prefix = re.match(r"^[А-ЯЁ][А-ЯЁа-яё-]+(?:\s+г\.?)?$", prefix, flags=re.IGNORECASE)
+            if prefix and not city_prefix and not self.date_re.search(prefix):
                 comments.append(prefix)
                 addr = addr[address_start.start():]
 
         marker = self.comment_start_re.search(addr)
         if marker:
-            comment = addr[marker.start():].strip(" ,;|\n\t")
+            comment_start = marker.start()
+            if comment_start > 0 and addr[comment_start - 1] == "(" and ")" in addr[comment_start:]:
+                comment_start -= 1
+            else:
+                contact_prefix = re.search(r",\s*([А-ЯЁ][а-яё]+(?:\s+[А-ЯЁ][а-яё]+)?\s*/\s*)$", addr[:comment_start])
+                if contact_prefix:
+                    comment_start = contact_prefix.start(1)
+                else:
+                    contact_prefix = re.search(r"\s([А-ЯЁ][а-яё]+\s*/\s*)$", addr[:comment_start])
+                    if contact_prefix:
+                        comment_start = contact_prefix.start(1)
+            comment = addr[comment_start:].strip(" ,;|\n\t")
             if comment:
                 comments.append(comment)
-            addr = addr[:marker.start()]
+            addr = addr[:comment_start]
 
         return addr, comments
 
@@ -324,10 +369,10 @@ class DataCleaner:
         5) Сохраняем через TaskRepository
         """
         # актуальные данные и id-справочник
-        self.json_data = self.task_repository.get() or []
+        self.task_rows = self.task_repository.get() or []
         self.vehicle_lookup = self.vehicle_repository.registry_lookup()
 
-        for item in self.json_data:
+        for item in self.task_rows:
             if only_indexes is not None and item.get("index") not in only_indexes:
                 continue
             #  RAW для ML
@@ -350,11 +395,11 @@ class DataCleaner:
         self._clean_vehicle_names()
         self._add_id_to_data()
 
-        self.task_repository.set(self.json_data, source="cleaner")
+        self.task_repository.set(self.task_rows, source="cleaner")
 
     def _clean_vehicle_names(self) -> None:
         """Оставляем в 'ТС' только номер (без телефона и переносов)."""
-        for row in self.json_data:
+        for row in self.task_rows:
             ts = row.get("ТС", "")
             if isinstance(ts, str) and "\n" in ts:
                 row["ТС"] = ts.split("\n", 1)[0].strip()
@@ -365,16 +410,28 @@ class DataCleaner:
           - ключ по справочнику vehicles: monitoring_name/plate_number без пробелов
           - ключ по данным: 'ТС' без пробелов (и без телефона)
         """
-        for row in self.json_data:
+        for row in self.task_rows:
             ts = row.get("ТС", "")
             if not isinstance(ts, str) or not ts:
                 continue
             ts_clean = ts.split("\n", 1)[0].strip()
-            key = SqliteVehicleRepository.compact_key(ts_clean)
-            found = self.vehicle_lookup.get(key)
+            key = compact_vehicle_key(ts_clean)
+            found = self._find_vehicle_by_key(key)
             if found is not None:
                 row["id"] = found["monitoring_id"]
                 if found.get("plate_number"):
                     row["ТС"] = found["plate_number"]
             else:
                 self.log(f"❌ Не найден ID для ТС: {ts_clean}")
+
+    def _find_vehicle_by_key(self, key: str) -> dict | None:
+        found = self.vehicle_lookup.get(key)
+        if found is not None:
+            return found
+
+        # Если телефон был склеен с ТС, регион вида 750 может быть разобран как 75.
+        # В справочнике такие машины хранятся с полным трехзначным регионом.
+        if re.match(r"^[А-ЯЁA-Z]\d{3}[А-ЯЁA-Z]{2}\d{2}$", key):
+            return self.vehicle_lookup.get(f"{key}0")
+
+        return None

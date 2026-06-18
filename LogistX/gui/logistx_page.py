@@ -1,385 +1,267 @@
-# logistx_page.py
-import json
-import re
-from pathlib import Path
+from __future__ import annotations
 
-from PyQt6.QtCore import pyqtSignal, QTimer
-from PyQt6.QtGui import QColor
-from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QTableWidget, QTableWidgetItem,
-                             QAbstractItemView)
+from PyQt6.QtCore import Qt, pyqtSignal
+from PyQt6.QtWidgets import (QDialog, QDialogButtonBox, QHBoxLayout, QLabel, QListWidget, QListWidgetItem,
+                             QMenu, QPushButton, QTableWidget, QVBoxLayout, QWidget)
 
 from LogistX.controllers.oneC_report_importer import OneCReportImporter
-from Navigation_Bot.gui.dialogs.sites_Db_editor_dialog import SitesDbEditorDialog
+from LogistX.gui.logistx_table_renderer import LogistXTableRenderer
+from LogistX.services.logistx_data_service import LogistXDataService
+from Navigation_Bot.gui.dialogs.sites_db_editor_dialog import SitesDbEditorDialog
 
-#TODO : Слить в единую таблицу class Table, чтоб не создавать две разных
+
+class CounterpartyFilterDialog(QDialog):
+    def __init__(self, counterparties: list[str], selected: set[str], parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Фильтр контрагентов")
+        self.resize(320, 420)
+
+        layout = QVBoxLayout(self)
+        layout.addWidget(QLabel("Контрагенты из текущего logistx_sample.json:"))
+
+        self.list_widget = QListWidget()
+        for name in counterparties:
+            item = QListWidgetItem(name)
+            item.setFlags(item.flags() | Qt.ItemFlag.ItemIsUserCheckable)
+            item.setCheckState(Qt.CheckState.Checked if not selected or name in selected else Qt.CheckState.Unchecked)
+            self.list_widget.addItem(item)
+        layout.addWidget(self.list_widget)
+
+        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok
+                                   | QDialogButtonBox.StandardButton.Cancel
+                                   | QDialogButtonBox.StandardButton.Reset)
+        buttons.accepted.connect(self.accept)
+        buttons.rejected.connect(self.reject)
+        buttons.button(QDialogButtonBox.StandardButton.Reset).clicked.connect(self.clear_selection)
+        layout.addWidget(buttons)
+
+    def selected_counterparties(self) -> set[str]:
+        selected = set()
+        for idx in range(self.list_widget.count()):
+            item = self.list_widget.item(idx)
+            if item.checkState() == Qt.CheckState.Checked:
+                selected.add(item.text())
+        return selected
+
+    def clear_selection(self) -> None:
+        for idx in range(self.list_widget.count()):
+            self.list_widget.item(idx).setCheckState(Qt.CheckState.Unchecked)
+
+
 class LogistXPage(QWidget):
-    COL_PLAY = 0
-    COL_TS = 1
-    COL_RACE = 2
-    COL_FROM = 3
-    COL_TO = 4
-    COL_PLAN = 5
-    COL_FACT = 6
-    COL_STATUS = 7
+    COL_FROM = LogistXTableRenderer.COL_FROM
+    COL_TO = LogistXTableRenderer.COL_TO
+
     fact_clicked = pyqtSignal(int)
 
     def __init__(self, parent=None, log_func=print):
         super().__init__(parent)
         self.log = log_func
+        self.rows: list[dict] = []
+        self.view_order: list[int] = []
+        self.hidden_row_keys: set[tuple[str, str, str, str]] = set()
+        self.show_hidden_rows = False
+        self.selected_counterparties: set[str] = set()
 
-        lay = QVBoxLayout(self)
+        self.data_service = LogistXDataService(log_func=self.log)
 
-        top = QHBoxLayout()
-        self.btn_refresh = QPushButton("Обновить")
-        self.btn_import_1c = QPushButton("Импорт из 1С (RDP)")
-        top.addWidget(self.btn_refresh)
-        top.addWidget(self.btn_import_1c)
-        top.addStretch(1)
-        lay.addLayout(top)
+        layout = QVBoxLayout(self)
+        layout.addLayout(self._build_toolbar())
 
         self.table = QTableWidget(0, 8)
-        self.table.setHorizontalHeaderLabels(["▶", "ТС", "Рейс", "Отправление",
-                                              "Назначение", "План",
-                                              "Факт Wialon", "Статус"])
-        self.table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
-        header = self.table.horizontalHeader()
-        header.setSectionResizeMode(header.ResizeMode.Fixed)
+        layout.addWidget(self.table)
 
-        self.table.setColumnWidth(self.COL_PLAY, 32)
-        self.table.setColumnWidth(self.COL_TS, 95)
-        self.table.setColumnWidth(self.COL_RACE, 100)
-        self.table.setColumnWidth(self.COL_FROM, 260)
-        self.table.setColumnWidth(self.COL_TO, 240)
-        self.table.setColumnWidth(self.COL_PLAN, 75)
-        self.table.setColumnWidth(self.COL_FACT, 115)
-        self.table.setColumnWidth(self.COL_STATUS, 90)
+        self.renderer = LogistXTableRenderer(self.table, log_func=self.log)
+        self.renderer.setup()
+        self.renderer.set_on_play_clicked(self.fact_clicked.emit)
 
-        lay.addWidget(self.table)
-
-        self.sample_path = Path("LogistX/config") / "logistx_sample.json"
         self.btn_refresh.clicked.connect(self.load_sample)
         self.btn_import_1c.clicked.connect(self.import_from_1c_rdp)
+        self.btn_filter.clicked.connect(self.open_counterparty_filter)
+        self.btn_hide_marked.clicked.connect(self.toggle_hidden_rows_visibility)
         self.table.cellDoubleClicked.connect(self.on_cell_double_clicked)
-        self.sites_db = self._load_sites_db()
-        self.rows = []
-        self.table.setWordWrap(True)
-        # self.fact_clicked.connect(lambda i: self.log(f"▶ нажата строка {i+1}"))
+        self.table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.table.customContextMenuRequested.connect(self.open_row_context_menu)
+        self._update_hide_button_text()
 
-    def _capture_view_state(self) -> tuple[int, int]:
-        """Запоминает положение скролла и выделенную строку"""
-        try:
-            scroll_value = self.table.verticalScrollBar().value()
-            selected_row = self.table.currentRow()
-        except Exception:
-            scroll_value, selected_row = 0, -1
-        return scroll_value, selected_row
+    def _build_toolbar(self) -> QHBoxLayout:
+        toolbar = QHBoxLayout()
+        self.btn_refresh = QPushButton("Обновить")
+        toolbar.addWidget(self.btn_refresh)
 
-    def _restore_view_state(self, scroll_value: int, selected_row: int):
-        """Восстанавливает скролл и выделение (после перерисовки)"""
+        self.btn_import_1c = QPushButton("Импорт из 1С (RDP)")
+        toolbar.addWidget(self.btn_import_1c)
+
+        self.btn_filter = QPushButton("Фильтр")
+        toolbar.addWidget(self.btn_filter)
+
+        self.btn_hide_marked = QPushButton("Скрыть")
+        toolbar.addWidget(self.btn_hide_marked)
+
+        toolbar.addStretch(1)
+        return toolbar
+
+    def load_sample(self) -> None:
+        rows = self.data_service.load_rows()
+        if not rows:
+            return
+
+        self.set_rows(rows)
+        self.log(f"✅ LogistX: загружено рейсов: {len(rows)}")
+
+    def save_rows(self) -> None:
+        self.data_service.save_rows(self.rows)
+
+    def set_rows(self, rows: list[dict]) -> None:
+        self.rows = rows
+        self.selected_counterparties &= set(self._counterparties())
+        self._drop_stale_hidden_keys()
+        self._refresh_table()
+
+    def on_cell_double_clicked(self, row: int, col: int) -> None:
+        if col not in (self.COL_FROM, self.COL_TO):
+            return
+
+        source_idx = self._source_index_for_visual_row(row)
+        if source_idx is None:
+            return
+
+        address = self._extract_raw_address(source_idx, col).strip()
+        if not address:
+            return
+
+        dialog = SitesDbEditorDialog(parent=self, prefill_address=address, log_func=self.log)
+        dialog.exec()
+
+        self.renderer.reload_sites_db()
+        self.renderer.update_address_cell(source_idx, col, address)
+
+    def build_close_race_job(self, row: int) -> dict | None:
+        return self.renderer.build_close_race_job(row, self.rows)
+
+    def apply_close_race_result(self, row: int, ctx, result: dict) -> None:
         try:
-            self.table.verticalScrollBar().setValue(scroll_value)
-            if 0 <= selected_row < self.table.rowCount():
-                self.table.selectRow(selected_row)
+            changed = self.renderer.apply_close_race_result(row, self.rows, ctx, result)
+            if changed:
+                self.save_rows()
         except Exception as e:
-            self.log(f"❌ LogistX restore_view_state: {e}")
+            self.log(f"❌ LogistX apply_close_race_result: {e}")
+
+    def import_from_1c_rdp(self) -> None:
+        importer = OneCReportImporter(log_func=self.log)
+        importer.run()
+        self.load_sample()
+
+    def open_counterparty_filter(self) -> None:
+        counterparties = self._counterparties()
+        dialog = CounterpartyFilterDialog(counterparties, self.selected_counterparties, parent=self)
+        if not dialog.exec():
+            return
+
+        selected = dialog.selected_counterparties()
+        self.selected_counterparties = selected if selected != set(counterparties) else set()
+        self._refresh_table()
+
+    def open_row_context_menu(self, pos) -> None:
+        visual_row = self.table.rowAt(pos.y())
+        source_idx = self._source_index_for_visual_row(visual_row)
+        if source_idx is None:
+            return
+
+        menu = QMenu(self.table)
+        row_key = self._row_key(self.rows[source_idx])
+        action_hide = menu.addAction("Снять скрытие" if row_key in self.hidden_row_keys else "Скрыть")
+        chosen = menu.exec(self.table.viewport().mapToGlobal(pos))
+        if chosen == action_hide:
+            if row_key in self.hidden_row_keys:
+                self.hidden_row_keys.remove(row_key)
+                self.log(f"👁 LogistX: скрытие снято со строки: {source_idx + 1}")
+            else:
+                self.hidden_row_keys.add(row_key)
+                self.log(f"🙈 LogistX: строка скрыта: {source_idx + 1}")
+            self._refresh_table()
+
+    def toggle_hidden_rows_visibility(self) -> None:
+        if not self.hidden_row_keys:
+            return
+
+        self.show_hidden_rows = not self.show_hidden_rows
+        self._refresh_table()
 
     def _extract_raw_address(self, row: int, col: int) -> str:
         if row < 0 or row >= len(self.rows):
             return ""
-        obj = self.rows[row]
-        if col == self.COL_FROM:
-            return str(obj.get("Рейс.Пункт отправления", "") or "")
-        if col == self.COL_TO:
-            return str(obj.get("Рейс.Пункт назначения", "") or "")
-        return ""
-
-    def on_cell_double_clicked(self, row: int, col: int):
-        if col not in (self.COL_FROM, self.COL_TO):
-            return
-
-        addr = self._extract_raw_address(row, col).strip()
-        if not addr:
-            return
-
-        dlg = SitesDbEditorDialog(parent=self, prefill_address=addr, log_func=self.log)
-        dlg.exec()
-
-        self.sites_db = self._load_sites_db()
-        geofence = self._resolve_geofence(addr)
-
-        text = self._format_tag_address(geofence, addr)
-
-        item = self.table.item(row, col)
-        if item is None:
-            item = QTableWidgetItem("")
-            self.table.setItem(row, col, item)
-
-        item.setText(text)
-
-        self.table.resizeRowToContents(row)
-
-    def save_rows(self):
-        try:
-            self.sample_path.parent.mkdir(parents=True, exist_ok=True)
-            self.sample_path.write_text(json.dumps(self.rows, ensure_ascii=False, indent=2), encoding="utf-8", )
-            self.log(f"💾 LogistX: сохранено строк: {len(self.rows)}")
-        except Exception as e:
-            self.log(f"❌ Ошибка сохранения LogistX JSON: {e}")
-
-    def load_sample(self):
-        try:
-            p = self.sample_path.resolve()
-            # self.log(f"📄 LogistX читаю JSON: {p}")
-            if p.exists():
-                pass
-                # self.log(f"   mtime={p.stat().st_mtime} size={p.stat().st_size}")
-            if not self.sample_path.exists():
-                self.log(f"❌ Нет файла: {self.sample_path}")
-                return
-            data = json.loads(self.sample_path.read_text(encoding="utf-8") or "[]")
-            if isinstance(data, dict):  # на всякий
-                data = [data]
-            self.set_rows(data)
-            self.log(f"✅ LogistX: загружено рейсов: {len(data)}")
-        except Exception as e:
-            self.log(f"❌ Ошибка чтения LogistX JSON: {e}")
-
-    def set_rows(self, rows: list[dict]):
-        scroll_value, selected_row = self._capture_view_state()
-
-        self.rows = rows
-        self.table.blockSignals(True)
-        try:
-            self.table.setRowCount(0)
-            for obj in rows:
-                r = self.table.rowCount()
-                self.table.insertRow(r)
-                btn = QPushButton("▶")
-                btn.setFixedWidth(32)
-                btn.clicked.connect(lambda _, row=r: self.fact_clicked.emit(row))
-                self.table.setCellWidget(r, self.COL_PLAY, btn)
-
-                addr_from = (obj.get("Рейс.Пункт отправления")
-                             or obj.get("Пункт отправления")
-                             or obj.get("Отправление")
-                             or "")
-                addr_to = (obj.get("Рейс.Пункт назначения")
-                           or obj.get("Пункт назначения")
-                           or obj.get("Назначение")
-                           or "")
-
-                addr_from = str(addr_from)
-                addr_to = str(addr_to)
-
-                gf_from = self._resolve_geofence(addr_from)
-                gf_to = self._resolve_geofence(addr_to)
-
-                from_cell = self._format_tag_address(gf_from, addr_from)
-                to_cell = self._format_tag_address(gf_to, addr_to)
-
-                values = [obj.get("ТС", ""),
-                          obj.get("Рейс", ""),
-                          from_cell,
-                          to_cell,
-                          obj.get("Плановая дата освобождения разгрузка", ""),
-                          "",
-                          ""]
-
-                for i, v in enumerate(values):
-                    self.table.setItem(r, i + 1, QTableWidgetItem(str(v)))
-            self.table.resizeRowsToContents()
-            self._highlight_missing_tags()
-
-        finally:
-            self.table.blockSignals(False)
-            # важно: восстановление после того как Qt успел пересчитать layout
-            QTimer.singleShot(0, lambda: self._restore_view_state(scroll_value, selected_row))
-
-    def _load_sites_db(self) -> list[dict]:
-        # путь подстрой: если sites_db.json у тебя в корневом config
-        path = Path("LogistX/config") / "sites_db.json"
-        try:
-            if not path.exists():
-                return []
-            data = json.loads(path.read_text(encoding="utf-8") or "[]")
-            return data if isinstance(data, list) else []
-        except Exception as e:
-            self.log(f"❌ Ошибка чтения sites_db.json: {e}")
-            return []
-
-    # Helpers
-    def _highlight_missing_tags(self):
-        pale_red = QColor(255, 220, 220)  # бледно-красный
-        transparent = QColor(0, 0, 0, 0)
-
-        for row in range(self.table.rowCount()):
-            has_tags = self._row_has_tags(row)
-
-            for col in range(self.table.columnCount()):
-                item = self.table.item(row, col)
-
-                # кнопка ▶ — это widget, пропускаем
-                if col == self.COL_PLAY:
-                    continue
-
-                if not item:
-                    continue
-
-                if has_tags:
-                    item.setBackground(transparent)
-                else:
-                    item.setBackground(pale_red)
-
-    def _row_has_tags(self, row: int) -> bool:
-        """Проверяет, есть ли 🏷 в колонках Погрузка и Назначение"""
-        from_item = self.table.item(row, self.COL_FROM)
-        to_item = self.table.item(row, self.COL_TO)
-
-        from_text = from_item.text() if from_item else ""
-        to_text = to_item.text() if to_item else ""
-
-        return ("🏷" in from_text) and ("🏷" in to_text)
-
-    def _format_tag_address(self, geofence: str, address: str) -> str:
-        geofence = (geofence or "").strip()
-        address = (address or "").strip()
-        if geofence:
-            return f"🏷 {geofence}\n{address}"
-        return address
-
-    # --- close_race integration (UI-side) ---
-    def _geofence_from_cell_text(self, s: str) -> str:
-        s = (s or "").strip()
-        if s.startswith("🏷"):
-            first = s.splitlines()[0]
-            return first.replace("🏷", "").strip()
-        return ""
-
-    def build_close_race_job(self, row: int) -> dict | None:
-        """
-        Собрать job_data для NavigationProcessor.close_race_logistx_async.
-        Здесь можно безопасно читать Qt-таблицу (мы в GUI-потоке).
-        """
-        if row < 0 or row >= len(self.rows):
-            return None
 
         obj = self.rows[row] or {}
+        if col == self.COL_FROM:
+            return self._first_value(obj, "Рейс.Пункт отправления", "Пункт отправления", "Отправление")
+        if col == self.COL_TO:
+            return self._first_value(obj, "Рейс.Пункт назначения", "Пункт назначения", "Назначение")
+        return ""
 
-        from_item = self.table.item(row, self.COL_FROM)
-        to_item = self.table.item(row, self.COL_TO)
+    def _refresh_table(self) -> None:
+        self.view_order = self._build_view_order()
+        self.renderer.render_entries([(idx, self.rows[idx]) for idx in self.view_order])
+        self.renderer.mark_hidden_rows(self._visible_hidden_indexes())
+        self._update_hide_button_text()
 
-        from_text = from_item.text() if from_item else ""
-        to_text = to_item.text() if to_item else ""
-
-        job_data = {"row": int(row),
-                    "obj": obj,
-                    "race_no": str(obj.get("Рейс", "") or "").strip(),
-                    "unit": str(obj.get("ТС", "") or "").strip(),
-                    "load_zone": self._geofence_from_cell_text(from_text),
-                    "unload_zone": self._geofence_from_cell_text(to_text), }
-
-        return job_data
-
-    def apply_close_race_result(self, row: int, ctx, result: dict):
-        """
-        Обновить self.rows + таблицу по результату close_race.
-        Процессор сюда не лезет — страница сама отвечает за свой UI.
-        """
-        try:
-            if row < 0 or row >= len(self.rows):
-                return
-
-            obj = self.rows[row] or {}
-
-            state = getattr(ctx, "state", {}) or {}
-            precheck = state.get("mini_wialon_precheck") or {}
-            progress = state.get("onec_progress") or {}
-
-            status_1c = str(state.get("close_status", "") or "")
-            status_text = str(precheck.get("status_text", "") or "")
-            precheck_payload = precheck.get("payload") or {}
-
-            final_payload = {"load_in": getattr(ctx, "load_in", "") or "",
-                             "load_out": getattr(ctx, "load_out", "") or "",
-                             "unload_in": getattr(ctx, "unload_in", "") or "",
-                             "unload_out": getattr(ctx, "unload_out", "") or "", }
-
-            if not any(final_payload.values()):
-                final_payload = {"load_in": str(precheck_payload.get("load_in", "") or ""),
-                                 "load_out": str(precheck_payload.get("load_out", "") or ""),
-                                 "unload_in": str(precheck_payload.get("unload_in", "") or ""),
-                                 "unload_out": str(precheck_payload.get("unload_out", "") or ""), }
-
-            obj["status_1c"] = status_1c
-            obj["status_text"] = status_text
-            obj["departure_dt_1c"] = getattr(ctx, "departure_dt", "") or ""
-            obj["wialon_payload"] = final_payload
-            obj["onec_progress"] = progress
-            obj["last_result"] = {"ok": bool(result.get("ok")),
-                                  "stage": str(result.get("stage", "") or ""),
-                                  "message": str(result.get("message", "") or ""), }
-
-            # --- обновление таблицы ---
-            if result.get("ok"):
-                txt = (f"Отправление: {getattr(ctx, 'departure_dt', '') or ''}\n"
-                       f"Погр(въезд): {getattr(ctx, 'load_in', '') or ''}\n"
-                       f"Погр(выезд): {getattr(ctx, 'load_out', '') or ''}\n"
-                       f"Выгр(въезд): {getattr(ctx, 'unload_in', '') or ''}\n"
-                       f"Выгр(выезд): {getattr(ctx, 'unload_out', '') or ''}")
-                self.table.setItem(row, self.COL_FACT, QTableWidgetItem(txt))
-            else:
-                old_fact_item = self.table.item(row, self.COL_FACT)
-                if old_fact_item is None:
-                    self.table.setItem(row, self.COL_FACT, QTableWidgetItem(""))
-
-            status_map = {"in_transit": "Ещё в пути",
-                          "on_unload": "Ещё на выгрузке",
-                          "ready_to_close": "Можно закрывать",
-                          "closed": "Закрыт",
-                          "error": "Ошибка",}
-
-            precheck_text = str(precheck.get("status_text", "") or "")
-            result_message = str(result.get("message", "") or "")
-            base = status_map.get(status_1c, "") or precheck_text or result_message
-            self.table.setItem(row, self.COL_STATUS, QTableWidgetItem(base or "—"))
-
-            self.table.resizeRowToContents(row)
-            self.save_rows()
-
-        except Exception as e:
-            self.log(f"❌ LogistX apply_close_race_result: {e}")
-
-    def _norm(self, s: str) -> str:
-        s = (s or "").lower().replace("ё", "е")
-        s = re.sub(r"[^\w\s]", " ", s)
-        s = re.sub(r"\s+", " ", s).strip()
-        return s
-
-    def _resolve_geofence(self, address: str) -> str:
-        addr_n = self._norm(address)
-        if not addr_n:
-            return ""
-        best = ""
-        best_score = 0
-        for obj in self.sites_db:
-            aliases = obj.get("aliases") or []
-            if not isinstance(aliases, list):
+    def _build_view_order(self) -> list[int]:
+        indexes = []
+        for idx, row in enumerate(self.rows):
+            is_hidden = self._row_key(row) in self.hidden_row_keys
+            if is_hidden and not self.show_hidden_rows:
                 continue
-            score = 0
-            for a in aliases:
-                a_n = self._norm(str(a))
-                if a_n and a_n in addr_n:
-                    score += 1
-            if score > best_score:
-                best_score = score
-                best = str(obj.get("geofence", "") or "")
-        return best if best_score > 0 else ""
+            if self.selected_counterparties and self._counterparty(row) not in self.selected_counterparties:
+                continue
+            indexes.append(idx)
+        return indexes
 
-    # --- 1C (RDP) import ---
-    def import_from_1c_rdp(self):
-        importer = OneCReportImporter(log_func=self.log)
-        count = importer.run()
-        # self.log(f"🧪 OneC import result: count={count}")
+    def _source_index_for_visual_row(self, visual_row: int) -> int | None:
+        if visual_row < 0 or visual_row >= len(self.view_order):
+            return None
+        return self.view_order[visual_row]
 
-        # временно: всегда перечитываем файл
-        self.load_sample()
+    def _counterparties(self) -> list[str]:
+        names = {self._counterparty(row) for row in self.rows}
+        names.discard("")
+        return sorted(names, key=str.casefold)
+
+    def _update_hide_button_text(self) -> None:
+        count = len(self.hidden_row_keys)
+        if self.show_hidden_rows:
+            self.btn_hide_marked.setText(f"Скрыть скрытые ({count})")
+        else:
+            self.btn_hide_marked.setText(f"Показать скрытые ({count})" if count else "Скрыть")
+        self.btn_hide_marked.setEnabled(bool(count))
+
+    def _visible_hidden_indexes(self) -> set[int]:
+        if not self.show_hidden_rows:
+            return set()
+        return {idx for idx in self.view_order if self._row_key(self.rows[idx]) in self.hidden_row_keys}
+
+    def _drop_stale_hidden_keys(self) -> None:
+        active_keys = {self._row_key(row) for row in self.rows}
+        self.hidden_row_keys &= active_keys
+        if not self.hidden_row_keys:
+            self.show_hidden_rows = False
+
+    @classmethod
+    def _row_key(cls, row: dict) -> tuple[str, str, str, str]:
+        return (
+            str(row.get("Рейс") or "").strip(),
+            str(row.get("ТС") or "").strip(),
+            cls._counterparty(row),
+            str(row.get("Плановая дата освобождения разгрузка") or "").strip(),
+        )
+
+    @staticmethod
+    def _counterparty(row: dict) -> str:
+        return str(row.get("Контрагент") or row.get("КА") or "").strip()
+
+    @staticmethod
+    def _first_value(obj: dict, *keys: str) -> str:
+        for key in keys:
+            value = obj.get(key)
+            if value:
+                return str(value)
+        return ""

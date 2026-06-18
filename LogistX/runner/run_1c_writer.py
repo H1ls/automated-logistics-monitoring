@@ -5,6 +5,7 @@ import json
 import re
 from pathlib import Path
 
+from LogistX.config.paths import LOGISTX_SAMPLE, SITES_DB_FILE
 from LogistX.onec.bot import OneCBot
 from LogistX.onec.context import RaceContext
 from Navigation_Bot.bots.web_driver_manager import WebDriverManager
@@ -13,9 +14,6 @@ from Navigation_Bot.bots.wialonReportsBot import WialonReportsBot
 
 def activate_rdp1():
     print("176.57.78.6:2025 — Подключение к удаленному рабочему столу")
-
-BASE_DIR = Path(__file__).resolve().parents[1]
-CONFIG_DIR = BASE_DIR / "config"
 
 
 def log(msg: str):
@@ -87,8 +85,8 @@ def make_rdp_activator():
 
 
 def main(row_index: int = 0):
-    logistx_sample = load_json(CONFIG_DIR / "logistx_sample.json")
-    sites_db = load_json(CONFIG_DIR / "sites_db.json")
+    logistx_sample = load_json(LOGISTX_SAMPLE)
+    sites_db = load_json(SITES_DB_FILE)
 
     row = logistx_sample[row_index]
 

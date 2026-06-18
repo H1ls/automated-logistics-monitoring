@@ -1,15 +1,15 @@
 import json
 import re
 from datetime import datetime, timedelta
-from pathlib import Path
 
 from PyQt6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLabel, QSpinBox,
                              QLineEdit, QPushButton, QScrollArea, QWidget, QTextEdit)
 
+from LogistX.config.paths import SITES_DB_FILE
 from Navigation_Bot.core.dataset_archive import DatasetArchive
-from Navigation_Bot.core.processed_flags import StatusEditorWidget
+from Navigation_Bot.gui.widgets.status_editor_widget import StatusEditorWidget
 from Navigation_Bot.gui.dialogs.dialog_helpers import button_row_split
-from Navigation_Bot.gui.dialogs.sites_Db_editor_dialog import SitesDbEditorDialog
+from Navigation_Bot.gui.dialogs.sites_db_editor_dialog import SitesDbEditorDialog
 
 
 class AddressEditDialog(QDialog):
@@ -119,7 +119,7 @@ class AddressEditDialog(QDialog):
 
     # Helpers
     def _load_sites_db(self) -> list[dict]:
-        path = Path("LogistX/config") / "sites_db.json"
+        path = SITES_DB_FILE
         try:
             if not path.exists():
                 return []
@@ -397,8 +397,7 @@ class AddressEditDialog(QDialog):
                 continue
             row = {f"{self.prefix} {idx}": address,
                    f"Дата {idx}": date or "Не указано",
-                   f"Время {idx}": time or "Не указано"
-                   }
+                   f"Время {idx}": time or "Не указано"}
             result.append(row)
 
             if hasattr(container, "_meta"):
@@ -431,10 +430,8 @@ class AddressEditDialog(QDialog):
                 time = (time_input.text() if hasattr(time_input, "text") else "").strip()
                 if not addr:
                     continue
-                output.append({"Адрес": addr,
-                               "Дата": date,
-                               "Время": time,
-                               })
+                output.append({"Адрес": addr,"Дата": date,"Время": time,})
+
             comment_val = (self.comment_edit.toPlainText() if hasattr(self, "comment_edit") else "").strip()
             if comment_val:
                 if output:
@@ -447,10 +444,7 @@ class AddressEditDialog(QDialog):
                     # точек нет — коммент отдельной записью
                     output.append({"Адрес": "", "Дата": "", "Время": "", "Комментарий": comment_val})
 
-            sample = {"input": raw_input,
-                      "output": output
-                      }
-
+            sample = {"input": raw_input,"output": output}
             self.log(f"📦 В архив добавлено: {raw_input[:60]}...")
             DatasetArchive(log_func=self.log).append(sample)
         except Exception as e:

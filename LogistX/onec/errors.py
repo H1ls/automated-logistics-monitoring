@@ -11,6 +11,7 @@ from PIL import Image
 from pathlib import Path
 from dataclasses import dataclass
 from datetime import datetime
+from LogistX.config.paths import TESSERACT_LOCAL_EXE
 from .session import OneCSession
 
 
@@ -25,19 +26,6 @@ class OneCErrorHandler:
     def __init__(self, session: OneCSession, log_func=print):
         self.session = session
         self.log = log_func
-
-        # self.session = session
-        # self.log = log_func
-        # pytesseract.pytesseract.tesseract_cmd = r"D:\PycharmProjects\pet.project\Tesseract-OCR\tesseract.exe"
-        # pytesseract.pytesseract.tesseract_cmd = r"D:\PycharmProjects\pet.project\Tesseract-OCR\tesseract.exe"
-        # if not pytesseract.pytesseract.tesseract_cmd:
-        #     default_path = r"D:\PycharmProjects\pet.project\Tesseract-OCR\tesseract.exe"
-        #     if Path(default_path).exists():
-        #         pytesseract.pytesseract.tesseract_cmd = default_path
-        #     else:
-        #         found = shutil.which("tesseract")
-        #         if found:
-        #             pytesseract.pytesseract.tesseract_cmd = found
 
         # 1. Определяем путь к tesseract.exe
         tesseract_path = self._get_tesseract_path()
@@ -79,9 +67,8 @@ class OneCErrorHandler:
             return found
 
         # И последний резерв – локальная папка проекта (для отладки)
-        local_path = Path("Tesseract-OCR/tesseract.exe")
-        if local_path.exists():
-            return str(local_path.resolve())
+        if TESSERACT_LOCAL_EXE.exists():
+            return str(TESSERACT_LOCAL_EXE)
 
         return ""
 

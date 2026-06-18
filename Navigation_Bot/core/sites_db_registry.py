@@ -2,13 +2,14 @@ from __future__ import annotations
 
 import json
 import re
-from pathlib import Path
 
-SITES_DB_PATH = Path("LogistX/config") / "sites_db.json"
+from LogistX.config.paths import SITES_DB_FILE
+
+SITES_DB_PATH = SITES_DB_FILE
 
 
 class SitesDbRegistry:
-    """Чтение sites_db.json и сопоставление адреса с aliases (как LogistXPage)."""
+    """Читает sites_db.json и сопоставляет адреса с aliases/geofence."""
 
     def __init__(self, log_func=None):
         self.log = log_func or print
@@ -23,7 +24,7 @@ class SitesDbRegistry:
             raw = json.loads(SITES_DB_PATH.read_text(encoding="utf-8") or "[]")
             self._data = raw if isinstance(raw, list) else []
         except Exception as e:
-            self.log(f"❌ Ошибка чтения sites_db.json: {e}")
+            self.log(f"Ошибка чтения sites_db.json: {e}")
             self._data = []
 
     @staticmethod
@@ -33,7 +34,6 @@ class SitesDbRegistry:
         return re.sub(r"\s+", " ", s).strip()
 
     def resolve_geofence(self, address: str) -> str:
-        """Лучшее совпадение адреса с aliases → geofence (логика LogistXPage._resolve_geofence)."""
         addr_n = self._norm(address)
         if not addr_n or not self._data:
             return ""
@@ -62,7 +62,6 @@ class SitesDbRegistry:
 
     @staticmethod
     def collect_point_addresses(blocks: list, prefix: str) -> list[str]:
-        """Адреса точек Погрузка N / Выгрузка N (без комментариев)."""
         points = []
         for d in blocks or []:
             if not isinstance(d, dict):
@@ -80,10 +79,6 @@ class SitesDbRegistry:
         return addresses
 
     def match_geo_zona_to_zone_label(self, geo_zona: str, item: dict) -> str | None:
-        """
-        geo_zona из Wialon (NavigationReadResult) сравнивается с geofence
-        точек Погрузка/Выгрузка строки (через aliases sites_db).
-        """
         zone_norm = self._norm(geo_zona)
         if not zone_norm:
             return None

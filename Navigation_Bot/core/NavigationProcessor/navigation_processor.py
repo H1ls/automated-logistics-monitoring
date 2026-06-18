@@ -1,4 +1,5 @@
 import traceback
+from concurrent.futures import Future
 from concurrent.futures import ThreadPoolExecutor
 from threading import Lock
 from Navigation_Bot.core.NavigationProcessor.batch_processing_service import BatchProcessingService
@@ -8,13 +9,12 @@ from Navigation_Bot.core.application.services.navigation_row_service import Navi
                                                                                                    
 
 class NavigationProcessor:
-    # TODO: Вынести TIMEOUT_SECONDS в Настройки для ручной регулировки
-    TIMEOUT_SECONDS = 3
+    DEFAULT_TIMEOUT_SECONDS = 3
 
     def __init__(self, task_repository, logger, gsheet, display_callback, single_row, updated_rows,
                  executor=None, highlight_callback=None, browser_rect=None, ui_bridge=None, tasks_service=None,
                  navigation_history_service=None, route_estimate_history_service=None,
-                 pause_dialog_factory=None, gui_parent=None):
+                 pause_dialog_factory=None, gui_parent=None, timeout_seconds=None):
 
         self.task_repository = task_repository
         self.log = logger
@@ -38,6 +38,7 @@ class NavigationProcessor:
         self.route_estimate_history_service = route_estimate_history_service
         self.pause_dialog_factory = pause_dialog_factory  # фабрика диалога паузы
         self.gui_parent = gui_parent  # родительское окно GUI для показа диалогов
+        self.timeout_seconds = self._normalize_timeout(timeout_seconds)
 
         self.browser_session = BrowserSession(logger=self.log,
                                               browser_rect=self.browser_rect,
@@ -62,6 +63,17 @@ class NavigationProcessor:
         self.batch_processing_service = BatchProcessingService(self)
         self._dialog_request_queue = self.batch_processing_service._dialog_request_queue
         self._dialog_result_queue = self.batch_processing_service._dialog_result_queue
+
+    @classmethod
+    def _normalize_timeout(cls, value) -> int:
+        try:
+            timeout = int(value)
+        except (TypeError, ValueError):
+            timeout = cls.DEFAULT_TIMEOUT_SECONDS
+        return max(0, timeout)
+
+    def set_timeout_seconds(self, value) -> None:
+        self.timeout_seconds = self._normalize_timeout(value)
 
     # Processing mode
     def _try_enter_single_processing(self) -> bool:
@@ -128,8 +140,8 @@ class NavigationProcessor:
             if self.ui_bridge and getattr(self.ui_bridge, "gui", None):
                 gui = self.ui_bridge.gui
                 rh = getattr(gui, "row_highlighter", None)
-                if rh and hasattr(rh, "reapply_from_json"):
-                    self.ui_bridge.call.emit(lambda: rh.reapply_from_json())
+                if rh:
+                    self.ui_bridge.call.emit(lambda: rh.reapply_from_rows())
         except Exception as e:
             self.log(f"⚠️ Ошибка подсветки строки {row_idx}: {e}")
 
@@ -152,10 +164,42 @@ class NavigationProcessor:
 
         row_identity = self._get_row_identity_by_row(row_idx)
 
-        self._set_row_busy(row_identity, True)
-        self._highlight_row(row_idx, row_identity)
+        try:
+            self._set_row_busy(row_identity, True)
+            self._highlight_row(row_idx, row_identity)
+            future = self.executor.submit(self.process_row_wrapper, row_idx, row_identity)
+        except Exception as e:
+            self.log(f"❌ Не удалось запустить обработку строки {row_idx}: {e}")
+            self.log(traceback.format_exc())
+            self._leave_processing("single")
+            self._set_row_busy(row_identity, False)
+            return
 
-        self.executor.submit(self.process_row_wrapper, row_idx, row_identity)
+        future.add_done_callback(lambda f: self._on_single_row_future_done(f, row_idx, row_identity))
+
+    def _on_single_row_future_done(self, future: Future, row_idx: int, fallback_row_identity: int | None) -> None:
+        row_identity = fallback_row_identity
+
+        try:
+            success, error_msg, returned_row_identity = future.result()
+            if returned_row_identity is not None:
+                row_identity = returned_row_identity
+
+            if success:
+                pass
+                # self.log(f"✅ Обработка строки {row_idx} завершилась")
+            else:
+                self.log(f"❌ Обработка строки {row_idx} завершилась с ошибкой: {error_msg}")
+
+        except Exception as e:
+            self.log(f"❌ process_row_wrapper упал без штатного результата: строка {row_idx}: {e}")
+            self.log(traceback.format_exc())
+
+        finally:
+            self._leave_processing("single")
+            self._set_row_busy(fallback_row_identity, False)
+            if row_identity != fallback_row_identity:
+                self._set_row_busy(row_identity, False)
 
     def process_row_wrapper(self, row: int, fallback_row_identity: int | None = None): 
         
@@ -182,15 +226,6 @@ class NavigationProcessor:
             self.log(f"❌ Ошибка в process_row_wrapper: {error_msg}")
             self.log(traceback.format_exc())
             return False, error_msg, row_identity
-
-        finally:
-            with self._processing_lock:
-                is_single_mode = self._processing_mode == "single"
-
-            if is_single_mode:
-                self._leave_processing("single")
-
-            self._set_row_busy(row_identity, False)
 
     def process_all(self):
         self.batch_processing_service.process_all()

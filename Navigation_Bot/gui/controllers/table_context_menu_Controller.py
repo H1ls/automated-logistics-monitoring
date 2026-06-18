@@ -24,24 +24,25 @@ class TableContextMenuController:
         if real_idx is None:
             return
 
-        # TODO: Изменить взаимодействия с task_repository
-        data = self.gui.task_repository.get() or []
-        if not (0 <= real_idx < len(data)):
+        rec = self._get_row(real_idx)
+        if rec is None:
             return
 
-        rec = data[real_idx]
         menu = QMenu(self.table)
-        act_refresh = menu.addAction("🔄 Перезаписать из Google (по google_sheet_row)")
+        act_refresh = menu.addAction("🔄 Перезаписать из Google")  # по google_sheet_row
         act_complete = menu.addAction("Завершить рейс")
         menu.addSeparator()
 
-        # TODO: Заполнить act_stub2
-        act_stub2 = menu.addAction("2) заглушка")
         act_add_note = menu.addAction("📝 Добавить заметку")
+        duration_actions = {}
         if rec.get("highlight_until"):
             act_stub4 = menu.addAction("⚪ Убрать подсветку")
         else:
-            act_stub4 = menu.addAction("🟢 Подсветить строку")
+            act_stub4 = None
+            highlight_menu = menu.addMenu("🟢 Подсветить строку")
+            for hours in (1, 2, 3, 6, 12, 24):
+                label = f"{hours}ч"
+                duration_actions[highlight_menu.addAction(label)] = hours
 
         chosen = menu.exec(self.table.viewport().mapToGlobal(pos))
         if not chosen:
@@ -55,21 +56,30 @@ class TableContextMenuController:
         elif chosen == act_add_note:
             self._add_note(real_idx)
             return
+        elif chosen in duration_actions:
+            self._set_highlight(real_idx, duration_actions[chosen])
+            return
         elif chosen == act_stub4:
             self._toggle_highlight(real_idx)
             return
 
-        else:
-            self.gui.log("ℹ️ Пункт пока заглушка")
+    def _get_row(self, real_idx: int) -> dict | None:
+        if self.tasks:
+            return self.tasks.get_row(real_idx)
+
+        data = self.gui.task_repository.get() or []
+        if not (0 <= real_idx < len(data)):
+            return None
+        row = data[real_idx]
+        return row if isinstance(row, dict) else None
 
     def _add_note(self, real_idx: int):
         try:
-            data = self.gui.task_repository.get() or []
-            if not (0 <= real_idx < len(data)):
+            row = self._get_row(real_idx)
+            if row is None:
                 self.gui.log("⚠️ Строка не найдена")
                 return
 
-            row = data[real_idx] or {}
             task_trip_number = trip_number(row)
             if not task_trip_number:
                 self.gui.log("⚠️ У строки нет trip_number")
@@ -91,12 +101,11 @@ class TableContextMenuController:
             if not text and not media_paths:
                 return
 
-            note = Note(task_index=task_trip_number,
+            note = Note(trip_number=task_trip_number,
                         text=text,
                         media_paths=media_paths,
                         media_type=self._detect_media_type(media_paths),
-                        author="user",
-                        )
+                        author="user")
 
             note_service.append(note)
 
@@ -135,11 +144,11 @@ class TableContextMenuController:
 
     def _toggle_highlight(self, real_idx: int):
         try:
-            data = self.gui.task_repository.get() or []
-            if not (0 <= real_idx < len(data)):
+            row = self._get_row(real_idx)
+            if row is None:
                 return
 
-            row_identity = row_identity_for_gui(data[real_idx])
+            row_identity = row_identity_for_gui(row)
             if not row_identity:
                 self.gui.log("⚠️ В строке нет google_sheet_row/trip_number")
                 return
@@ -151,14 +160,35 @@ class TableContextMenuController:
 
             enabled = highlighter.toggle_highlight(row_identity)
 
-            # TODO: Если highlighter есть какой то, то он не предлагает подстветить сразу
             if enabled:
-                self.gui.log(f"🟢 Подсветка включена: строки = {real_idx + 1},и ТС {data[real_idx].get('ТС')}")
+                self.gui.log(f"🟢 Подсветка включена: строки = {real_idx + 1},и ТС {row.get('ТС')}")
             else:
-                self.gui.log(f"⚪ Подсветка снята: строки = {real_idx + 1}, и ТС {data[real_idx].get('ТС')}")
+                self.gui.log(f"⚪ Подсветка снята: строки = {real_idx + 1}, и ТС {row.get('ТС')}")
 
         except Exception as e:
             self.gui.log(f"❌ Ошибка toggle_highlight: {e}")
+
+    def _set_highlight(self, real_idx: int, hours: int):
+        try:
+            row = self._get_row(real_idx)
+            if row is None:
+                return
+
+            row_identity = row_identity_for_gui(row)
+            if not row_identity:
+                self.gui.log("⚠️ В строке нет google_sheet_row/trip_number")
+                return
+
+            highlighter = getattr(self.gui, "row_highlighter", None)
+            if not highlighter:
+                self.gui.log("⚠️ RowHighlighter не найден")
+                return
+
+            highlighter.set_highlight_for(row_identity, hours=hours)
+            # self.gui.log(f"🟢 Подсветка включена на {hours}ч: строки = {real_idx + 1}, и ТС {row.get('ТС')}")
+
+        except Exception as e:
+            self.gui.log(f"❌ Ошибка set_highlight: {e}")
 
     def _visual_to_real(self, visual_row: int) -> int | None:
         if visual_row < 0:
@@ -178,16 +208,18 @@ class TableContextMenuController:
             self.gui.log(f"❌ Не удалось завершить рейс: {err}")
             return
 
-        self.gui.log(f"✅ Рейс завершён: ТС={item.get('ТС')} google_sheet_row={google_sheet_row(item)} trip_number={trip_number(item)}")
+        self.gui.log(f"✅ Рейс завершён: ТС = {item.get('ТС')},"
+                     f"google_sheet_row = {google_sheet_row(item)},"
+                     f"trip_number = {trip_number(item)}")
         self.gui.reload_and_show()
 
     def _refresh_row(self, real_idx: int):
         try:
-            data = self.gui.task_repository.get() or []
-            if not (0 <= real_idx < len(data)):
+            row = self._get_row(real_idx)
+            if row is None:
                 return
 
-            row_google_sheet_row = google_sheet_row(data[real_idx])
+            row_google_sheet_row = google_sheet_row(row)
             if not row_google_sheet_row:
                 self.gui.log("⚠️ В строке нет google_sheet_row")
                 return

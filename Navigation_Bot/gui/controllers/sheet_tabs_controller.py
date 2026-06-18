@@ -8,7 +8,7 @@ from PyQt6.QtWidgets import QPushButton, QToolButton, QMenu, QTableWidget
 class SheetTabsController:
     """
     Управляет нижними кнопками-вкладками (локальные + Google Sheets) и меню "Листы ▼".
-    Вся логика вкладок вынесена из Gui.py.
+    Вся логика вкладок вынесена из navigation_gui.py.
     """
 
     def __init__(self, gui):
@@ -235,7 +235,7 @@ class SheetTabsController:
             gui.log(f"❌ Не удалось переключить лист: {err}")
             return
 
-        gui.task_repository.set_source_key(gui._get_sheet_source_key())
+        gui.task_repository.set_source_key(gui._get_sheet_source_key(), reload=False)
 
         gui.reload_and_show()
 

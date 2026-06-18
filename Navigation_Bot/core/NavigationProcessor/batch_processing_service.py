@@ -2,15 +2,10 @@ import json
 import queue
 import threading
 import traceback
-from pathlib import Path
-
-from PyQt6.QtWidgets import QDialog
+from Navigation_Bot.core.paths import BATCH_PROGRESS_FILE
 
 
-# TODO:
-#  1. Создать пул ошибок
-#  2. В конце вывод "ТС: какая ошибка \n"
-
+# TODO: Добавить авто сброс batch-буферов каждые 5/10 строк
 class BatchProcessingService:
     def __init__(self, processor):
         self.processor = processor
@@ -33,6 +28,8 @@ class BatchProcessingService:
             self.log("ℹ️ Нет строк для обработки.")
             return
 
+        self._begin_deferred_task_sync()
+
         def _run_batch():
             processed_count = 0
             try:
@@ -54,7 +51,6 @@ class BatchProcessingService:
         prev_single_mode = processor._single_row_processing
         processor._single_row_processing = False
         processor.row_service.set_single_row_processing(False)
-
         processor._clear_updated_rows()
         self._batch_errors.clear()
         self._batch_report_lines.clear()
@@ -101,6 +97,8 @@ class BatchProcessingService:
                                                           total_count=total_count)
 
                 if not should_continue:
+                    self._flush_deferred_task_sync()
+                    processor.row_service.flush_history_buffers()
                     self._save_batch_progress(rows_with_keys[processed_count:], total_count, processed_count)
                     self.log(f"⏹ Обработка остановлена пользователем на {processed_count} ТС")
                     break
@@ -172,13 +170,14 @@ class BatchProcessingService:
                                                         current_row_info=request["current_row_info"],
                                                         processed_count=request["processed_count"],
                                                         total_count=request["total_count"],
-                                                        timeout_seconds=processor.TIMEOUT_SECONDS,
+                                                        timeout_seconds=processor.timeout_seconds,
                                                         parent=processor.gui_parent)
 
                 result = dialog.exec()
 
                 should_continue = True
-                if result == QDialog.DialogCode.Rejected and dialog.was_stopped_by_user():
+                result_value = getattr(result, "value", result)
+                if result_value == 0 and dialog.was_stopped_by_user():
                     should_continue = False
 
                 self._dialog_result_queue.put(
@@ -194,7 +193,7 @@ class BatchProcessingService:
     def _save_batch_progress(self, remaining_rows: list[tuple[int, int | None]],
                              total_count: int, processed_count: int):
         try:
-            progress_file = Path("config/batch_progress.json")
+            progress_file = BATCH_PROGRESS_FILE
             progress = {"remaining_rows": remaining_rows,
                         "total_count": total_count,
                         "processed_count": processed_count,
@@ -206,7 +205,7 @@ class BatchProcessingService:
             self.log(f"⚠️ Ошибка сохранения прогресса: {e}")
 
     def resume_batch_processing(self):
-        progress_file = Path("config/batch_progress.json")
+        progress_file = BATCH_PROGRESS_FILE
 
         if not progress_file.exists():
             self.log("ℹ️ Нет сохранённого прогресса для возобновления")
@@ -241,6 +240,7 @@ class BatchProcessingService:
         prev_single_mode = processor._single_row_processing
         processor._single_row_processing = False
         processor.row_service.set_single_row_processing(False)
+        self._begin_deferred_task_sync()
 
         processor._clear_updated_rows()
 
@@ -256,8 +256,34 @@ class BatchProcessingService:
 
         threading.Thread(target=_run_batch, daemon=True).start()
 
+    def _begin_deferred_task_sync(self) -> None:
+        repository = getattr(self.processor, "task_repository", None)
+        if repository is not None:
+            try:
+                repository.begin_deferred_sync()
+            except Exception as exc:
+                self.log(f"Failed to begin deferred task sync: {exc}")
+
+    def _flush_deferred_task_sync(self) -> None:
+        repository = getattr(self.processor, "task_repository", None)
+        if repository is not None:
+            try:
+                repository.flush_deferred_sync(source="user")
+            except Exception as exc:
+                self.log(f"Failed to flush deferred task sync: {exc}")
+
+    def _end_deferred_task_sync(self) -> None:
+        repository = getattr(self.processor, "task_repository", None)
+        if repository is not None:
+            try:
+                repository.end_deferred_sync(source="user")
+            except Exception as exc:
+                self.log(f"Failed to end deferred task sync: {exc}")
+
     def _finalize_batch_processing(self, prev_single_mode: bool, processed_count: int) -> None:
         processor = self.processor
+        self._end_deferred_task_sync()
+        processor.row_service.flush_history_buffers()
         processor._flush_updated_rows_to_google()
 
         if self._batch_report_lines:

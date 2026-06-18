@@ -14,7 +14,7 @@ class TableRowRenderer:
     Отвечает за отрисовку одной обычной строки таблицы.
     Не знает про сохранение данных и workflow.
     """
-    DATA_LOAD: int = 3
+    DEFAULT_FUTURE_LOAD_THRESHOLD_HOURS: int = 3
 
     def __init__(self, *, table, log_func, formatter, row_action_controller, on_row_click, on_edit_id_click, ):
 
@@ -24,6 +24,22 @@ class TableRowRenderer:
         self.row_action_controller = row_action_controller
         self.on_row_click = on_row_click
         self.on_edit_id_click = on_edit_id_click
+        self.future_load_highlight_enabled = True
+        self.future_load_threshold_hours = self.DEFAULT_FUTURE_LOAD_THRESHOLD_HOURS
+
+    def apply_settings(self, settings: dict):
+        highlight = settings.get("highlight", {}) or {}
+        enabled_types = highlight.get("enabled_types")
+        if isinstance(enabled_types, list):
+            self.future_load_highlight_enabled = "future_load" in {str(v) for v in enabled_types}
+        else:
+            self.future_load_highlight_enabled = True
+
+        try:
+            self.future_load_threshold_hours = max(0, int(highlight.get("future_load_threshold_hours",
+                                                                        self.DEFAULT_FUTURE_LOAD_THRESHOLD_HOURS)))
+        except (TypeError, ValueError):
+            self.future_load_threshold_hours = self.DEFAULT_FUTURE_LOAD_THRESHOLD_HOURS
 
     def render_row(self, *, row_idx: int, row: dict, real_idx: int):
         self.table.insertRow(row_idx)
@@ -79,6 +95,10 @@ class TableRowRenderer:
         self.table.setCellWidget(row_idx, 1, container)
 
     def _render_row_main_cells(self, row_idx: int, row: dict):
+        if isinstance(row.get("loads"), list) or isinstance(row.get("unloads"), list):
+            self._render_row_main_cells_view(row_idx, row)
+            return
+
         ts = row.get("ТС", "")
         phone = row.get("Телефон", "")
         self._set_cell(row_idx, 2, f"{ts}\n{phone}" if phone else ts, editable=True)
@@ -98,6 +118,12 @@ class TableRowRenderer:
         self._set_cell(row_idx, 6, row.get("гео", ""))
 
     def _render_row_route_cells(self, row_idx: int, row: dict):
+        route_estimate = row.get("route_estimate") if isinstance(row.get("route_estimate"), dict) else {}
+        if route_estimate:
+            self._set_readonly_cell(row_idx, 7, route_estimate.get("arrival_time", "—"))
+            self._set_readonly_cell(row_idx, 8, route_estimate.get("time_buffer_text", "—"))
+            return
+
         route = row.get("Маршрут", {}) or {}
         arrival = route.get("время прибытия", "—")
         buffer = self.formatter.route_buffer_text(route)
@@ -105,7 +131,38 @@ class TableRowRenderer:
         self._set_readonly_cell(row_idx, 7, arrival)
         self._set_readonly_cell(row_idx, 8, buffer)
 
+    def _render_row_main_cells_view(self, row_idx: int, row: dict):
+        ts = row.get("vehicle_plate") or row.get("ТС", "")
+        phone = row.get("driver_phone") or row.get("Телефон", "")
+        self._set_cell(row_idx, 2, f"{ts}\n{phone}" if phone else ts, editable=True)
+
+        self._set_cell(row_idx, 3, row.get("carrier_name") or row.get("КА", ""), editable=True)
+        self._set_cell(
+            row_idx,
+            4,
+            self.formatter.points_text(row.get("loads") or [], separator_table=self.table, separator_col=4),
+        )
+        self._set_cell(
+            row_idx,
+            5,
+            self.formatter.unload_points_text_with_status(row, separator_table=self.table, separator_col=5),
+        )
+
+        navigation = row.get("navigation") if isinstance(row.get("navigation"), dict) else {}
+        self._set_cell(row_idx, 6, navigation.get("geo_text") or row.get("гео", ""))
+
     def _highlight_future_load(self, row_idx: int, row: dict):
+        if not self.future_load_highlight_enabled:
+            return
+
+        loads = row.get("loads")
+        if isinstance(loads, list) and loads and isinstance(loads[0], dict):
+            date_str = str(loads[0].get("date") or "")
+            time_str = str(loads[0].get("time") or "")
+            ts = row.get("vehicle_plate") or row.get("ТС", "—")
+            self._highlight_future_load_by_datetime(row_idx, date_str, time_str, ts)
+            return
+
         pg = row.get("Погрузка", [])
         if not (pg and isinstance(pg, list) and isinstance(pg[0], dict)):
             return
@@ -113,16 +170,21 @@ class TableRowRenderer:
         date_str = pg[0].get("Дата 1", "")
         time_str = pg[0].get("Время 1", "")
 
+        ts = row.get("ТС", "—")
+        self._highlight_future_load_by_datetime(row_idx, date_str, time_str, ts)
+
+    def _highlight_future_load_by_datetime(self, row_idx: int, date_str: str, time_str: str, ts: str):
         try:
             if time_str and time_str.count(":") == 1:
                 time_str += ":00"
             dt = datetime.strptime(f"{date_str} {time_str}", "%d.%m.%Y %H:%M:%S")
 
-            if dt > datetime.now() + timedelta(hours=self.DATA_LOAD):
+            if dt > datetime.now() + timedelta(hours=self.future_load_threshold_hours):
                 for col in range(self.table.columnCount()):
                     item = self.table.item(row_idx, col)
                     if item:
                         item.setBackground(QColor(210, 235, 255))
         except Exception:
-            ts = row.get("ТС", "—")
-            self.log(f"[DEBUG] ❗️ Ошибка при анализе ДАТЫ/ВРЕМЕНИ у ТС: {ts} (строка {row_idx + 1})")
+            self.log(f"❗️Ошибка при анализе ДАТЫ/ВРЕМЕНИ у ТС: {ts} (строка {row_idx + 1})",
+                     severity="error",
+                     audience="user+",  )

@@ -1,20 +1,13 @@
 from PyQt6.QtWidgets import QDialog, QLabel, QLineEdit, QPushButton, QVBoxLayout
 
-from Navigation_Bot.core.paths import SQLITE_DB_FILEPATH
-from Navigation_Bot.core.repositories.sqlite_vehicle_repository import (
+from Navigation_Bot.core.repositories.vehicle_registry_fields import (
     CENTER_FIELD,
     DB_ID_FIELD,
+    DEFAULT_MONITORING_CENTER,
     ID_FIELD,
     NAME_FIELD,
     TS_FIELD,
-    SqliteVehicleRepository,
 )
-from Navigation_Bot.core.storage.sqlite_connection import open_database
-
-"""TODO 1.Логика self.car_data["id"] = int(new_id) 
-        2.Проверка дубликатов
-"""
-
 
 class TrackingIdEditor(QDialog):
     def __init__(self, car_data, log_func=print, parent=None):
@@ -23,11 +16,9 @@ class TrackingIdEditor(QDialog):
         self.car_data = car_data
         self.log = log_func
 
-        connection = getattr(parent, "sqlite_connection", None) or open_database(SQLITE_DB_FILEPATH)
-        self.vehicle_repository = getattr(parent, "vehicle_repository", None) or SqliteVehicleRepository(
-            connection,
-            log=self.log,
-        )
+        self.vehicle_repository = getattr(parent, "vehicle_repository", None)
+        if self.vehicle_repository is None:
+            raise RuntimeError("TrackingIdEditor requires parent.vehicle_repository")
 
         self.id_input = QLineEdit()
         self.id_input.setPlaceholderText("Введите ID")
@@ -64,15 +55,16 @@ class TrackingIdEditor(QDialog):
 
         if self.vehicle_repository.exists_monitoring_id(int(new_id), except_vehicle_id=existing_vehicle_id):
             self.log(f"⚠️ ID {new_id} уже существует.")
-        else:
-            self.vehicle_repository.upsert_registry_entry({
-                DB_ID_FIELD: existing_vehicle_id,
-                ID_FIELD: int(new_id),
-                CENTER_FIELD: "Виалон",
-                TS_FIELD: ts,
-                NAME_FIELD: ts.replace(" ", ""),
-            })
-            self.log(f"✅ Добавлен ID {new_id} для ТС {ts}")
+            return
+
+        self.vehicle_repository.upsert_registry_entry({
+            DB_ID_FIELD: existing_vehicle_id,
+            ID_FIELD: int(new_id),
+            CENTER_FIELD: DEFAULT_MONITORING_CENTER,
+            TS_FIELD: ts,
+            NAME_FIELD: ts.replace(" ", ""),
+        })
+        self.log(f"✅ Добавлен ID {new_id} для ТС {ts}")
 
         self.car_data["id"] = int(new_id)
         self.accept()
