@@ -8,6 +8,7 @@ from PyQt6.QtWidgets import (QDialog, QTabWidget, QWidget, QVBoxLayout, QFormLay
 
 from Navigation_Bot.core.json_manager import JSONManager as JM
 from Navigation_Bot.core.paths import CONFIG_JSON
+from Navigation_Bot.core.secrets_manager import SecretsManager
 from Navigation_Bot.core.settings.settings_schema import SECTIONS
 from Navigation_Bot.gui.dialogs.dialog_helpers import button_row_trailing
 from LogistX.config.paths import ONEC_UI_MAP
@@ -177,6 +178,15 @@ class CombinedSettingsDialog(QDialog):
 
         self.highlight_tab = HighlightSettingsTab(self)
         self.highlight_tab.hours_spin.valueChanged.connect(lambda _=None: self._dirty.add("highlight"))
+        self.highlight_tab.minutes_spin.valueChanged.connect(lambda _=None: self._dirty.add("highlight"))
+        self.highlight_tab.future_load_hours_spin.valueChanged.connect(lambda _=None: self._dirty.add("highlight"))
+        self.highlight_tab.expired_unload_grace_spin.valueChanged.connect(lambda _=None: self._dirty.add("highlight"))
+        self.highlight_tab.cb_manual.stateChanged.connect(lambda _=None: self._dirty.add("highlight"))
+        self.highlight_tab.cb_expired_unloads.stateChanged.connect(lambda _=None: self._dirty.add("highlight"))
+        self.highlight_tab.cb_future_load.stateChanged.connect(lambda _=None: self._dirty.add("highlight"))
+        self.highlight_tab.rb_log_user.toggled.connect(lambda _=None: self._dirty.add("highlight"))
+        self.highlight_tab.rb_log_user_plus.toggled.connect(lambda _=None: self._dirty.add("highlight"))
+        self.highlight_tab.rb_log_admin.toggled.connect(lambda _=None: self._dirty.add("highlight"))
 
         self._forms["highlight"] = self.highlight_tab
         self.tabs.addTab(self.highlight_tab, "Подсветка")
@@ -274,16 +284,29 @@ class CombinedSettingsDialog(QDialog):
             val = form.values()
             if s_key == "highlight":
                 minutes = int(val.get("duration_minutes", 120))
+                enabled_types = list(val.get("enabled_types", []))
+                log_audience = val.get("log_audience", "user")
+                future_load_threshold_hours = int(val.get("future_load_threshold_hours", 3))
+                expired_unload_grace_minutes = int(val.get("expired_unload_grace_minutes", 0))
 
                 if self.gui and hasattr(self.gui, "ui_settings"):
                     node = self.gui.ui_settings.data.setdefault("highlight", {})
                     node["duration_minutes"] = minutes
+                    node["enabled_types"] = enabled_types
+                    node["future_load_threshold_hours"] = future_load_threshold_hours
+                    node["expired_unload_grace_minutes"] = expired_unload_grace_minutes
+
+                    log_node = self.gui.ui_settings.data.setdefault("log", {})
+                    log_node["audience"] = log_audience
                     self.gui.ui_settings._schedule_save()
 
                 if self.gui and hasattr(self.gui, "_apply_runtime_settings"):
                     self.gui._apply_runtime_settings()
+                if self.gui and hasattr(self.gui, "reload_and_show"):
+                    self.gui.reload_and_show()
 
                 changed.add(s_key)
+                changed.add("log")
                 continue
             # Специальная обработка для layout_mode
             if s_key == "layout_mode":
@@ -293,6 +316,38 @@ class CombinedSettingsDialog(QDialog):
                     self.gui.ui_settings._schedule_save()
             else:
                 # Для остальных секций используем стандартный формат
+                if s_key == "wialon_selectors":
+                    username = val.pop("wialon_username", "")
+                    password = val.pop("wialon_password", "")
+                    original = getattr(form, "_original_secret_values", {})
+                    credentials_changed = (
+                            username != original.get("wialon_username", "")
+                            or password != original.get("wialon_password", "")
+                    )
+
+                    if credentials_changed:
+                        if not username or not password:
+                            QMessageBox.warning(
+                                self,
+                                "Проверка",
+                                "Для сохранения Wialon заполните и логин, и пароль.",
+                            )
+                            return
+
+                        try:
+                            SecretsManager().set_wialon_credentials(username, password)
+                            form._original_secret_values = {
+                                "wialon_username": username,
+                                "wialon_password": password,
+                            }
+                        except Exception as e:
+                            QMessageBox.warning(
+                                self,
+                                "Ошибка",
+                                f"Не удалось сохранить Wialon credentials в .env:\n{e}",
+                            )
+                            return
+
                 node = cfg.setdefault(s_key, {})
                 node.setdefault("default", node.get("default", {}))
                 node["custom"] = val
@@ -343,6 +398,26 @@ class SectionForm(QWidget):
             self._widgets[key] = editor
             form.addRow(label + (" *" if required else ""), editor)
 
+        if section_key == "wialon_selectors":
+            secrets = SecretsManager()
+            username, password = secrets.get_wialon_credentials_optional()
+            self._original_secret_values = {
+                "wialon_username": username,
+                "wialon_password": password,
+            }
+
+            username_edit = QLineEdit()
+            username_edit.setText(username)
+
+            password_edit = QLineEdit()
+            password_edit.setText(password)
+            password_edit.setEchoMode(QLineEdit.EchoMode.Password)
+
+            self._widgets["wialon_username"] = username_edit
+            self._widgets["wialon_password"] = password_edit
+            form.addRow("Логин", username_edit)
+            form.addRow("Пароль", password_edit)
+
         self.btn_reset = QPushButton("Сбросить (default)")
         # self.btn_reset.clicked.connect(self.reset_to_default)
 
@@ -362,6 +437,10 @@ class SectionForm(QWidget):
     def values(self) -> dict:
         out = {}
         for key, editor in self._widgets.items():
+            if key not in self.fields_spec:
+                out[key] = editor.text().strip()
+                continue
+
             _, tp, _ = self.fields_spec[key]
             if isinstance(editor, QCheckBox):
                 raw = editor.isChecked()
@@ -387,6 +466,9 @@ class SectionForm(QWidget):
         default = section_cfg.get("default", {})
         # подставляем default в редакторы
         for key, editor in self._widgets.items():
+            if key not in self.fields_spec:
+                continue
+
             val = default.get(key, "")
             if isinstance(editor, QCheckBox):
                 editor.setChecked(bool(val))
@@ -426,8 +508,6 @@ class VerticalTextDelegate(QStyledItemDelegate):
         painter.restore()
 
 
-# TODO: 1. Добавить настройку времени для погрузки(сейчас Погрузка > now на 3ч)
-#       2. Добавить настройку времени для опоздунов
 class HighlightSettingsTab(QWidget):
     """Вкладка настроек подсветки строк."""
 
@@ -472,39 +552,128 @@ class HighlightSettingsTab(QWidget):
         row.addWidget(self.btn_clear_highlights)
 
         root.addLayout(row)
+
+        thresholds_row = QHBoxLayout()
+
+        self.future_load_hours_spin = QSpinBox()
+        self.future_load_hours_spin.setRange(0, 168)
+        self.future_load_hours_spin.setSuffix(" ч")
+        self.future_load_hours_spin.setFixedWidth(80)
+
+        self.expired_unload_grace_spin = QSpinBox()
+        self.expired_unload_grace_spin.setRange(0, 1440)
+        self.expired_unload_grace_spin.setSuffix(" м")
+        self.expired_unload_grace_spin.setFixedWidth(80)
+
+        thresholds_row.addWidget(QLabel("Будущая погрузка > now +"))
+        thresholds_row.addWidget(self.future_load_hours_spin)
+        thresholds_row.addSpacing(16)
+        thresholds_row.addWidget(QLabel("Опоздание после"))
+        thresholds_row.addWidget(self.expired_unload_grace_spin)
+        thresholds_row.addStretch()
+        root.addLayout(thresholds_row)
+
+        types_box = QGroupBox("Включённая подсветка")
+        types_layout = QVBoxLayout()
+        types_layout.setContentsMargins(8, 8, 8, 8)
+
+        self.cb_manual = QCheckBox("Слежение строк (зелёная)")
+        self.cb_expired_unloads = QCheckBox("Просроченная выгрузка (красная)")
+        self.cb_future_load = QCheckBox("Будущая погрузка (голубая)")
+
+        types_layout.addWidget(self.cb_manual)
+        types_layout.addWidget(self.cb_expired_unloads)
+        types_layout.addWidget(self.cb_future_load)
+        types_box.setLayout(types_layout)
+        root.addWidget(types_box)
+
+        log_box = QGroupBox("Уровень вывода лога")
+        log_layout = QVBoxLayout()
+        log_layout.setContentsMargins(8, 8, 8, 8)
+
+        self.rb_log_user = QRadioButton("user")
+        self.rb_log_user_plus = QRadioButton("user+")
+        self.rb_log_admin = QRadioButton("admin")
+
+        log_layout.addWidget(self.rb_log_user)
+        log_layout.addWidget(self.rb_log_user_plus)
+        log_layout.addWidget(self.rb_log_admin)
+        log_box.setLayout(log_layout)
+        root.addWidget(log_box)
+
         root.addStretch()
-
-    # TODO: Настройка красной подсветки - Опоздуны
-    def _outsiders(self):
-
-        root = QVBoxLayout(self)
-        desc = QLabel("Настройки красной подсветки строки. Опоздуны")
-
-    # TODO: Настройка голобой подсветки - будущий рейс
-    def _future_rice(self):
-        root = QVBoxLayout(self)
-        desc = QLabel("Настройки за сколько будет откл.подсветка строки.\n"
-                      "Предстоящий рейс")
 
     def load_values(self):
         minutes_total = 120
+        future_load_threshold_hours = 3
+        expired_unload_grace_minutes = 0
 
         try:
             cfg = self.gui.ui_settings.data.get("highlight", {}) or {}
             minutes_total = int(cfg.get("duration_minutes", 120))
+            future_load_threshold_hours = int(cfg.get("future_load_threshold_hours", 3))
+            expired_unload_grace_minutes = int(cfg.get("expired_unload_grace_minutes", 0))
         except Exception:
+            cfg = {}
             minutes_total = 120
+            future_load_threshold_hours = 3
+            expired_unload_grace_minutes = 0
 
         hours = minutes_total // 60
         minutes = minutes_total % 60
 
         self.hours_spin.setValue(hours)
         self.minutes_spin.setValue(minutes)
+        self.future_load_hours_spin.setValue(max(0, future_load_threshold_hours))
+        self.expired_unload_grace_spin.setValue(max(0, expired_unload_grace_minutes))
+
+        enabled_types = cfg.get("enabled_types")
+        if not isinstance(enabled_types, list):
+            enabled_types = ["manual", "expired_unloads", "future_load"]
+        enabled_types = {str(v) for v in enabled_types}
+
+        self.cb_manual.setChecked("manual" in enabled_types)
+        self.cb_expired_unloads.setChecked("expired_unloads" in enabled_types)
+        self.cb_future_load.setChecked("future_load" in enabled_types)
+
+        log_audience = "user"
+        try:
+            log_cfg = self.gui.ui_settings.data.get("log", {}) or {}
+            log_audience = str(log_cfg.get("audience", "user")).strip().lower()
+        except Exception:
+            log_audience = "user"
+
+        if log_audience == "admin":
+            self.rb_log_admin.setChecked(True)
+        elif log_audience in {"user+", "user_plus"}:
+            self.rb_log_user_plus.setChecked(True)
+        else:
+            self.rb_log_user.setChecked(True)
 
     def values(self):
         total = self.hours_spin.value() * 60 + self.minutes_spin.value()
+        enabled_types = []
+        if self.cb_manual.isChecked():
+            enabled_types.append("manual")
+        if self.cb_expired_unloads.isChecked():
+            enabled_types.append("expired_unloads")
+        if self.cb_future_load.isChecked():
+            enabled_types.append("future_load")
 
-        return {"duration_minutes": total}
+        if self.rb_log_admin.isChecked():
+            log_audience = "admin"
+        elif self.rb_log_user_plus.isChecked():
+            log_audience = "user+"
+        else:
+            log_audience = "user"
+
+        return {
+            "duration_minutes": total,
+            "enabled_types": enabled_types,
+            "log_audience": log_audience,
+            "future_load_threshold_hours": self.future_load_hours_spin.value(),
+            "expired_unload_grace_minutes": self.expired_unload_grace_spin.value(),
+        }
 
     def clear_all_highlights(self):
         if not self.gui:

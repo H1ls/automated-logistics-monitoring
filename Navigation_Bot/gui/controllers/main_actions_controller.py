@@ -1,10 +1,10 @@
 import json
-from pathlib import Path
 
 from PyQt6.QtWidgets import QMessageBox
 
+from Navigation_Bot.core.paths import BATCH_PROGRESS_FILE
 from Navigation_Bot.gui.dialogs.create_race_dialog import CreateRaceDialog
-from Navigation_Bot.gui.dialogs.iD_manager_dialog import IDManagerDialog
+from Navigation_Bot.gui.dialogs.id_manager_dialog import IDManagerDialog
 from Navigation_Bot.gui.dialogs.navigation_history_dialog import NavigationHistoryDialog
 from Navigation_Bot.gui.dialogs.tracking_id_editor import TrackingIdEditor
 from Navigation_Bot.core.task_identity import google_sheet_row, trip_number
@@ -36,7 +36,7 @@ class MainActionsController:
         gui._reload_after_gsheet = True
 
         try:
-            gui.task_repository.set_source_key(gui._get_sheet_source_key())
+            gui.task_repository.set_source_key(gui._get_sheet_source_key(), reload=False)
 
             if not getattr(gui, "google_sync_service", None):
                 gui.log("⚠️ GoogleSyncService не подключён")
@@ -53,7 +53,12 @@ class MainActionsController:
 
     def _on_google_load_success(self) -> None:
         self.gui.hide_loading()
-        self.gui.reload_and_show()
+        if getattr(self.gui, "sheet_tabs_controller", None):
+            self.gui.sheet_tabs_controller.build()
+        if hasattr(self.gui, "display_current_data"):
+            self.gui.display_current_data()
+        else:
+            self.gui.reload_and_show()
 
     def _on_google_load_error(self, err: str) -> None:
         self.gui.hide_loading()
@@ -91,10 +96,10 @@ class MainActionsController:
 
     def open_id_editor(self, row: int) -> None:
         gui = self.gui
-        car = gui.json_data[row]
+        car = gui.task_rows[row]
         dialog = TrackingIdEditor(car, log_func=gui.log, parent=gui)
         if dialog.exec():
-            gui.task_repository.set(gui.json_data, source="user")
+            gui.task_repository.set(gui.task_rows, source="user")
             gui.reload_and_show()
 
     def open_id_manager(self) -> None:
@@ -115,7 +120,7 @@ class MainActionsController:
             if not task_trip_number:
                 gui.log("⚠️ У строки нет trip_number")
                 return
-            vehicle_monitoring_id = task_row.get("id")
+            vehicle_monitoring_id = task_row.get("vehicle_monitoring_id") or task_row.get("id")
             nav_service = getattr(gui, "navigation_history_service", None)
             route_service = getattr(gui, "route_estimate_history_service", None)
             note_service = getattr(gui, "note_history_service", None)
@@ -125,9 +130,9 @@ class MainActionsController:
                 return
 
             dialog = NavigationHistoryDialog(
-                task_index=task_trip_number,
+                trip_number=task_trip_number,
                 vehicle_monitoring_id=vehicle_monitoring_id,
-                vehicle_plate=task_row.get("ТС", ""),
+                vehicle_plate=task_row.get("vehicle_plate") or task_row.get("ТС", ""),
                 nav_rows=nav_service.get_by_trip_number(task_trip_number),
                 vehicle_nav_rows=nav_service.get_by_vehicle_monitoring_id(vehicle_monitoring_id),
                 route_rows=route_service.get_by_trip_number(task_trip_number) if route_service else [],
@@ -139,7 +144,7 @@ class MainActionsController:
         except Exception as e:
             gui.log(f"❌ Ошибка открытия истории навигации: {e}")
 
-    def _selected_task_index(self):
+    def _selected_trip_number(self):
         task_row = self._selected_task_row()
         return trip_number(task_row) if task_row else None
 
@@ -179,7 +184,7 @@ class MainActionsController:
         self.gui.processor.process_all()
 
     def _load_batch_progress(self) -> dict | None:
-        progress_file = Path("config/batch_progress.json")
+        progress_file = BATCH_PROGRESS_FILE
         if not progress_file.exists():
             return None
 
@@ -199,5 +204,4 @@ class MainActionsController:
             f"Обнаружена прерванная обработка:\n"
             f"Завершено: {processed} из {total} ТС\n\n"
             f"Возобновить с того же места?",
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No | QMessageBox.StandardButton.Cancel,
-        )
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No | QMessageBox.StandardButton.Cancel)

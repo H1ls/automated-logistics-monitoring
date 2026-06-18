@@ -6,6 +6,8 @@ from PyQt6.QtWidgets import QApplication
 from PyQt6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QPushButton, QTextEdit, QFileDialog, QLabel,
                              QListWidget)
 
+from Navigation_Bot.core.paths import NOTE_MEDIA_DIR
+
 
 class AddNoteDialog(QDialog):
     def __init__(self, parent=None):
@@ -55,7 +57,7 @@ class AddNoteDialog(QDialog):
         # 1) Если в буфере картинка
         image = clipboard.image()
         if not image.isNull():
-            media_dir = Path("config/media/clipboard")
+            media_dir = NOTE_MEDIA_DIR
             media_dir.mkdir(parents=True, exist_ok=True)
 
             filename = datetime.now().strftime("clip_%Y%m%d_%H%M%S.png")
@@ -81,12 +83,10 @@ class AddNoteDialog(QDialog):
             self.text_edit.insertPlainText(text)
 
     def _add_file(self):
-        paths, _ = QFileDialog.getOpenFileNames(
-            self,
+        paths, _ = QFileDialog.getOpenFileNames(self,
             "Выбрать фото/видео",
             "",
-            "Media files (*.png *.jpg *.jpeg *.webp *.mp4 *.mov *.avi);;All files (*.*)"
-        )
+            "Media files (*.png *.jpg *.jpeg *.webp *.mp4 *.mov *.avi);;All files (*.*)")
 
         for path in paths:
             if path and path not in self.media_paths:

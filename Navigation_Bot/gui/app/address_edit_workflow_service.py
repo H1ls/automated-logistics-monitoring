@@ -48,7 +48,7 @@ class AddressEditWorkflowService:
                                    prefix=prefix,
                                    parent=parent,
                                    task_repository=self.task_repository,
-                                   log_func=self.log, )
+                                   log_func=self.log)
 
         if not dialog.exec():
             return False, None, "cancelled"
@@ -67,13 +67,12 @@ class AddressEditWorkflowService:
             ok, patch, err = self.task_edit_service.build_unload_patch(data_block, meta)
 
         if not ok:
-            self._log(f"❌ build_patch error: {err}")
+            self._log(f"build_patch error: {err}")
             return False, None, err
 
         ok, updated_row, err = self.tasks_service.apply_patch(real_idx, patch)
         if not ok:
-            self._log(f"❌ apply_patch error: {err}")
+            self._log(f"apply_patch error: {err}")
             return False, None, err
 
         return True, updated_row, None
-

@@ -40,4 +40,10 @@ SECTIONS = {
             "mode": ("Режим размещения", str, False),
         }
     ),
+    "processing": (
+        "Обработка",
+        {
+            "timeout_seconds": ("Пауза между строками, сек", int, False),
+        }
+    ),
 }

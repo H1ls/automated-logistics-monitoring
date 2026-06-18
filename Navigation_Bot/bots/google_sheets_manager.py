@@ -28,7 +28,9 @@ class GoogleSheetsManager(QObject):
         self.column_index = None
         self.file_path = None
 
+        self.spreadsheet = None
         self.sheet = None
+        self._worksheets_cache = []
         self.load_settings()
 
     def _log(self, msg: str):
@@ -72,6 +74,10 @@ class GoogleSheetsManager(QObject):
             return None
 
     def load_settings(self):
+        self.spreadsheet = None
+        self.sheet = None
+        self._worksheets_cache = []
+
         data = self.config_manager.load_json()
         if not isinstance(data, dict):
             self._log("❌ config_manager.load_json() вернул не dict - проверь CONFIG_JSON")
@@ -107,6 +113,10 @@ class GoogleSheetsManager(QObject):
             spreadsheet = client.open_by_key(self.sheet_id)
             self.spreadsheet = spreadsheet
             self._worksheets_cache = spreadsheet.worksheets()
+            if not self._worksheets_cache:
+                self._log("⚠️ В таблице Google Sheets нет листов")
+                self.sheet = None
+                return
             # print(self._worksheets_cache)
             # если индекс вдруг вышел за границы
             if 0 <= self.worksheet_index < len(self._worksheets_cache):
@@ -118,6 +128,8 @@ class GoogleSheetsManager(QObject):
 
         except Exception as e:
             self._log(f"❌ Ошибка подключения к Google Sheets: {e}")
+            self.spreadsheet = None
+            self._worksheets_cache = []
             self.sheet = None
 
     def open_spreadsheet_by_id(self, sheet_id: str):
@@ -171,6 +183,10 @@ class GoogleSheetsManager(QObject):
             spreadsheet = client.open_by_key(self.sheet_id)
             self.spreadsheet = spreadsheet
             self._worksheets_cache = spreadsheet.worksheets()
+            if not self._worksheets_cache:
+                self._log("⚠️ В таблице Google Sheets нет листов")
+                self.sheet = None
+                return False
 
             if 0 <= self.worksheet_index < len(self._worksheets_cache):
                 self.sheet = self._worksheets_cache[self.worksheet_index]
@@ -181,21 +197,25 @@ class GoogleSheetsManager(QObject):
             return True
         except Exception as e:
             self._log(f"❌ Ошибка переподключения: {e}")
+            self.spreadsheet = None
+            self._worksheets_cache = []
+            self.sheet = None
             return False
 
     def get_worksheets_list(self):
         """Безопасное получение списка листов"""
         try:
-            if not self.spreadsheet:
+            spreadsheet = getattr(self, "spreadsheet", None)
+            if not spreadsheet:
                 return []
 
             # Обновляем кэш
-            self._worksheets_cache = self.spreadsheet.worksheets()
+            self._worksheets_cache = spreadsheet.worksheets()
 
             return [{"title": ws.title, "index": ws.index}
                     for ws in self._worksheets_cache]
         except Exception as e:
-            self._log(f"⚠️ Ошибка получения листов: {e}")
+            self._log(f"⚠️ Ошибка получения листов: {e}",)
             return []
     # def list_worksheets(self):
     #     """Возвращает список листов: [{'title': str, 'index': int}, ...]"""
@@ -251,8 +271,10 @@ class GoogleSheetsManager(QObject):
         """
         try:
             if not self.sheet:
-                self._log("⚠️ Лист Google Sheets не инициализирован - пропускаю загрузку")
-                return None
+                self._log("⚠️ Лист Google Sheets не инициализирован, пробую переподключиться...")
+                if not self.reconnect() or not self.sheet:
+                    self._log("⚠️ Лист Google Sheets не инициализирован - пропускаю загрузку")
+                    return None
 
             # Берём 2 диапазона: D3:H и M3:M
             ranges = ["D3:H", "M3:M"]

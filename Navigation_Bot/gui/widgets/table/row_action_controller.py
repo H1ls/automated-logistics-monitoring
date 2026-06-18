@@ -16,6 +16,7 @@ class RowActionController:
         self._play_buttons: dict[int, QPushButton] = {}
         self._spinners: dict[int, QTimer] = {}
         self._spinner_frame: dict[int, int] = {}
+        self._button_texts: dict[int, str] = {}
 
     def clear(self):
         for t in list(self._spinners.values()):
@@ -26,11 +27,13 @@ class RowActionController:
                 pass
         self._spinners.clear()
         self._spinner_frame.clear()
+        self._button_texts.clear()
         self._play_buttons.clear()
 
     def register_button(self, row_identity: int | None, btn: QPushButton):
         if row_identity is not None:
             self._play_buttons[row_identity] = btn
+            self._button_texts[row_identity] = btn.text()
 
     def set_all_rows_busy(self, busy: bool):
         for btn in list(self._play_buttons.values()):
@@ -48,10 +51,8 @@ class RowActionController:
         else:
             self._stop_spinner(row_identity)
             if btn:
-                #TODO: Когда busy=False, текст кнопки всегда сбрасывается в "▶":
-                # если по какой-то причине busy когда-то поставят на строку без id, текст логически уже не совпадёт
                 btn.setEnabled(True)
-                btn.setText("▶")
+                btn.setText(self._button_texts.get(row_identity, btn.text()))
 
     def _start_spinner(self, row_identity: int, btn: QPushButton):
         if row_identity in self._spinners:

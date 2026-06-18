@@ -11,7 +11,7 @@ from typing import Optional
 class StatusEvent:
     id: Optional[int] = None
 
-    task_index: int = 0
+    trip_number: int = 0
 
     event_type: str = ""     # "created", "updated", "unload_done", "closed"
 

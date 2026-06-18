@@ -1,9 +1,7 @@
 # LogistX/onec/bot.py
 from __future__ import annotations
 
-from LogistX.config.paths import ONEC_UI_MAP, ONEC_TEMPLATES_DIR
-from pathlib import Path
-import sys
+from LogistX.config.paths import ONEC_UI_MAP, ONEC_TEMPLATES_DIR, LOGISTX_TMP_DIR
 from .context import RaceContext
 from .errors import OneCErrorHandler
 from .session import OneCSession
@@ -18,8 +16,6 @@ class OneCBot:
         self.reportsbot = reportsbot
         self.precheck_executor = precheck_executor
 
-        # logistx_dir = Path(__file__).resolve().parents[1]
-
         if ui_map_path is None:
             ui_map_path = str(ONEC_UI_MAP)
 
@@ -27,10 +23,7 @@ class OneCBot:
             templates_dir = str(ONEC_TEMPLATES_DIR)
 
         if tmp_dir is None:
-            if getattr(sys, "frozen", False):
-                tmp_dir = Path(sys.executable).parent / "LogistX" / "tmp"
-            else:
-                tmp_dir = Path(__file__).resolve().parents[2] / "LogistX" / "tmp"
+            tmp_dir = str(LOGISTX_TMP_DIR)
 
         self.ui_map = UiMap(ui_map_path)
         self.session = OneCSession(rdp_activator=rdp_activator,ui_map=self.ui_map,

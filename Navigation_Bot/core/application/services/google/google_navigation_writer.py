@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any
 
-from Navigation_Bot.gui.widgets.table.sites_db_registry import SitesDbRegistry
+from Navigation_Bot.core.sites_db_registry import SitesDbRegistry
 
 
 class GoogleNavigationWriter:

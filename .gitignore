@@ -38,7 +38,7 @@ env/
 /config/Credentials_wialon.json
 /config/Обновленный РЕЕСТР ПИН ТОПЛИВНЫЕ КАРТЫ.xlsx
 !Navigation_Bot/config/*.example.json
-
+/Navigation_Bot/api/log
 LogistX/config/logistx_sample.json
 LogistX/config/sites_db.json
 LogistX/assets/

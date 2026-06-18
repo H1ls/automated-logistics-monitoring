@@ -62,5 +62,13 @@
       "mode": "horizontal",
       "monitor": "second"
     }
+  },
+  "processing": {
+    "default": {
+      "timeout_seconds": 3
+    },
+    "custom": {
+      "timeout_seconds": 3
+    }
   }
 }

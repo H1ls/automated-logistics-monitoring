@@ -25,6 +25,10 @@
       511,
       535
     ],
+    "wait_load": [
+      1017,
+      648
+    ],
     "cargo_tab": [
       183,
       241
@@ -92,6 +96,7 @@
     "driver_rating_tab": "driver_rating_tab.png",
     "cargo_tab": "cargo_tab.png",
     "departure_label": "lbl_departure.png",
+    "wait_load": "wait_load.png",
     "hdr_arrival_fact": "hdr_arrival_fact.png",
     "hdr_depart_fact": "hdr_depart_fact.png",
     "op_load": "op_load.png",

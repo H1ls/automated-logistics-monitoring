@@ -32,16 +32,18 @@ class TaskMapper:
     def from_dict(data: dict[str, Any]) -> Task:
         if not isinstance(data, dict):
             raise ValueError("TaskMapper.from_dict: data must be dict")
-        vehicle = Vehicle(plate_number=str(data.get("ТС", "") or ""),
-                          monitoring_id=TaskMapper._to_int_or_none(data.get("id")),
+        vehicle = Vehicle(plate_number=str(data.get("vehicle_plate") or data.get("ТС", "") or ""),
+                          monitoring_id=TaskMapper._to_int_or_none(data.get("vehicle_monitoring_id") or data.get("id"))
                           )
 
-        driver = Driver(full_name=str(data.get("ФИО", "") or ""),
-                        phone=str(data.get("Телефон", "") or ""),
+        driver = Driver(full_name=str(data.get("driver_name") or data.get("ФИО", "") or ""),
+                        phone=str(data.get("driver_phone") or data.get("Телефон", "") or ""),
                         )
-        carrier_name = str(data.get("КА", "") or "").strip()
+        carrier_name = str(data.get("carrier_name") or data.get("КА", "") or "").strip()
         carrier = Carrier(name=carrier_name) if carrier_name else None
-        processed = data.get("processed")
+        processed = data.get("processed_unloads")
+        if not isinstance(processed, list):
+            processed = data.get("processed")
         if not isinstance(processed, list):
             processed = []
 
@@ -69,7 +71,13 @@ class TaskMapper:
     def to_dict(task: Task) -> dict[str, Any]:
         if not isinstance(task, Task):
             raise ValueError("TaskMapper.to_dict: task must be Task")
-        result: dict[str, Any] = {"ТС": task.vehicle.plate_number,
+        result: dict[str, Any] = {"vehicle_plate": task.vehicle.plate_number,
+                                  "vehicle_monitoring_id": task.vehicle.monitoring_id,
+                                  "driver_name": task.driver.full_name,
+                                  "driver_phone": task.driver.phone,
+                                  "carrier_name": task.carrier.name if task.carrier else "",
+                                  "processed_unloads": list(task.processing.processed_unloads),
+                                  "ТС": task.vehicle.plate_number,
                                   "ФИО": task.driver.full_name,
                                   "Телефон": task.driver.phone,
                                   "КА": task.carrier.name if task.carrier else "",
@@ -99,6 +107,18 @@ class TaskMapper:
     # --- Navigation
     @staticmethod
     def _build_navigation(data: dict[str, Any]) -> NavigationState:
+        navigation = data.get("navigation")
+        if isinstance(navigation, dict):
+            return NavigationState(
+                geo_text=str(navigation.get("geo_text", "") or ""),
+                geo_zona=str(navigation.get("geo_zone") or navigation.get("geo_zona") or ""),
+                coordinates=str(navigation.get("coordinates", "") or ""),
+                speed_kmh=TaskMapper._to_number_or_none(navigation.get("speed_kmh")),
+                gps_fix_text=str(navigation.get("gps_fix_text", "") or ""),
+                gps_fix_age_seconds=TaskMapper._to_int_or_none(navigation.get("gps_fix_age_seconds")),
+                has_fresh_coordinates=bool(navigation.get("has_fresh_coordinates", False)),
+            )
+
         gps_fix = data.get("gps_fix_age")
         gps_fix_text = ""
         gps_fix_age_seconds = None
@@ -122,6 +142,16 @@ class TaskMapper:
 
     @staticmethod
     def _write_navigation(result: dict[str, Any], navigation: NavigationState) -> None:
+        result["navigation"] = {
+            "geo_text": navigation.geo_text,
+            "geo_zone": navigation.geo_zona,
+            "coordinates": navigation.coordinates,
+            "speed_kmh": navigation.speed_kmh,
+            "gps_fix_text": navigation.gps_fix_text,
+            "gps_fix_age_seconds": navigation.gps_fix_age_seconds,
+            "has_fresh_coordinates": bool(navigation.has_fresh_coordinates),
+        }
+
         if navigation.geo_text:
             result["гео"] = navigation.geo_text
         if navigation.geo_zona:
@@ -137,9 +167,20 @@ class TaskMapper:
 
         result["_новые_координаты"] = bool(navigation.has_fresh_coordinates)
 
-    # === Forecast / Маршрут
+    # === Маршрут
     @staticmethod
     def _build_forecast(data: dict[str, Any]) -> ArrivalForecast:
+        route_estimate = data.get("route_estimate")
+        if isinstance(route_estimate, dict):
+            return ArrivalForecast(
+                distance_km=TaskMapper._to_number_or_none(route_estimate.get("distance_km")) or 0.0,
+                duration_minutes=TaskMapper._to_int_or_zero(route_estimate.get("duration_minutes")),
+                arrival_time=str(route_estimate.get("arrival_time", "") or ""),
+                on_time=bool(route_estimate.get("on_time", False)),
+                time_buffer_text=str(route_estimate.get("time_buffer_text", "") or ""),
+                buffer_minutes=TaskMapper._to_int_or_zero(route_estimate.get("buffer_minutes")),
+            )
+
         route = data.get("Маршрут")
         if not isinstance(route, dict):
             return ArrivalForecast()
@@ -153,6 +194,14 @@ class TaskMapper:
 
     @staticmethod
     def _write_forecast(result: dict[str, Any], forecast: ArrivalForecast) -> None:
+        result["route_estimate"] = {
+            "distance_km": forecast.distance_km,
+            "duration_minutes": forecast.duration_minutes,
+            "arrival_time": forecast.arrival_time,
+            "on_time": bool(forecast.on_time),
+            "time_buffer_text": forecast.time_buffer_text,
+            "buffer_minutes": forecast.buffer_minutes,
+        }
 
         has_forecast = bool(forecast.arrival_time
                             or forecast.time_buffer_text
@@ -237,14 +286,62 @@ class TaskMapper:
     # === RoutePlan / Погрузка / Выгрузка
     @staticmethod
     def _build_route_plan(data: dict[str, Any]) -> RoutePlan:
+        if isinstance(data.get("loads"), list) or isinstance(data.get("unloads"), list):
+            return RoutePlan(loads=TaskMapper._parse_view_points(data.get("loads"), kind="load"),
+                             unloads=TaskMapper._parse_view_points(data.get("unloads"), kind="unload"),
+                             )
+
         loads = TaskMapper._parse_points(data.get("Погрузка"), kind="load", prefix="Погрузка")
         unloads = TaskMapper._parse_points(data.get("Выгрузка"), kind="unload", prefix="Выгрузка")
         return RoutePlan(loads=loads, unloads=unloads)
 
     @staticmethod
     def _write_route_plan(result: dict[str, Any], route_plan: RoutePlan) -> None:
+        result["loads"] = TaskMapper._points_to_view_points(route_plan.loads)
+        result["unloads"] = TaskMapper._points_to_view_points(route_plan.unloads)
         result["Погрузка"] = TaskMapper._points_to_legacy_blocks(route_plan.loads, prefix="Погрузка", )
         result["Выгрузка"] = TaskMapper._points_to_legacy_blocks(route_plan.unloads, prefix="Выгрузка", )
+
+    @staticmethod
+    def _parse_view_points(raw_points: Any, kind: str) -> list[RoutePoint]:
+        if not isinstance(raw_points, list):
+            return []
+
+        points: list[RoutePoint] = []
+        for idx, item in enumerate(raw_points):
+            if not isinstance(item, dict):
+                continue
+            sequence = TaskMapper._to_int_or_none(item.get("sequence")) or idx + 1
+            points.append(RoutePoint(kind=kind,
+                                     sequence=sequence,
+                                     address=str(item.get("address", "") or ""),
+                                     date=str(item.get("date", "") or ""),
+                                     time=str(item.get("time", "") or ""),
+                                     comment=str(item.get("comment", "") or ""),
+                                     latitude=TaskMapper._to_number_or_none(item.get("latitude")),
+                                     longitude=TaskMapper._to_number_or_none(item.get("longitude")),
+                                     geocoding_source=str(item.get("geocoding_source", "") or "")
+                                     )
+                          )
+
+        points.sort(key=lambda point: point.sequence)
+        return points
+
+    @staticmethod
+    def _points_to_view_points(points: list[RoutePoint]) -> list[dict[str, Any]]:
+        return [
+            {
+                "sequence": point.sequence,
+                "address": point.address,
+                "date": point.date,
+                "time": point.time,
+                "comment": point.comment,
+                "latitude": point.latitude,
+                "longitude": point.longitude,
+                "geocoding_source": point.geocoding_source,
+            }
+            for point in points
+        ]
 
     @staticmethod
     def _parse_points(raw_blocks: Any, kind: str, prefix: str) -> list[RoutePoint]:
@@ -348,7 +445,8 @@ class TaskMapper:
         return None
 
     @staticmethod
-    def _extract_coordinates_from_block(block: dict[str, Any], prefix: str, sequence: int) -> tuple[float | None, float | None]:
+    def _extract_coordinates_from_block(block: dict[str, Any], prefix: str, sequence: int) -> tuple[
+        float | None, float | None]:
         latitude = block.get("latitude", block.get("lat"))
         longitude = block.get("longitude", block.get("lon", block.get("lng")))
         if latitude is not None and longitude is not None:

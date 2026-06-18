@@ -71,7 +71,7 @@ class NavigationBot(NaviBase):
             # car_data["коор"] = None
             # car_data["гео"] = None
             return False
-
+    #TODO: исравить ожидание, гасить остальное если сломалось/не нашел car_id
     def _find_car_element(self, car_id) -> object | None:
         try:
             xpath_tpl = self.selectors["unit_block_xpath"]

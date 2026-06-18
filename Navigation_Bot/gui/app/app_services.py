@@ -1,34 +1,31 @@
-# pet.project\Navigation_Bot\core\application\services\app_services.py
 from __future__ import annotations
 
-from Navigation_Bot.core.application.services.goggle.google_sync_service import GoogleSyncService
-from Navigation_Bot.core.application.services.goggle.google_account_auth_service import GoogleAccountAuthService
-from Navigation_Bot.core.application.services.goggle.google_navigation_writer import GoogleNavigationWriter
-from Navigation_Bot.core.application.services.sqlite_history_services import (
-    SqliteNavigationHistoryService,
-    SqliteNoteHistoryService,
-    SqliteRouteEstimateHistoryService,
-    SqliteStatusEventService,
-)
-from Navigation_Bot.core.application.services.task_edit_service import TaskEditService
-from Navigation_Bot.core.application.services.tasks_service import TasksService
-from Navigation_Bot.core.application.services.new_task_workflow_service import NewTaskWorkflowService
-from Navigation_Bot.core.application.services.editable_field_workflow_service import EditableFieldWorkflowService
-from Navigation_Bot.core.application.services.address_edit_workflow_service import AddressEditWorkflowService
-from Navigation_Bot.core.repositories.sqlite_task_repository import SqliteTaskRepository
-from Navigation_Bot.core.repositories.sqlite_vehicle_repository import SqliteVehicleRepository
-from Navigation_Bot.core.hotkey_manager import HotkeyManager
-from Navigation_Bot.core.NavigationProcessor.navigation_processor import NavigationProcessor
-from Navigation_Bot.core.paths import ID_FILEPATH, SQLITE_DB_FILEPATH
-from Navigation_Bot.core.storage.sqlite_connection import open_database
-from Navigation_Bot.core.settings.settings_controller import SettingsController
+from Navigation_Bot.gui.app.address_edit_workflow_service import AddressEditWorkflowService
 from Navigation_Bot.gui.app.app_context import AppContext
-from Navigation_Bot.gui.controllers.table_context_menu_Controller import TableContextMenuController
+from Navigation_Bot.gui.controllers.table_context_menu_controller import TableContextMenuController
 from Navigation_Bot.gui.dialogs.combined_settings_dialog import CombinedSettingsDialog
 from Navigation_Bot.gui.widgets.row_high_lighter import RowHighlighter
 from Navigation_Bot.gui.widgets.table.table_manager import TableManager
 from Navigation_Bot.gui.widgets.table_sort_controller import TableSortController
 from Navigation_Bot.bots.google_sheets_manager import GoogleSheetsManager
+from Navigation_Bot.core.NavigationProcessor.navigation_processor import NavigationProcessor
+from Navigation_Bot.core.application.services.editable_field_workflow_service import EditableFieldWorkflowService
+from Navigation_Bot.core.application.services.google.google_account_auth_service import GoogleAccountAuthService
+from Navigation_Bot.core.application.services.google.google_navigation_writer import GoogleNavigationWriter
+from Navigation_Bot.core.application.services.google.google_sync_service import GoogleSyncService
+from Navigation_Bot.core.application.services.new_task_workflow_service import NewTaskWorkflowService
+from Navigation_Bot.core.application.services.api_history_services import (ApiNavigationHistoryService,
+                                                                           ApiNoteHistoryService,
+                                                                           ApiRouteEstimateHistoryService,
+                                                                           ApiStatusEventService, )
+from Navigation_Bot.core.application.services.task_edit_service import TaskEditService
+from Navigation_Bot.core.application.services.tasks_service import TasksService
+from Navigation_Bot.core.api_client import NavigationApiClient
+from Navigation_Bot.core.database_config import DatabaseConfig
+from Navigation_Bot.core.hotkey_manager import HotkeyManager
+from Navigation_Bot.core.repositories.api_task_repository import ApiTaskRepository
+from Navigation_Bot.core.repositories.api_vehicle_repository import ApiVehicleRepository
+from Navigation_Bot.core.settings.settings_controller import SettingsController
 
 
 class AppServices:
@@ -52,87 +49,94 @@ class AppServices:
 
     def _build_data_layer(self) -> None:
         g = self.gui
-        g.loading.show("Инициализация контекста данных…", "Загрузка SQLite")
+        g.database_config = DatabaseConfig.from_env()
+        if not g.database_config.is_api:
+            raise RuntimeError("Navigation_Bot GUI requires DB_BACKEND=api. Start FastAPI and set NAV_API_BASE_URL.")
 
-        g.sqlite_connection = open_database(SQLITE_DB_FILEPATH)
-        g.vehicle_repository = SqliteVehicleRepository(g.sqlite_connection, log=g.log)
-        imported = g.vehicle_repository.import_id_car_json(ID_FILEPATH)
-        if imported:
-            g.log(f"✅ Справочник ТС импортирован в БД: {imported} записей")
-        g.task_repository = SqliteTaskRepository(g.sqlite_connection, log=g.log)
+        g.loading.show("Initializing data context...", "FastAPI")
+        g.api_client = NavigationApiClient(g.database_config.api_base_url,
+                                           api_key=g.database_config.api_key)
+        g.api_user = self._load_api_user()
+        g.log(f"API user: {g.api_user.get('username', '')} ({g.api_user.get('role', '')})")
+        g.vehicle_repository = ApiVehicleRepository(g.api_client, log=g.log)
+        g.task_repository = ApiTaskRepository(g.api_client, log=g.log)
         g.task_repository.set_source_key(g._get_sheet_source_key())
+
+    def _load_api_user(self) -> dict:
+        response = self.gui.api_client.get("/api/v1/me")
+        user = response.get("user", {}) if isinstance(response, dict) else {}
+        return user if isinstance(user, dict) else {}
 
     def _build_settings_layer(self) -> None:
         g = self.gui
-        g.loading.show("Инициализация настроек…", "Подготовка диалога настроек")
+        g.loading.show("Инициализация настроек...", "Подготовка диалога настроек")
 
         g.settings_controller = SettingsController(g)
         g.settings_ui = CombinedSettingsDialog(g)
 
     def _build_google_and_services(self) -> None:
         g = self.gui
-        g.loading.show("Инициализация Google Sheets…", "Подготовка к загрузке")
+        g.loading.show("Инициализация Google Sheets...", "Подготовка к загрузке")
 
         g.gsheet = GoogleSheetsManager(log_func=None)
-        g.gsheet.started.connect(lambda: g.loading.show("Загрузка из Google Sheets…"))
+        g.gsheet.started.connect(lambda: g.loading.show("Загрузка из Google Sheets..."))
         g.gsheet.finished.connect(lambda: g.hide_loading())
-        g.gsheet.error.connect(lambda err: (g.hide_loading(), g.log(f"❌ {err}")))
+        g.gsheet.error.connect(lambda err: (g.hide_loading(), g.log(f"Ошибка: {err}")))
         g.gsheet.log_message.connect(g.log)
         g.google_navigation_writer = GoogleNavigationWriter(gsheet=g.gsheet, log=g.log)
         g.google_account_auth_service = GoogleAccountAuthService(gsheet=g.gsheet, log=g.log)
 
-        g.loading.show("Инициализация сервисов задач…", "Подготовка")
-        g.task_edit_service = TaskEditService(log=g.log, )
-        g.status_event_service = SqliteStatusEventService(g.sqlite_connection, log=g.log)
+        g.loading.show("Инициализация сервисов задач...", "Подготовка")
+        g.task_edit_service = TaskEditService(log=g.log)
+        g.status_event_service = ApiStatusEventService(g.api_client, log=g.log)
         g.tasks_service = TasksService(task_repository=g.task_repository,
                                        log=g.log,
-                                       status_event_service=g.status_event_service, )
+                                       status_event_service=g.status_event_service)
 
         g.google_sync_service = GoogleSyncService(gsheet=g.gsheet,
                                                   google_writer=g.google_navigation_writer,
                                                   tasks_service=g.tasks_service,
                                                   task_repository=g.task_repository,
-                                                  log=g.log, )
-        g.navigation_history_service = SqliteNavigationHistoryService(g.sqlite_connection, log=g.log)
+                                                  vehicle_repository=g.vehicle_repository,
+                                                  log=g.log)
+        g.navigation_history_service = ApiNavigationHistoryService(g.api_client, log=g.log)
+        g.route_estimate_history_service = ApiRouteEstimateHistoryService(g.api_client, log=g.log)
+        g.note_history_service = ApiNoteHistoryService(g.api_client, log=g.log)
 
-        g.route_estimate_history_service = SqliteRouteEstimateHistoryService(g.sqlite_connection, log=g.log)
-
-        g.note_history_service = SqliteNoteHistoryService(g.sqlite_connection, log=g.log)
-        # -----
         g.new_task_workflow_service = NewTaskWorkflowService(tasks_service=g.tasks_service,
                                                              task_edit_service=g.task_edit_service,
                                                              google_sync_service=g.google_sync_service,
-                                                             log=g.log, )
+                                                             log=g.log)
 
         g.editable_field_workflow_service = EditableFieldWorkflowService(tasks_service=g.tasks_service,
-                                                                         log=g.log, )
+                                                                         log=g.log)
         g.address_edit_workflow_service = AddressEditWorkflowService(task_repository=g.task_repository,
                                                                      tasks_service=g.tasks_service,
                                                                      task_edit_service=g.task_edit_service,
-                                                                     log=g.log, )
+                                                                     log=g.log)
 
     def _build_table_layer(self) -> None:
         g = self.gui
-        g.loading.show("Инициализация таблицы…", "Создание менеджера таблицы")
+        g.loading.show("Инициализация таблицы...", "Создание менеджера таблицы")
 
         g.table_manager = TableManager(table_widget=g.table,
                                        task_repository=g.task_repository,
                                        log_func=g.log,
                                        on_row_click=None,
                                        on_edit_id_click=g.actions.open_id_editor,
-                                       # new_task_workflow=g.new_task_workflow_service,
                                        editable_field_workflow=g.editable_field_workflow_service,
                                        address_edit_workflow=g.address_edit_workflow_service,
-                                       reload_callback=g.reload_and_show, )
+                                       reload_callback=g.reload_and_show)
 
-        g.row_highlighter = RowHighlighter(table=g.table, task_repository=g.task_repository, log=g.log,
-                                           hours_default=2, )
+        g.row_highlighter = RowHighlighter(table=g.table,
+                                           task_repository=g.task_repository,
+                                           log=g.log,
+                                           hours_default=2)
 
     def _build_processing_layer(self) -> None:
         g = self.gui
-        g.loading.show("Инициализация процессора…", "Подготовка браузера и обработчика")
+        g.loading.show("Инициализация процессора...", "Подготовка браузера и обработчика")
 
-        # Импортируем диалог паузы локально чтобы избежать циклических зависимостей
         from Navigation_Bot.gui.dialogs.pause_between_rows_dialog import PauseBetweenRowsDialog
 
         g.processor = NavigationProcessor(task_repository=g.task_repository,
@@ -149,26 +153,20 @@ class AppServices:
                                           navigation_history_service=g.navigation_history_service,
                                           route_estimate_history_service=g.route_estimate_history_service,
                                           pause_dialog_factory=PauseBetweenRowsDialog,
-                                          gui_parent=g,
-                                          )
-        # g.batch_service = BatchProcessingService(processor=g.processor,
-        #                                          tasks_service=g.tasks_service,
-        #                                          ui_bridge=g.ui_bridge,
-        #                                          pause_dialog_factory=PauseBetweenRowsDialog,
-        #                                          log=g.log
-        #                                          )
+                                          gui_parent=g)
+        g.settings_controller.apply_processing_settings()
 
     def _build_ui_controllers(self) -> None:
         g = self.gui
-        g.loading.show("Инициализация контроллеров…", "Подготовка сортировки и горячих клавиш")
+        g.loading.show("Инициализация контроллеров...", "Подготовка сортировки и горячих клавиш")
 
-        g.sort_controller = TableSortController(task_repository=g.task_repository, log=g.log, )
-        g.hotkeys = HotkeyManager(log_func=g.log, )
+        g.sort_controller = TableSortController(task_repository=g.task_repository, log=g.log)
+        g.hotkeys = HotkeyManager(log_func=g.log)
 
-        g.loading.show("Инициализация меню…", "Подготовка контекстного меню")
+        g.loading.show("Инициализация меню...", "Подготовка контекстного меню")
         g.table_context_menu = TableContextMenuController(gui=g,
                                                           tasks_service=g.tasks_service,
-                                                          google_sync_service=g.google_sync_service, )
+                                                          google_sync_service=g.google_sync_service)
         g.table_context_menu.install()
 
     def _wire_components(self) -> None:
@@ -176,33 +174,28 @@ class AppServices:
 
         g.row_highlighter.set_key_to_visual_mapper(g.table_manager.visual_row_by_row_identity)
 
-        # TODO: Два on_row_click?
-        g.table_manager.on_row_click = g.processor.on_row_click
-        g.table_manager.row_renderer.on_row_click = g.processor.on_row_click
+        g.table_manager.set_on_row_click(g.processor.on_row_click)
 
         def _after_display():
-            g.row_highlighter.reapply_from_json()
+            g.row_highlighter.reapply_from_rows()
             g.row_highlighter.highlight_expired_unloads()
 
         g.table_manager.after_display = _after_display
 
     def _build_context(self) -> AppContext:
         g = self.gui
-        g.loading.show("Завершение инициализации…", "Создание контекста зависимостей")
+        g.loading.show("Завершение инициализации...", "Создание контекста зависимостей")
 
         ctx = AppContext(task_repository=g.task_repository,
                          gsheet=g.gsheet,
                          google_navigation_writer=g.google_navigation_writer,
                          google_account_auth_service=g.google_account_auth_service,
-
                          tasks_service=g.tasks_service,
                          task_edit_service=g.task_edit_service,
                          google_sync_service=g.google_sync_service,
-
                          new_task_workflow_service=g.new_task_workflow_service,
                          editable_field_workflow_service=g.editable_field_workflow_service,
                          address_edit_workflow_service=g.address_edit_workflow_service,
-
                          settings_controller=g.settings_controller,
                          settings_ui=g.settings_ui,
                          table_manager=g.table_manager,
@@ -211,8 +204,7 @@ class AppServices:
                          sort_controller=g.sort_controller,
                          hotkeys=g.hotkeys,
                          table_context_menu=g.table_context_menu,
-
-                         ui_bridge=getattr(g, "ui_bridge", None), )
+                         ui_bridge=getattr(g, "ui_bridge", None))
 
         g.ctx = ctx
         return ctx
@@ -221,27 +213,21 @@ class AppServices:
         g = self.gui
 
         try:
-            if getattr(g, "sqlite_connection", None):
-                g.sqlite_connection.close()
-        except Exception as e:
-            g.log(f"SQLite close failed: {e}")
-
-        try:
             g.ui_settings.save_window(g)
         except Exception as e:
-            g.log(f"⚠️ Не удалось сохранить настройки окна: {e}")
+            g.log(f"Не удалось сохранить настройки окна: {e}")
 
         try:
             if getattr(g, "hotkeys", None):
                 g.hotkeys.stop()
         except Exception as e:
-            g.log(f"⚠️ Не удалось остановить hotkeys: {e}")
+            g.log(f"Не удалось остановить hotkeys: {e}")
 
         try:
             if getattr(g, "executor", None):
                 g.executor.shutdown(wait=False, cancel_futures=True)
         except Exception as e:
-            g.log(f"⚠️ Не удалось остановить executor: {e}")
+            g.log(f"Не удалось остановить executor: {e}")
 
         try:
             proc = getattr(g, "processor", None)
@@ -250,4 +236,4 @@ class AppServices:
             if browser_session and hasattr(browser_session, "stop"):
                 browser_session.stop()
         except Exception as e:
-            g.log(f"⚠️ Не удалось закрыть браузер: {e}")
+            g.log(f"Не удалось закрыть браузер: {e}")

@@ -10,7 +10,7 @@ class SignalsBinder:
 
         # таблица
         gui.table.cellDoubleClicked.connect(gui.table_manager.edit_cell_content)
-        gui.table.itemChanged.connect(gui.table_manager.save_to_json_on_edit)
+        gui.table.itemChanged.connect(gui.table_manager.save_table_item_on_edit)
 
         # кнопки
         gui.btn_settings.clicked.connect(lambda: gui.settings_ui.exec())

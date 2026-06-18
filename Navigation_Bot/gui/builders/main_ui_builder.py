@@ -100,8 +100,16 @@ class MainUiBuilder:
         gui.log_box.setFixedHeight(150)
 
         # создаём LogController и ПЕРЕКИДЫВАЕМ gui.log на UI-лог
-        gui.logger = LogController(gui.log_box, enabled_getter=lambda: gui._log_enabled)
+        log_settings = getattr(gui, "ui_settings", None)
+        log_audience = "user"
+        if log_settings is not None:
+            log_audience = (log_settings.data.get("log", {}) or {}).get("audience", "user")
+        gui.logger = LogController(gui.log_box, enabled_getter=lambda: gui._log_enabled, audience=log_audience)
         gui.log = gui.logger.log
+        gui.log_info = gui.logger.info
+        gui.log_success = gui.logger.success
+        gui.log_warning = gui.logger.warning
+        gui.log_error = gui.logger.error
 
         # --- Панель глобального поиска ---
         gui.search_bar = GlobalSearchBar(gui.table, gui.log, gui)

@@ -37,23 +37,30 @@ class TableManager:
                                              on_row_click=self.on_row_click,
                                              on_edit_id_click=self.on_edit_id_click, )
 
+    def apply_settings(self, settings: dict):
+        self.row_renderer.apply_settings(settings or {})
+
+    def set_on_row_click(self, callback):
+        self.on_row_click = callback
+        self.row_renderer.on_row_click = callback
+
     # ---- A. display orchestration
     def display(self, reload_from_file=True, view_order=None):
         self._reload_context(reload_from_file)
         self.formatter.reload_sites_db()
-        json_data = self.task_repository.get() or []
+        rows = self.task_repository.get() or []
 
         # стопаем все спиннеры перед перерисовкой таблицы (иначе они "висят" между display)
         self.row_action_controller.clear()
 
         if view_order is None:
-            view_order = list(range(len(json_data)))
-        self.view_order = view_order or list(range(len(json_data)))
+            view_order = list(range(len(rows)))
+        self.view_order = view_order or list(range(len(rows)))
         self._row_identity_to_visual = {}
 
         for visual_row, real_idx in enumerate(self.view_order):
             try:
-                key = row_identity_for_gui(json_data[real_idx] or {})
+                key = row_identity_for_gui(rows[real_idx] or {})
             except Exception:
                 key = None
             if key is not None:
@@ -64,7 +71,7 @@ class TableManager:
         try:
             self.table.blockSignals(True)
             self.table.setRowCount(0)
-            self._render_all_rows(json_data, view_order)
+            self._render_all_rows(rows, view_order)
             self.table.resizeRowsToContents()
 
         finally:
@@ -82,7 +89,7 @@ class TableManager:
         try:
             self.task_repository.reload()
         except Exception as e:
-            self.log(f"❌ Ошибка при загрузке JSON: {e}")
+            self.log(f"❌ Ошибка при загрузке данных задач: {e}")
 
     def _capture_view_state(self):
         """Запоминает положение скролла и выделенную строку"""
@@ -94,13 +101,13 @@ class TableManager:
             scroll_value, selected_row = 0, -1
         return scroll_value, selected_row
 
-    def _render_all_rows(self, json_data: list[dict], view_order):
+    def _render_all_rows(self, rows: list[dict], view_order):
         """Передает отрисовывать все обычные строки таблицы в TableRowRenderer"""
         for visual_row, real_idx in enumerate(view_order):
-            if not (0 <= real_idx < len(json_data)):
+            if not (0 <= real_idx < len(rows)):
                 continue
 
-            row = json_data[real_idx]
+            row = rows[real_idx]
             self.row_renderer.render_row(row_idx=visual_row, row=row, real_idx=real_idx, )
 
     def _visual_to_real(self, visual_row: int) -> int | None:
@@ -149,7 +156,7 @@ class TableManager:
         except Exception as e:
             self.log(f"❌ TableManager.edit_cell_content: {e}")
 
-    def save_to_json_on_edit(self, item):
+    def save_table_item_on_edit(self, item):
         QTimer.singleShot(0, lambda: self._save_item(item))
 
     # ---- D.facades to child helpers
