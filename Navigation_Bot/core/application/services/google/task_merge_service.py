@@ -4,7 +4,7 @@ import re
 from typing import Any
 
 from Navigation_Bot.core.application.mappers.google_row_mapper import GoogleRowMapper
-from Navigation_Bot.core.task_identity import google_sheet_row
+from Navigation_Bot.core.domain.task_identity import google_sheet_row
 
 """ сборка строки из Google D:H;
     определение пустой строки;

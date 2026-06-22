@@ -1,43 +1,23 @@
 # LogistX/onec/steps/fill_times.py
 from __future__ import annotations
 
-from pathlib import Path
-
-from PIL import Image, ImageDraw
-
-from LogistX.onec.steps.base_code import (ceil_hours_positive, ensure_state, fmt_dt_1c, over_hours, parse_dt,
-                                          positive_minutes_between, round_hours_45m)
+from LogistX.onec.artifacts import OneCArtifacts
+from LogistX.onec.steps.base_code import ensure_state, fmt_dt_1c
+from LogistX.onec.steps.ui_point_resolver import UiPointResolver
+from LogistX.onec.trip_time_calculator import TripTimeCalculator, TripTimeInput
 
 
 class FillTimesStep:
     stage = "fill_times"
 
-    def __init__(self, session, errors, log_func=print, debug_mode: bool = False):
+    def __init__(self, session, errors, log_func=print, point_resolver=None, artifacts=None,
+                 calculator=None):
         self.session = session
         self.errors = errors
         self.log = log_func
-        self.debug_mode = debug_mode
-
-    def _calc_lateness_minutes(self, fact_arrive: str | None, deadline_arrive: str | None) -> int | None:
-        fact_dt = parse_dt(fact_arrive)
-        deadline_dt = parse_dt(deadline_arrive)
-        if not fact_dt or not deadline_dt:
-            return None
-
-        minutes = positive_minutes_between(deadline_dt, fact_dt)
-        return minutes if minutes is not None else 0
-
-    def _calc_stay_minutes(self, arrive_dt: str | None, depart_dt: str | None) -> int | None:
-        return positive_minutes_between(arrive_dt, depart_dt)
-
-    @staticmethod
-    def _round_hours_custom(total_minutes: int | None) -> int:
-        """
-        Для простоя:
-        - до 45 минут остатка не округляем вверх
-        - > 45 минут округляем вверх
-        """
-        return round_hours_45m(total_minutes)
+        self.points = point_resolver or UiPointResolver(session)
+        self.artifacts = artifacts or getattr(session, "artifacts", None) or OneCArtifacts(session, log_func=log_func)
+        self.calculator = calculator or TripTimeCalculator()
 
     def _ensure_calc_state(self, ctx) -> dict:
         state = ensure_state(ctx)
@@ -67,76 +47,18 @@ class FillTimesStep:
 
     def _store_calc(self, ctx):
         calc = self._ensure_calc_state(ctx)
+        result = self.calculator.calculate(TripTimeInput(
+            load_in=ctx.load_in,
+            load_out=ctx.load_out,
+            unload_in=ctx.unload_in,
+            unload_out=ctx.unload_out,
+            load_arrive_deadline=getattr(ctx, "load_arrive_deadline", None),
+            unload_arrive_deadline=getattr(ctx, "unload_arrive_deadline", None),
+        ))
+        calc.update(result)
 
-        load_lateness_minutes = self._calc_lateness_minutes(ctx.load_in, getattr(ctx, "load_arrive_deadline", None))
-        unload_lateness_minutes = self._calc_lateness_minutes(ctx.unload_in,getattr(ctx, "unload_arrive_deadline", None))
-
-        load_stay_minutes = self._calc_stay_minutes(ctx.load_in, ctx.load_out)
-        unload_stay_minutes = self._calc_stay_minutes(ctx.unload_in, ctx.unload_out)
-
-        load_late_hours = ceil_hours_positive(load_lateness_minutes)
-        unload_late_hours = ceil_hours_positive(unload_lateness_minutes)
-
-        load_stay_hours = self._round_hours_custom(load_stay_minutes)
-        unload_stay_hours = self._round_hours_custom(unload_stay_minutes)
-
-        load_over_6h_hours = over_hours(load_stay_hours, 6)
-        unload_over_6h_hours = over_hours(unload_stay_hours, 6)
-
-        calc.update({"load_arrive_deadline": getattr(ctx, "load_arrive_deadline", None),
-                     "unload_arrive_deadline": getattr(ctx, "unload_arrive_deadline", None),
-
-                     "load_lateness_minutes": load_lateness_minutes,
-                     "unload_lateness_minutes": unload_lateness_minutes,
-
-                     "load_late_hours": load_late_hours,
-                     "unload_late_hours": unload_late_hours,
-
-                     "load_stay_minutes": load_stay_minutes,
-                     "unload_stay_minutes": unload_stay_minutes,
-
-                     "load_stay_hours": load_stay_hours,
-                     "unload_stay_hours": unload_stay_hours,
-
-                     "load_over_6h_hours": load_over_6h_hours,
-                     "unload_over_6h_hours": unload_over_6h_hours, })
-
-        driver_rating_items = []
-
-        if load_late_hours > 0:
-            driver_rating_items.append({"kind": "Опоздание на погрузку",
-                                        "hours": load_late_hours, })
-
-        if unload_late_hours > 0:
-            driver_rating_items.append({"kind": "Опоздание на разгрузку",
-                                        "hours": unload_late_hours, })
-
-        if load_over_6h_hours > 1:
-            driver_rating_items.append({"kind": "Простой на погрузке",
-                                        "hours": load_over_6h_hours, })
-
-        if unload_over_6h_hours > 1:
-            driver_rating_items.append({"kind": "Простой на разгрузке",
-                                        "hours": unload_over_6h_hours, })
-
-        calc["driver_rating_items"] = driver_rating_items
-
-        # self.log("📊 calc: "
-        #          f"load_deadline={calc['load_arrive_deadline']!r}, "
-        #          f"unload_deadline={calc['unload_arrive_deadline']!r}, "
-        #          f"load_lateness_minutes={load_lateness_minutes}, "
-        #          f"unload_lateness_minutes={unload_lateness_minutes}, "
-        #          f"load_stay_minutes={load_stay_minutes}, "
-        #          f"unload_stay_minutes={unload_stay_minutes}, "
-        #          f"load_late_hours={load_late_hours}, "
-        #          f"unload_late_hours={unload_late_hours}, "
-        #          f"load_stay_hours={load_stay_hours}, "
-        #          f"unload_stay_hours={unload_stay_hours}, "
-        #          f"load_over_6h_hours={load_over_6h_hours}, "
-        #          f"unload_over_6h_hours={unload_over_6h_hours}")
-
-        if driver_rating_items:
-            self.log(f"🧾 driver_rating_items={driver_rating_items}")
+        if result["driver_rating_items"]:
+            self.log(f"🧾 driver_rating_items={result['driver_rating_items']}")
         else:
             self.log("🧾 driver_rating_items=[] -> Без отклонений")
 
@@ -146,32 +68,29 @@ class FillTimesStep:
             self.log("ℹ️ Нет времён для заполнения — пропускаю FillTimesStep")
             return
 
-        self.session.click_anchor("cargo_tab")
+        self.points.click("cargo_tab", ctx=ctx)
         self.session.sleep(0.5)
 
         region = self.session.ui_map.get_region("cargo_search_region")
         left, top, w, h = region
 
-        shot_path = self.session.capture_region("cargo_search_region", "fill_times_cargo.png")
-        screen = self.session.screenshot_full("debug_regions.png")
-        self._draw_debug_regions(screen, ["cargo_search_region",
-                                          "error_header_region",
-                                          "error_search_region",
-                                          "error_buttons_region",
-                                          "error_text_region"])
+        shot_path = self.artifacts.capture_region(self.stage, "cargo_search", "cargo_search_region")
+        debug_screen = self.artifacts.capture_full(self.stage, "regions_source", debug_only=True)
+        if debug_screen:
+            self.artifacts.annotate_regions(debug_screen, self.stage, "regions",["cargo_search_region",
+                                                                                                   "error_header_region",
+                                                                                                   "error_search_region",
+                                                                                                   "error_buttons_region",
+                                                                                                   "error_text_region"])
 
         m_arr = self.session.vision.find(shot_path,
-                                         self.session.ui_map.get_template("hdr_arrival_fact"),
-                                         region_offset=(left, top), )
+                                         self.session.ui_map.get_template("hdr_arrival_fact"),region_offset=(left, top))
         m_dep = self.session.vision.find(shot_path,
-                                         self.session.ui_map.get_template("hdr_depart_fact"),
-                                         region_offset=(left, top), )
+                                         self.session.ui_map.get_template("hdr_depart_fact"),region_offset=(left, top))
         m_load = self.session.vision.find(shot_path,
-                                          self.session.ui_map.get_template("op_load"),
-                                          region_offset=(left, top), )
+                                          self.session.ui_map.get_template("op_load"),region_offset=(left, top))
         m_unload = self.session.vision.find(shot_path,
-                                            self.session.ui_map.get_template("op_unload"),
-                                            region_offset=(left, top), )
+                                            self.session.ui_map.get_template("op_unload"),region_offset=(left, top))
 
         if not m_arr or not m_dep:
             raise RuntimeError("Не найдены заголовки 'Прибытие факт' / 'Убытие факт'")
@@ -179,11 +98,8 @@ class FillTimesStep:
         if not m_load and not m_unload:
             raise RuntimeError("Не найдены строки 'Погрузка' / 'Разгрузка'")
 
-        # потом можно вернуть в ui_map / json
-        # offset_y = self.session.ui_map.get_offset("cargo_fact_row_y", -22)
-        # plan_dy = self.session.ui_map.get_offset("cargo_plan_row_dy", 22)
-        offset_y = -22
-        plan_dy = 22
+        _, offset_y = self.session.ui_map.get_offset("cargo_fact_row_y")
+        _, plan_dy = self.session.ui_map.get_offset("cargo_plan_row_dy")
 
         x_arr = m_arr.center[0]
         x_dep = m_dep.center[0]
@@ -198,10 +114,7 @@ class FillTimesStep:
             debug_points.append(("load_dep_cell", x_dep, y_load))
             debug_points.append(("load_deadline", x_dep, y_load + plan_dy))
 
-            ctx.load_arrive_deadline = self._copy_deadline(x_dep,
-                                                           y_load,
-                                                           plan_dy,
-                                                           "load_arrive_deadline")
+            ctx.load_arrive_deadline = self._copy_deadline(x_dep,y_load,plan_dy,"load_arrive_deadline")
 
             if ctx.load_in:
                 self._set_cell(x_arr, y_load, ctx.load_in, "Погрузка / Прибытие факт")
@@ -215,59 +128,19 @@ class FillTimesStep:
             debug_points.append(("unload_dep_cell", x_dep, y_unload))
             debug_points.append(("unload_deadline", x_dep, y_unload + plan_dy))
 
-            ctx.unload_arrive_deadline = self._copy_deadline(x_dep,
-                                                             y_unload,
-                                                             plan_dy, "unload_arrive_deadline")
+            ctx.unload_arrive_deadline = self._copy_deadline(x_dep,y_unload,plan_dy, "unload_arrive_deadline")
 
             if ctx.unload_in:
                 self._set_cell(x_arr, y_unload, ctx.unload_in, "Разгрузка / Прибытие факт")
             if ctx.unload_out:
                 self._set_cell(x_dep, y_unload, ctx.unload_out, "Разгрузка / Убытие факт")
 
-        self._draw_debug_points(shot_path, debug_points)
+        self.artifacts.annotate_points(shot_path,self.stage,"cargo_points",debug_points,origin=(left, top),)
 
         self._store_calc(ctx)
 
-        self.session.click_anchor("start_page_tab")
+        self.points.click("start_page_tab", ctx=ctx)
         # self.log("✅ FillTimesStep done: "
         #          f"load_arrive_deadline={getattr(ctx, 'load_arrive_deadline', None)!r}, "
         #          f"unload_arrive_deadline={getattr(ctx, 'unload_arrive_deadline', None)!r}, "
         #          f"calc={ctx.state.get('calc')!r}")
-
-    def _draw_debug_points(self, shot_path: str | Path, points: list[tuple[str, int, int]]):
-        if not self.debug_mode:
-            return
-
-        dbg_path = Path(shot_path).with_name(Path(shot_path).stem + "_debug.png")
-
-        with Image.open(shot_path).convert("RGB") as img:
-            draw = ImageDraw.Draw(img)
-
-            left, top, _, _ = self.session.ui_map.get_region("cargo_search_region")
-
-            for label, x_abs, y_abs in points:
-                x = x_abs - left
-                y = y_abs - top
-                r = 8
-                draw.ellipse((x - r, y - r, x + r, y + r), outline="red", width=3)
-                draw.text((x + 10, y - 10), label, fill="red")
-
-            img.save(dbg_path)
-
-        self.log(f"🧪 debug screenshot: {dbg_path}")
-
-    def _draw_debug_regions(self, shot_path: str | Path, region_names: list[str]):
-        if not self.debug_mode:
-            return
-
-        dbg_path = Path(shot_path).with_name(Path(shot_path).stem + "_regions.png")
-        with Image.open(shot_path).convert("RGB") as img:
-            draw = ImageDraw.Draw(img)
-
-            for name in region_names:
-                left, top, w, h = self.session.ui_map.get_region(name)
-                draw.rectangle((left, top, left + w, top + h), outline="yellow", width=3)
-                draw.text((left + 5, top + 5), name, fill="yellow")
-
-            img.save(dbg_path)
-        self.log(f"🧭 debug regions screenshot: {dbg_path}")

@@ -14,6 +14,7 @@ from LogistX.onec.steps.find_race import FindRaceStep
 from LogistX.onec.steps.open_race import OpenRaceStep
 from LogistX.onec.steps.submit import SubmitStep
 from LogistX.onec.steps.wialon_unload_precheck import WialonUnloadPrecheckStep
+from LogistX.onec.wialon_times import WialonTimesPolicy, WialonTimesService
 
 
 class CloseRaceScenario(BaseScenario):
@@ -30,19 +31,26 @@ class CloseRaceScenario(BaseScenario):
         self.capture_ui_step = CaptureRaceUiStep(session, error_handler, log_func)
 
         self.fill_departure_step = FillDepartureStep(session, error_handler, log_func)
-        self.fetch_wialon_times_step = FetchWialonTimesStep(reportsbot, log_func)
-        self.wialon_precheck_step = WialonUnloadPrecheckStep(
-            reportsbot,
-            log_func,
-            fetcher=self.fetch_wialon_times_step,
-        )
+        self.wialon_times_service = WialonTimesService(reportsbot, log_func=log_func)
+        self.wialon_times_policy = WialonTimesPolicy(log_func=log_func)
+        self.fetch_wialon_times_step = FetchWialonTimesStep(log_func=log_func,
+                                                            service=self.wialon_times_service,
+                                                            policy=self.wialon_times_policy)
+        self.wialon_precheck_step = WialonUnloadPrecheckStep(log_func=log_func,
+                                                             service=self.wialon_times_service,
+                                                             policy=self.wialon_times_policy)
         self.fill_times_step = FillTimesStep(session, error_handler, log_func)
         self.driver_rating_step = DriverRatingStep(session, error_handler, log_func)
         self.submit_step = SubmitStep(session, error_handler, log_func)
 
     def _run_step(self, step, ctx, completed: list[str]):
         self.log(f"\n=== STEP: {step.stage} ===")
-        step.run(ctx)
+        try:
+            step.run(ctx)
+        except ScenarioError:
+            raise
+        except Exception as exc:
+            raise ScenarioError(step.stage, str(exc)) from exc
         completed.append(step.stage)
 
     def run(self, ctx) -> BotResult:
@@ -51,15 +59,8 @@ class CloseRaceScenario(BaseScenario):
         local_executor: ThreadPoolExecutor | None = None
 
         try:
-            self._mark_progress(
-                ctx,
-                race_opened=False,
-                ui_captured=False,
-                departure_filled=False,
-                times_filled=False,
-                driver_rating_filled=False,
-                submitted=False,
-            )
+            self._mark_progress(ctx, race_opened=False, ui_captured=False, departure_filled=False, times_filled=False,
+                                driver_rating_filled=False, submitted=False)
 
             self._run_step(self.find_race_step, ctx, completed)
 
@@ -76,21 +77,18 @@ class CloseRaceScenario(BaseScenario):
             self._mark_progress(ctx, departure_filled=bool(ctx.departure_dt))
 
             self.log("\n=== STEP: wialon_precheck[wait] ===")
-            precheck = precheck_future.result() if precheck_future else self.wialon_precheck_step.run(ctx)
+            try:
+                precheck = precheck_future.result() if precheck_future else self.wialon_precheck_step.run(ctx)
+            except Exception as exc:
+                raise ScenarioError(self.wialon_precheck_step.stage, str(exc)) from exc
 
             status = precheck.get("status")
 
             if status == "in_transit":
-                return BotResult.success(
-                    stage="wialon_precheck",
-                    message="Рейс не закрыт: еще в пути",
-                )
+                return BotResult.success(stage="wialon_precheck", message="Рейс не закрыт: еще в пути")
 
             if status == "on_unload":
-                return BotResult.success(
-                    stage="wialon_precheck",
-                    message="Рейс не закрыт: еще на выгрузке",
-                )
+                return BotResult.success(stage="wialon_precheck", message="Рейс не закрыт: еще на выгрузке")
 
             self._run_step(self.fetch_wialon_times_step, ctx, completed)
 
@@ -100,10 +98,8 @@ class CloseRaceScenario(BaseScenario):
             self._run_step(self.driver_rating_step, ctx, completed)
             self._mark_progress(ctx, driver_rating_filled=True)
 
-            # self._run_step(self.submit_step, ctx, completed)
+            self._run_step(self.submit_step, ctx, completed)
             self._mark_progress(ctx, submitted=True)
-
-            ctx.state["close_status"] = "closed"
 
             return BotResult.success(stage="done", message=f"Выполнены шаги: {', '.join(completed)}")
 

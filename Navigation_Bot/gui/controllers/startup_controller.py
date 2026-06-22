@@ -25,8 +25,9 @@ class StartupController:
             self.gui.init_managers()
         except Exception as e:
             self.gui.log(f"❌ Ошибка startup(managers): {e}")
-        finally:
-            QTimer.singleShot(0, self._bind_signals)
+            self.gui.loading.hide()
+            return
+        QTimer.singleShot(0, self._bind_signals)
 
     def _bind_signals(self) -> None:
         try:
@@ -34,8 +35,9 @@ class StartupController:
             SignalsBinder(self.gui).bind()
         except Exception as e:
             self.gui.log(f"❌ Ошибка startup(signals): {e}")
-        finally:
-            QTimer.singleShot(0, self._finish)
+            self.gui.loading.hide()
+            return
+        QTimer.singleShot(0, self._finish)
 
     def _finish(self) -> None:
         try:

@@ -1,15 +1,7 @@
 from PyQt6.QtCore import Qt
-from PyQt6.QtWidgets import (
-    QDialog, QVBoxLayout, QHBoxLayout, QLineEdit,
-    QTableWidget, QTableWidgetItem, QPushButton
-)
+from PyQt6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLineEdit,QTableWidget, QTableWidgetItem, QPushButton)
 
-from Navigation_Bot.core.repositories.vehicle_registry_fields import (
-    CENTER_FIELD,
-    ID_FIELD,
-    NAME_FIELD,
-    TS_FIELD,
-)
+from Navigation_Bot.core.repositories.vehicle_registry_fields import (CENTER_FIELD, ID_FIELD, NAME_FIELD, TS_FIELD)
 from Navigation_Bot.gui.dialogs.dialog_helpers import button_row_trailing
 
 _ID = ID_FIELD

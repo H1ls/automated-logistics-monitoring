@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import os
+from datetime import datetime, timedelta, timezone
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 
-from Navigation_Bot.api.dependencies import postgres_connection, require_roles
+from Navigation_Bot.core.infrastructure.api.dependencies import postgres_connection, require_roles
 from Navigation_Bot.core.repositories.postgres_audit_repository import PostgresAuditRepository
 from Navigation_Bot.core.repositories.postgres_task_repository import PostgresTaskRepository
 from Navigation_Bot.core.repositories.postgres_task_reader import PostgresTaskReader
@@ -16,19 +18,21 @@ from Navigation_Bot.core.application.services.postgres_history_services import (
                                                                                 PostgresNoteHistoryService,
                                                                                 PostgresRouteEstimateHistoryService,
                                                                                 PostgresStatusEventService, )
-from Navigation_Bot.api.schemas import (ApiKeyCreateRequest,
-                                        HistoryBatchRequest,
-                                        HistoryItemRequest,
-                                        NavigationSnapshotBatchRequest,
-                                        NavigationSnapshotRequest,
-                                        NoteBatchCreateRequest,
-                                        NoteCreateRequest,
-                                        TaskBatchCompleteRequest,
-                                        RegistryEntryRequest,
-                                        TaskBatchUpsertRequest,
-                                        TaskCompleteRequest,
-                                        TaskUpsertRequest,
-                                        UserCreateRequest, )
+from Navigation_Bot.core.infrastructure.api.schemas import (ApiKeyCreateRequest,
+                                                            HistoryBatchRequest,
+                                                            HistoryItemRequest,
+                                                            LoginRequest,
+                                                            NavigationSnapshotBatchRequest,
+                                                            NavigationSnapshotRequest,
+                                                            NoteBatchCreateRequest,
+                                                            NoteCreateRequest,
+                                                            TaskBatchCompleteRequest,
+                                                            RegistryEntryRequest,
+                                                            TaskBatchUpsertRequest,
+                                                            TaskCompleteRequest,
+                                                            TaskUpsertRequest,
+                                                            UserCreateRequest,
+                                                            UserUpdateRequest, )
 
 router = APIRouter()
 
@@ -69,6 +73,15 @@ def _batch_result(count: int, skipped: list[dict[str, Any]] | None = None) -> di
     return {"ok": True, "count": count, "skipped": skipped or []}
 
 
+def _gui_session_expires_at() -> str:
+    try:
+        hours = int(os.getenv("NAV_GUI_SESSION_HOURS", "12"))
+    except ValueError:
+        hours = 12
+    hours = min(max(hours, 1), 168)
+    return (datetime.now(timezone.utc) + timedelta(hours=hours)).isoformat()
+
+
 def _task_before_from_row(audit: PostgresAuditRepository, row: dict[str, Any]) -> dict[str, Any] | None:
     task_id = row.get("db_task_id") or row.get("task_id")
     try:
@@ -88,6 +101,32 @@ def _task_before_from_row(audit: PostgresAuditRepository, row: dict[str, Any]) -
 @router.get("/me")
 def get_me(user: ReadAccess) -> dict[str, Any]:
     return {"user": user}
+
+
+@router.post("/auth/login")
+def login(payload: LoginRequest, connection: Connection) -> dict[str, Any]:
+    repository = PostgresUserRepository(connection)
+    user = repository.authenticate(payload.username, payload.password)
+    bootstrapped = False
+    if not user and not repository.has_active_password_users():
+        try:
+            user = repository.create_user(username=payload.username,
+                                          display_name=payload.username,
+                                          password=payload.password,
+                                          role="admin",
+                                          is_active=True)
+        except ValueError as exc:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+        bootstrapped = True
+    if not user:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="invalid_credentials")
+
+    session_name = "GUI session"
+    repository.revoke_user_api_keys_by_name(user["id"], session_name)
+    api_key = repository.create_api_key(user_id=user["id"],
+                                        name=session_name,
+                                        expires_at=_gui_session_expires_at())
+    return {"ok": True, "user": user, "api_key": api_key["api_key"], "bootstrapped": bootstrapped}
 
 
 @router.get("/users")
@@ -115,6 +154,7 @@ def create_user(payload: UserCreateRequest, connection: Connection, user: AdminA
     try:
         created_user = PostgresUserRepository(connection).create_user(username=payload.username,
                                                                       display_name=payload.display_name,
+                                                                      password=payload.password,
                                                                       role=payload.role,
                                                                       is_active=payload.is_active)
     except ValueError as exc:
@@ -127,6 +167,31 @@ def create_user(payload: UserCreateRequest, connection: Connection, user: AdminA
                               after_data=created_user)
 
     return {"ok": True, "user": created_user}
+
+
+@router.put("/users/{user_id}")
+def update_user(user_id: int,
+                payload: UserUpdateRequest,
+                connection: Connection,
+                user: AdminAccess) -> dict[str, Any]:
+    try:
+        updated_user = PostgresUserRepository(connection).update_user(user_id,
+                                                                      username=payload.username,
+                                                                      display_name=payload.display_name,
+                                                                      password=payload.password,
+                                                                      role=payload.role,
+                                                                      is_active=payload.is_active)
+    except ValueError as exc:
+        detail = str(exc)
+        code = status.HTTP_404_NOT_FOUND if detail == "user_not_found" else status.HTTP_400_BAD_REQUEST
+        raise HTTPException(status_code=code, detail=detail) from exc
+
+    _audit(connection).record(user=user,
+                              entity_type="app_users",
+                              entity_id=updated_user["id"],
+                              action="update",
+                              after_data=updated_user)
+    return {"ok": True, "user": updated_user}
 
 
 @router.post("/users/{user_id}/api-keys")

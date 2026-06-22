@@ -13,6 +13,7 @@ from openpyxl import Workbook
 from openpyxl.utils import get_column_letter
 
 from LogistX.config.paths import ONEC_UI_MAP, LOGISTX_SAMPLE, ONEC_UNCLOSED_RACES_XLSX
+from Navigation_Bot.core.json_store import JsonStore
 
 
 class OneCReportImporter:
@@ -148,9 +149,7 @@ class OneCReportImporter:
             if race not in imported_races:
                 removed += 1
 
-        self.out_json_path.write_text(
-            json.dumps(synced_rows, ensure_ascii=False, indent=2),
-            encoding="utf-8", )
+        JsonStore(log_func=self.log).save_in_json(synced_rows, self.out_json_path)
 
         self.log(f"✅ JSON sync сохранён: {self.out_json_path} | "
                  f"kept={kept}, added={added}, removed={removed}, total={len(synced_rows)}")
@@ -361,5 +360,5 @@ class OneCReportImporter:
 
     def _save_json(self, rows: list[dict]) -> None:
         self.out_json_path.parent.mkdir(parents=True, exist_ok=True)
-        self.out_json_path.write_text(json.dumps(rows, ensure_ascii=False, indent=2), encoding="utf-8")
+        JsonStore(log_func=self.log).save_in_json(rows, self.out_json_path)
         self.log(f"✅ JSON сохранён: {self.out_json_path}")

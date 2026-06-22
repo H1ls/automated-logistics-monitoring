@@ -5,7 +5,7 @@ import gspread
 from PyQt6.QtCore import QObject, pyqtSignal
 from oauth2client.service_account import ServiceAccountCredentials
 
-from Navigation_Bot.core.json_manager import JSONManager
+from Navigation_Bot.core.json_store import JsonStore
 from Navigation_Bot.core.paths import CONFIG_JSON
 
 
@@ -20,7 +20,7 @@ class GoogleSheetsManager(QObject):
         self._external_log = log_func
 
         self.config_key = config_key
-        self.config_manager = JSONManager(CONFIG_JSON)
+        self.config_manager = JsonStore(CONFIG_JSON)
 
         # основные поля
         self.worksheet_index = None
@@ -52,7 +52,7 @@ class GoogleSheetsManager(QObject):
             return None
 
         try:
-            full_block = JSONManager().load_json(self.creds_file)
+            full_block = JsonStore().load_json(self.creds_file)
             creds_data = full_block.get("credentials")
             if not creds_data:
                 self._log(f"❌ В файле {self.creds_file} отсутствует ключ 'credentials'")

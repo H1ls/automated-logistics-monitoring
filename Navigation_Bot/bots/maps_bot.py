@@ -6,7 +6,7 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.common.keys import Keys
 
 from Navigation_Bot.core.domain.value_objects.route_point import RoutePoint
-from Navigation_Bot.core.json_manager import JSONManager
+from Navigation_Bot.core.json_store import JsonStore
 from Navigation_Bot.core.paths import CONFIG_JSON
 
 
@@ -27,7 +27,7 @@ class MapsBot:
         self._load_selectors()
 
     def _load_selectors(self):
-        self.selectors = JSONManager.get_selectors("yandex_selectors", CONFIG_JSON)
+        self.selectors = JsonStore.get_selectors("yandex_selectors", CONFIG_JSON)
         # self.log("✅ Селекторы Яндекс.Карт загружены.")
 
     def _by(self, key):

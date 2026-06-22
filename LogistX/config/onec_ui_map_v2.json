@@ -1,4 +1,8 @@
 {
+  "reference_screen": [
+    1920,
+    1080
+  ],
   "window": {
     "title_hint": "1С:Предприятие - Управление транспортом Верус (рабочая база)",
     "title_fallbacks": [
@@ -47,10 +51,22 @@
     ]
   },
   "regions": {
+    "race_card_capture_region": [
+      0,
+      0,
+      600,
+      560
+    ],
     "rating_region": [
       10,
       420,
       250,
+      300
+    ],
+    "rating_table_region": [
+      170,
+      420,
+      650,
       300
     ],
     "error_header_region": [
@@ -115,7 +131,25 @@
       202,
       0
     ],
-    "cargo_fact_row_y": -22,
-    "cargo_plan_row_dy": 22
+    "rating_delete_from_insert": [
+      69,
+      0
+    ],
+    "finish_row_from_departure_label": [
+      -36,
+      25
+    ],
+    "wait_load_checkbox_from_anchor": [
+      -52,
+      0
+    ],
+    "cargo_fact_row_y": [
+      0,
+      -22
+    ],
+    "cargo_plan_row_dy": [
+      0,
+      22
+    ]
   }
 }

@@ -3,7 +3,7 @@ from typing import Dict, Any
 from PyQt6.QtCore import QPoint, QSize, QTimer
 from PyQt6.QtWidgets import QWidget, QTableWidget
 from Navigation_Bot.core.paths import UI_SETTINGS_FILE
-from Navigation_Bot.core.json_manager import JSONManager
+from Navigation_Bot.core.json_store import JsonStore
 
 
 class UiSettingsManager:
@@ -16,7 +16,7 @@ class UiSettingsManager:
     def __init__(self, log_func=print):
 
         self.log = log_func or (lambda *_: None)
-        self.store = JSONManager(str(UI_SETTINGS_FILE), log_func=self.log)
+        self.store = JsonStore(str(UI_SETTINGS_FILE), log_func=self.log)
         data = self.store.load_json() or {}
         if not isinstance(data, dict):
             data = {}

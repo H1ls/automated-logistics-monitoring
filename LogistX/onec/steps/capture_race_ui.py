@@ -1,9 +1,8 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from pathlib import Path
 
-from PIL import Image, ImageDraw
+from LogistX.onec.artifacts import OneCArtifacts
 
 
 @dataclass
@@ -36,25 +35,27 @@ class CaptureRaceUiStep:
         ("wait_load", "wait_load"),
     )
 
-    def __init__(self, session, errors, log_func=print, persist_min_score: float = 0.90):
+    def __init__(self, session, errors, log_func=print, persist_min_score: float = 0.90,
+                 artifacts=None, find_attempts: int = 3):
         self.session = session
         self.errors = errors
         self.log = log_func
         self.persist_min_score = float(persist_min_score)
+        self.artifacts = artifacts or getattr(session, "artifacts", None) or OneCArtifacts(session, log_func=log_func)
+        self.find_attempts = max(1, int(find_attempts))
 
     def _put_ctx(self, ctx, point: UiPoint):
         ctx.state.setdefault("ui_points", {})
-        ctx.state["ui_points"][point.name] = {
-            "x": point.x,
-            "y": point.y,
-            "score": point.score,
-            "source": point.source,
-        }
+        ctx.state["ui_points"][point.name] = {"x": point.x,
+                                              "y": point.y,
+                                              "score": point.score,
+                                              "source": point.source,
+                                              }
 
     def _store_anchor(self, point: UiPoint):
         self.session.ui_map.set_anchor(point.name, point.x, point.y)
 
-    def _load_from_uimap_to_ctx(self, ctx):
+    def _load_from_uimap_to_ctx(self, ctx, shot_path=None):
         self.log("♻️ UI уже откалиброван - беру координаты из onec_ui_map.json")
         missing_template_points: list[str] = []
 
@@ -72,16 +73,19 @@ class CaptureRaceUiStep:
             raise RuntimeError(f"В ui_map отсутствует anchor '{name}'")
 
         if missing_template_points:
-            self._load_missing_template_points(ctx, missing_template_points)
+            self._load_missing_template_points(ctx, missing_template_points, shot_path=shot_path)
 
-    def _load_missing_template_points(self, ctx, point_names: list[str]):
-        shot_path = self.session.capture_current_race_form("race_form_calibration_missing.png")
+    def _load_missing_template_points(self, ctx, point_names: list[str], shot_path=None):
+        shot_path = shot_path or self.artifacts.capture_full(self.stage, "calibration_missing")
         should_save = False
 
         for name in point_names:
-            point = self._find_on_shot(shot_path, name, name)
+            point = self._find_with_retries(shot_path, name, name)
             if not point:
-                raise RuntimeError(f"В ui_map отсутствует anchor '{name}' и не удалось найти template")
+                raise RuntimeError(
+                    f"В ui_map отсутствует anchor '{name}' и template "
+                    f"не найден за {self.find_attempts} попытки"
+                )
 
             self._put_ctx(ctx, point)
             if point.score is not None and point.score >= self.persist_min_score:
@@ -103,11 +107,31 @@ class CaptureRaceUiStep:
             source=f"template:{template_name}",
         )
 
+    def _find_with_retries(self, initial_shot, template_name: str, point_name: str) -> UiPoint | None:
+        shot_path = initial_shot
+        for attempt in range(1, self.find_attempts + 1):
+            point = self._find_on_shot(shot_path, template_name, point_name)
+            if point:
+                if attempt > 1:
+                    self.log(f"✅ '{point_name}' найден с попытки {attempt}/{self.find_attempts}")
+                return point
+
+            if attempt < self.find_attempts:
+                self.log(
+                    f"⚠️ '{point_name}' не найден, новый скриншот "
+                    f"и попытка {attempt + 1}/{self.find_attempts}"
+                )
+                self.session.sleep(0.35)
+                shot_path = self.artifacts.capture_full(
+                    self.stage, f"retry_{point_name}_{attempt + 1}"
+                )
+        return None
+
     def _resolve_departure_label(self, shot_path) -> UiPoint | None:
         for template_name in ("departure_label", "lbl_departure"):
             if not self.session.ui_map.get_optional_template(template_name):
                 continue
-            point = self._find_on_shot(shot_path, template_name, "departure_label")
+            point = self._find_with_retries(shot_path, template_name, "departure_label")
             if point:
                 return point
 
@@ -142,13 +166,16 @@ class CaptureRaceUiStep:
             return
 
         self.log("🧭 Первый рейс после запуска - one-shot калибровка по одному скрину")
-        shot_path = self.session.capture_current_race_form("race_form_calibration.png")
+        shot_path = self.artifacts.capture_full(self.stage, "calibration")
 
         found: list[UiPoint] = []
         for template_name, point_name in self.STABLE_TEMPLATES:
-            point = self._find_on_shot(shot_path, template_name, point_name)
+            point = self._find_with_retries(shot_path, template_name, point_name)
             if not point:
-                raise RuntimeError(f"Не удалось найти '{point_name}' на общем скрине формы")
+                raise RuntimeError(
+                    f"Не удалось найти '{point_name}' "
+                    f"за {self.find_attempts} попытки"
+                )
             found.append(point)
 
         start_page = next(p for p in found if p.name == "start_page_tab")
@@ -181,6 +208,10 @@ class CaptureRaceUiStep:
         for point in found:
             self._put_ctx(ctx, point)
 
+        self.artifacts.annotate_points(shot_path, self.stage, "calibration_points",
+                                       [(point.name, point.x, point.y) for point in found],
+                                       )
+
         template_points = [p for p in found if p.source.startswith("template:")]
         if template_points and self._points_are_confident(template_points):
             self.log("💾 Все стабильные точки найдены уверенно - сохраняю в onec_ui_map.json")
@@ -191,36 +222,3 @@ class CaptureRaceUiStep:
             self.log("ℹ️ Не все точки найдены достаточно уверенно - сохраняю только в ctx.state")
 
         self.session.ui_calibrated = True
-
-    def _log_point(self, point: UiPoint):
-        score_part = f", score={point.score:.3f}" if point.score is not None else ""
-        self.log(f"📍 {point.name}: ({point.x}, {point.y}), source={point.source}{score_part}")
-
-    def _save_debug_overlay(self, shot_path: Path, points: list[UiPoint]):
-        try:
-            debug_path = self.session.tmp_dir / "race_form_calibration_debug.png"
-            with Image.open(shot_path).convert("RGB") as img:
-                draw = ImageDraw.Draw(img)
-                r = 8
-                for point in points:
-                    draw.ellipse((point.x - r, point.y - r, point.x + r, point.y + r), outline="red", width=3)
-                    draw.text((point.x + 10, point.y - 10), point.name, fill="red")
-                img.save(debug_path)
-            self.log(f"🖼 debug overlay сохранён: {debug_path}")
-        except Exception as e:
-            self.log(f"⚠️ Не удалось сохранить debug overlay: {e}")
-
-    def _draw_debug_regions(self, shot_path, region_names):
-        dbg_path = Path(shot_path).with_name(Path(shot_path).stem + "_regions.png")
-
-        with Image.open(shot_path).convert("RGB") as img:
-            draw = ImageDraw.Draw(img)
-
-            for name in region_names:
-                left, top, w, h = self.session.ui_map.get_region(name)
-                draw.rectangle((left, top, left + w, top + h), outline="yellow", width=3)
-                draw.text((left + 6, top + 6), name, fill="yellow")
-
-            img.save(dbg_path)
-
-        self.log(f"🧭 debug regions screenshot: {dbg_path}")

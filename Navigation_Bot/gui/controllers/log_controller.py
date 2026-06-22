@@ -31,11 +31,10 @@ class LogRecord:
 
 class LogController(QObject):
     """
-    Thread-safe QTextEdit logger with explicit severity and audience filtering.
-
-    Compatibility:
-    - log("text") means info/user.
-    - log("text", audience="admin", severity="error") is supported.
+    Потоко безопасный логгер для QTextEdit с явной фильтрацией по уровню серьёзности и аудитории.
+    Совместимость:
+        log("текст") означает информацию для пользователя (info/user).
+        Поддерживается запись log("текст", audience="admin", severity="error").
     """
 
     _AUDIENCE_RANK = {LogAudience.USER: 0,

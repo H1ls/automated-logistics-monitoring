@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta
 
-from Navigation_Bot.core.task_identity import row_identity_for_gui
+from Navigation_Bot.core.domain.task_identity import row_identity_for_gui
 
 
 class TaskProcessingSelector:

@@ -2,19 +2,20 @@ import traceback
 from concurrent.futures import Future
 from concurrent.futures import ThreadPoolExecutor
 from threading import Lock
-from Navigation_Bot.core.NavigationProcessor.batch_processing_service import BatchProcessingService
-from Navigation_Bot.core.NavigationProcessor.browser_session import BrowserSession
-from Navigation_Bot.core.NavigationProcessor.logistx_race_service import LogistxRaceService
+from Navigation_Bot.core.application.services.navigation.batch_processing_service import BatchProcessingService
+from Navigation_Bot.core.application.services.navigation.browser_session import BrowserSession
+from Navigation_Bot.core.application.services.navigation.logistx_race_service import LogistxRaceService
 from Navigation_Bot.core.application.services.navigation_row_service import NavigationRowService
                                                                                                    
 
 class NavigationProcessor:
     DEFAULT_TIMEOUT_SECONDS = 3
+    DEFAULT_DEBUG_MODE = False
 
     def __init__(self, task_repository, logger, gsheet, display_callback, single_row, updated_rows,
                  executor=None, highlight_callback=None, browser_rect=None, ui_bridge=None, tasks_service=None,
                  navigation_history_service=None, route_estimate_history_service=None,
-                 pause_dialog_factory=None, gui_parent=None, timeout_seconds=None):
+                 pause_dialog_factory=None, gui_parent=None, timeout_seconds=None, debug_mode=None):
 
         self.task_repository = task_repository
         self.log = logger
@@ -39,6 +40,7 @@ class NavigationProcessor:
         self.pause_dialog_factory = pause_dialog_factory  # фабрика диалога паузы
         self.gui_parent = gui_parent  # родительское окно GUI для показа диалогов
         self.timeout_seconds = self._normalize_timeout(timeout_seconds)
+        self.debug_mode = self.DEFAULT_DEBUG_MODE if debug_mode is None else bool(debug_mode)
 
         self.browser_session = BrowserSession(logger=self.log,
                                               browser_rect=self.browser_rect,
@@ -58,7 +60,8 @@ class NavigationProcessor:
         self.logistx_race_service = LogistxRaceService(logger=self.log,
                                                        executor=self.executor,
                                                        browser_session=self.browser_session,
-                                                       ui_bridge=self.ui_bridge, )
+                                                       ui_bridge=self.ui_bridge,
+                                                       debug_mode=self.debug_mode, )
         # TODO: Изменить вызов
         self.batch_processing_service = BatchProcessingService(self)
         self._dialog_request_queue = self.batch_processing_service._dialog_request_queue
@@ -74,6 +77,10 @@ class NavigationProcessor:
 
     def set_timeout_seconds(self, value) -> None:
         self.timeout_seconds = self._normalize_timeout(value)
+
+    def set_debug_mode(self, enabled: bool) -> None:
+        self.debug_mode = bool(enabled)
+        self.logistx_race_service.set_debug_mode(self.debug_mode)
 
     # Processing mode
     def _try_enter_single_processing(self) -> bool:

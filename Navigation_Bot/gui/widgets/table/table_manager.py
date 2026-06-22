@@ -4,7 +4,7 @@ from Navigation_Bot.gui.dialogs.combined_settings_dialog import VerticalTextDele
 from Navigation_Bot.gui.widgets.table.row_action_controller import RowActionController
 from Navigation_Bot.gui.widgets.table.table_display_formatter import TableDisplayFormatter
 from Navigation_Bot.gui.widgets.table.table_row_renderer import TableRowRenderer
-from Navigation_Bot.core.task_identity import row_identity_for_gui
+from Navigation_Bot.core.domain.task_identity import row_identity_for_gui
 
 
 class TableManager:
@@ -70,6 +70,7 @@ class TableManager:
 
         try:
             self.table.blockSignals(True)
+            self._dispose_cell_widgets()
             self.table.setRowCount(0)
             self._render_all_rows(rows, view_order)
             self.table.resizeRowsToContents()
@@ -80,6 +81,17 @@ class TableManager:
 
         if callable(self.after_display):
             self.after_display()
+
+    def _dispose_cell_widgets(self) -> None:
+        """Hide embedded widgets before Qt detaches them while rows are reset."""
+        for row in range(self.table.rowCount()):
+            for column in range(self.table.columnCount()):
+                widget = self.table.cellWidget(row, column)
+                if widget is None:
+                    continue
+                widget.hide()
+                self.table.removeCellWidget(row, column)
+                widget.deleteLater()
 
     def _reload_context(self, reload_from_file: bool):
         # Вспомогательные методы для display()

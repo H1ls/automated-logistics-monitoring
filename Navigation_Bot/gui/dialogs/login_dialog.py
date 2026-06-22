@@ -1,44 +1,34 @@
-from PyQt6.QtWidgets import (
-    QDialog,
-    QVBoxLayout,
-    QHBoxLayout,
-    QLabel,
-    QLineEdit,
-    QPushButton,
-    QMessageBox,
-)
+from __future__ import annotations
+
+from PyQt6.QtWidgets import QDialog, QHBoxLayout, QLabel, QLineEdit, QPushButton, QVBoxLayout
 
 from Navigation_Bot.gui.dialogs.dialog_helpers import button_row_trailing
 
 
 class LoginDialog(QDialog):
-    """Диалог авторизации по логину/паролю. Проверяет пользователя по листу Account в Google Sheets."""
-
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setWindowTitle("Вход в Navigation Manager")
-        self.resize(300, 140)
-        self.login: str = ""
-        self.password: str = ""
+        self.resize(360, 150)
+        self.username = ""
+        self.password = ""
 
         layout = QVBoxLayout(self)
 
-        # Логин
-        row_login = QHBoxLayout()
-        row_login.addWidget(QLabel("Логин:"))
-        self.edit_login = QLineEdit()
-        self.edit_login.setPlaceholderText("login")
-        row_login.addWidget(self.edit_login)
-        layout.addLayout(row_login)
+        row_username = QHBoxLayout()
+        row_username.addWidget(QLabel("Username:"))
+        self.edit_username = QLineEdit()
+        self.edit_username.setPlaceholderText("username")
+        row_username.addWidget(self.edit_username)
+        layout.addLayout(row_username)
 
-        # Пароль
-        row_pass = QHBoxLayout()
-        row_pass.addWidget(QLabel("Пароль:"))
+        row_password = QHBoxLayout()
+        row_password.addWidget(QLabel("Password:"))
         self.edit_password = QLineEdit()
         self.edit_password.setPlaceholderText("password")
         self.edit_password.setEchoMode(QLineEdit.EchoMode.Password)
-        row_pass.addWidget(self.edit_password)
-        layout.addLayout(row_pass)
+        row_password.addWidget(self.edit_password)
+        layout.addLayout(row_password)
 
         btn_ok = QPushButton("Войти")
         btn_cancel = QPushButton("Отмена")
@@ -46,20 +36,12 @@ class LoginDialog(QDialog):
         btn_cancel.clicked.connect(self.reject)
         layout.addLayout(button_row_trailing(btn_ok, btn_cancel))
 
-        # По Enter сразу логин
         self.edit_password.returnPressed.connect(self._on_login)
 
-    def _log(self, msg: str):
-        # при желании можно сюда пробросить основной лог
-        print(msg)
-
-    def _on_login(self):
-        self.login = self.edit_login.text()
+    def _on_login(self) -> None:
+        self.username = self.edit_username.text().strip()
         self.password = self.edit_password.text()
-
-        # Можно валидировать локально:
-        if not self.login or not self.password:
-            QMessageBox.warning(self, "Вход", "Введите логин и пароль.")
+        if not self.username or not self.password:
+            self.edit_username.setFocus()
             return
-
         self.accept()

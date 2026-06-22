@@ -6,10 +6,10 @@ from typing import Any, Callable
 from Navigation_Bot.core.domain.entities.task import Task
 from Navigation_Bot.core.domain.mappers.task_mapper import TaskMapper
 from Navigation_Bot.core.application.services.task_processing_selector import TaskProcessingSelector
-from Navigation_Bot.core.processed_flags import init_processed_flags
+from Navigation_Bot.core.domain.processed_flags import init_processed_flags
 from Navigation_Bot.core.application.services.google.task_merge_service import GoogleTaskMergeService
 from Navigation_Bot.core.domain.entities.status_event import StatusEvent
-from Navigation_Bot.core.task_identity import google_sheet_row, row_identity_for_gui, trip_number
+from Navigation_Bot.core.domain.task_identity import google_sheet_row, row_identity_for_gui, trip_number
 
 AUDITED_USER_FIELDS = {
     "id",
@@ -24,6 +24,8 @@ AUDITED_USER_FIELDS = {
     "unloads",
     "Погрузка",
     "Выгрузка",
+    "processed",
+    "processed_unloads",
     "status",
 }
 

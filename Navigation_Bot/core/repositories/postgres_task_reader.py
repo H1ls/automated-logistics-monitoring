@@ -4,7 +4,7 @@ from collections import defaultdict
 from dataclasses import dataclass
 from typing import Any
 
-from Navigation_Bot.core.geo_coordinates import format_coordinate_pair
+from Navigation_Bot.core.domain.geo_coordinates import format_coordinate_pair
 
 
 @dataclass(slots=True)
@@ -34,15 +34,14 @@ class PostgresTaskReader:
         ).fetchall()
         return self._rows_to_gui_dicts(rows)
 
-    def load_active_rows_page(
-        self,
-        source_key: str = "",
-        *,
-        include_null_source: bool = True,
-        limit: int = 100,
-        offset: int = 0,
-        updated_since: str | None = None,
-    ) -> tuple[list[dict], int]:
+    def load_active_rows_page(self,
+                              source_key: str = "",
+                              *,
+                              include_null_source: bool = True,
+                              limit: int = 100,
+                              offset: int = 0,
+                              updated_since: str | None = None) -> tuple[list[dict], int]:
+
         source_filter, source_params = self._source_filter_sql(source_key, include_null_source=include_null_source)
         conditions = [source_filter]
         if not updated_since:
@@ -85,7 +84,8 @@ class PostgresTaskReader:
         if not source_key:
             return "%s = ''", (source_key,)
         if include_null_source:
-            return "(%s = '' OR t.google_worksheet_title = %s OR t.google_worksheet_title IS NULL)", (source_key, source_key)
+            return "(%s = '' OR t.google_worksheet_title = %s OR t.google_worksheet_title IS NULL)", (source_key,
+                                                                                                      source_key)
         return "t.google_worksheet_title = %s", (source_key,)
 
     def _rows_to_gui_dicts(self, rows: list[dict]) -> list[dict]:
@@ -97,15 +97,11 @@ class PostgresTaskReader:
         latest_navigation = self._load_latest_navigation(task_ids)
         latest_estimates = self._load_latest_route_estimates(task_ids)
 
-        return [
-            self._task_row_to_gui_dict(
-                row,
-                route_points=route_points,
-                latest_navigation=latest_navigation,
-                latest_estimates=latest_estimates,
-            )
-            for row in rows
-        ]
+        return [self._task_row_to_gui_dict(row,
+                                           route_points=route_points,
+                                           latest_navigation=latest_navigation,
+                                           latest_estimates=latest_estimates )
+                for row in rows ]
 
     def _load_route_points(self, task_ids: list[int]) -> dict[tuple[int, str], list[dict]]:
         rows = self.connection.execute(
@@ -153,12 +149,12 @@ class PostgresTaskReader:
         return {int(row["task_id"]): row for row in rows}
 
     def _task_row_to_gui_dict(
-        self,
-        row: dict[str, Any],
-        *,
-        route_points: dict[tuple[int, str], list[dict]],
-        latest_navigation: dict[int, dict],
-        latest_estimates: dict[int, dict],
+            self,
+            row: dict[str, Any],
+            *,
+            route_points: dict[tuple[int, str], list[dict]],
+            latest_navigation: dict[int, dict],
+            latest_estimates: dict[int, dict],
     ) -> dict[str, Any]:
         task_id = int(row["id"])
         result: dict[str, Any] = {

@@ -15,14 +15,21 @@ class LogistxRaceService:
     - возврат (ctx, result)
     """
 
-    def __init__(self, logger, executor, browser_session, ui_bridge=None, rdp_activator=None):
+    def __init__(self, logger, executor, browser_session, ui_bridge=None, rdp_activator=None,
+                 debug_mode: bool = False):
         self.log = logger
         self.executor = executor
         self.browser_session = browser_session
         self.ui_bridge = ui_bridge
         self.rdp_activator = rdp_activator or (lambda: True)
+        self.debug_mode = bool(debug_mode)
 
         self.onec_bot = None
+
+    def set_debug_mode(self, enabled: bool) -> None:
+        self.debug_mode = bool(enabled)
+        if self.onec_bot is not None:
+            self.onec_bot.session.artifacts.enabled = self.debug_mode
 
     def _uilog(self, msg: str) -> None:
         if self.ui_bridge:
@@ -46,7 +53,12 @@ class LogistxRaceService:
         reportsbot = self.browser_session.ensure_reportsbot()
 
         if not self.onec_bot:
-            self.onec_bot = OneCBot(rdp_activator=self.rdp_activator, reportsbot=reportsbot, log_func=self.log, )
+            self.onec_bot = OneCBot(
+                rdp_activator=self.rdp_activator,
+                reportsbot=reportsbot,
+                log_func=self.log,
+                debug_mode=self.debug_mode,
+            )
 
     def build_job_data_from_page(self, page, row: int) -> dict:
         """
@@ -77,6 +89,7 @@ class LogistxRaceService:
         unit = str(job_data["unit"] or "").strip()
         load_zone = str(job_data["load_zone"] or "").strip()
         unload_zone = str(job_data["unload_zone"] or "").strip()
+        counterparty = str(obj.get("Контрагент") or obj.get("КА") or "").strip()
 
         if not race_no:
             raise ValueError("Пустой 'Рейс' в строке")
@@ -86,11 +99,11 @@ class LogistxRaceService:
             raise ValueError("Не определена geofence погрузки")
         if not unload_zone:
             raise ValueError("Не определена geofence выгрузки")
-
         return RaceContext(race_name=race_no,
                            race_search_text=race_no,
                            meta={"row": row,
                                  "unit": unit,
+                                 "counterparty": counterparty,
                                  "load_zone": load_zone,
                                  "unload_zone": unload_zone,
 

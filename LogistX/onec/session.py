@@ -9,6 +9,7 @@ import pydirectinput as pdi
 import pyperclip
 
 from LogistX.controllers.vision_locator import VisionLocator
+from .artifacts import OneCArtifacts
 from .uimap import UiMap
 
 
@@ -16,7 +17,8 @@ class OneCSession:
     def __init__(self, rdp_activator, ui_map: UiMap,
                  templates_dir: str | Path, tmp_dir: str | Path,
                  log_func=print,
-                 threshold: float = 0.82, ):
+                 threshold: float = 0.82,
+                 debug_mode: bool = False, ):
 
         self.rdp_activator = rdp_activator
         self.ui_map = ui_map
@@ -26,18 +28,18 @@ class OneCSession:
         self.tmp_dir.mkdir(parents=True, exist_ok=True)
 
         self.vision = VisionLocator(templates_dir=templates_dir, threshold=threshold, log_func=log_func, )
+        self.artifacts = OneCArtifacts(self, enabled=debug_mode, log_func=log_func)
         self.ui_calibrated = False
         pyautogui.FAILSAFE = True
+        screen = pyautogui.size()
+        self.ui_map.set_viewport(screen.width, screen.height)
 
-    # ------------------ base helpers ------------------
+    #  base helpers
     def sleep(self, sec: float = 0.2):
         time.sleep(sec)
 
     def activate(self) -> bool:
-        """
-        Активируем RDP/1C окно.
-        Ожидаем, что rdp_activator уже существует в проекте.
-        """
+        """Активируем RDP/1C окно."""
         try:
             self.rdp_activator()
             self.sleep(0.8)
@@ -161,9 +163,10 @@ class OneCSession:
 
     def find_template_global(self, template_name: str, region=None):
         if region is None:
-            region = (0, 0, 1920, 1080)
+            screen = pyautogui.size()
+            region = (0, 0, int(screen.width), int(screen.height))
         left, top, w, h = region
-        path = self.tmp_dir / f"global_{template_name}.png"
+        path = self.tmp_dir / self.artifacts.filename("template_match", template_name)
         self.vision.screenshot(path, region=region)
         return self.vision.find(path, self.ui_map.get_template(template_name), region_offset=(left, top))
 
@@ -190,7 +193,7 @@ class OneCSession:
         return self.vision.find(shot_path, template_file)
 
     def find_template_in_region(self, template_name: str, region_name: str, filename: str | None = None):
-        filename = filename or f"{template_name}__{region_name}.png"
+        filename = filename or self.artifacts.filename("template_match", f"{template_name}_{region_name}")
         shot_path = self.capture_region(region_name, filename)
         return self.find_template_on_shot(shot_path, template_name)
 
@@ -199,14 +202,3 @@ class OneCSession:
         img = pyautogui.screenshot()
         img.save(path)
         return str(path)
-
-    # def find_template_in_region(self, template_name: str, region_name: str):
-    #     region = self.ui_map.get_region(region_name)
-    #     left, top, w, h = region
-    #     path = self.screenshot_region(region_name, f"{region_name}_{template_name}.png")
-    #     return self.vision.find(path, self.ui_map.get_template(template_name), region_offset=(left, top))
-
-    # def screenshot_region(self, region_name: str, filename: str):
-    #     region = self.ui_map.get_region(region_name)
-    #     path = self.tmp_dir / filename
-    #     return self.vision.screenshot(path, region=region)

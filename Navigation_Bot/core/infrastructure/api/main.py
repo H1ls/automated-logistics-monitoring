@@ -4,7 +4,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
-from Navigation_Bot.api.routes import router
+from Navigation_Bot.core.infrastructure.api.routes import router
 from Navigation_Bot.core.storage.postgres_connection import initialize_postgres_schema
 from Navigation_Bot.core.storage.postgres_pool import create_postgres_pool
 

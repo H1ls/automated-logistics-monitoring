@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from PyQt6.QtGui import QFontMetrics
-from Navigation_Bot.core.sites_db_registry import SitesDbRegistry
+from Navigation_Bot.core.infrastructure.persistence.sites_db_registry import SitesDbRegistry
 
 
 class TableDisplayFormatter:
@@ -145,13 +145,7 @@ class TableDisplayFormatter:
 
         return "\n".join(lines)
 
-    def unload_points_text_with_status(
-            self,
-            row: dict,
-            *,
-            separator_table=None,
-            separator_col: int | None = None,
-    ) -> str:
+    def unload_points_text_with_status(self,row: dict,*,separator_table=None,separator_col: int | None = None) -> str:
 
         points = row.get("unloads")
         if not isinstance(points, list):
@@ -173,13 +167,7 @@ class TableDisplayFormatter:
                                 separator_col=separator_col,
                                 )
 
-    def unload_text_with_status(
-            self,
-            row: dict,
-            *,
-            separator_table=None,
-            separator_col: int | None = None,
-    ) -> str:
+    def unload_text_with_status(self,row: dict,*,separator_table=None,separator_col: int | None = None) -> str:
 
         points, _ = self.split_points_and_comment(row.get("Выгрузка", []), "Выгрузка")
         processed = row.get("processed", []) or []

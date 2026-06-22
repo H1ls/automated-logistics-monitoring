@@ -44,6 +44,7 @@ SECTIONS = {
         "Обработка",
         {
             "timeout_seconds": ("Пауза между строками, сек", int, False),
+            "debug_mode": ("Отладочные скриншоты 1С", bool, False),
         }
     ),
 }

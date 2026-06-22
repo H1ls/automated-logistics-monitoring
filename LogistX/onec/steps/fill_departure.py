@@ -4,16 +4,18 @@ from datetime import datetime, timedelta
 
 from LogistX.onec.steps.base_code import (ensure_progress, ensure_state, fmt_date, fmt_dt_minute, fmt_time,
                                           minute_floor, parse_race_dt, require_dt)
+from LogistX.onec.steps.ui_point_resolver import UiPointResolver
 
 
 class FillDepartureStep:
     stage = "fill_departure"
 
-    def __init__(self, session, errors, log_func=print, max_rounds: int = 5):
+    def __init__(self, session, errors, log_func=print, max_rounds: int = 5, point_resolver=None):
         self.session = session
         self.errors = errors
         self.log = log_func
         self.max_rounds = max_rounds
+        self.points = point_resolver or UiPointResolver(session)
 
     def _saved_progress(self, ctx) -> dict:
         meta = getattr(ctx, "meta", {}) or {}
@@ -56,15 +58,7 @@ class FillDepartureStep:
 
     def _set_field(self, anchor_name: str, value: str, label: str, submit: bool = False, ctx=None):
         self.log(f"📝 {label}: {value}")
-        point = None
-        if ctx:
-            point = ((ctx.state.get("ui_points") or {}).get(anchor_name) or None)
-
-        if point:
-            x, y = int(point["x"]), int(point["y"])
-            self.session.click(x, y)
-        else:
-            self.session.click_anchor(anchor_name)
+        self.points.click(anchor_name, ctx=ctx)
 
         self.session.sleep(0.08)
         self.session.press("f2")
@@ -120,13 +114,14 @@ class FillDepartureStep:
 
         raise RuntimeError("Диалог ошибки не закрылся вовремя")
 
-    def _refocus_time_field(self):
-        self.session.click_anchor("departure_time_field")
+    def _refocus_time_field(self, ctx=None):
+        self.points.click("departure_time_field", ctx=ctx)
         self.session.sleep(0.15)
-        self.session.click_anchor("departure_time_field")
+        self.points.click("departure_time_field", ctx=ctx)
         self.session.sleep(0.15)
 
-    def _probe_departure_finish_dt(self, base_dt: datetime, max_attempts: int = 4) -> tuple[datetime | None, datetime]:
+    def _probe_departure_finish_dt(self, base_dt: datetime, max_attempts: int = 4,
+                                   ctx=None) -> tuple[datetime | None, datetime]:
         last_probe_dt = minute_floor(base_dt)
 
         for attempt in range(1, max_attempts + 1):
@@ -136,14 +131,13 @@ class FillDepartureStep:
 
             self.log(f"🧪 Probe attempt {attempt}: ставлю только дату {probe_date}")
 
-            race_params_tab = self.session.ui_map.get_optional_anchor("race_params_tab")
-            if race_params_tab:
-                self.session.click(*race_params_tab)
-                self.session.sleep(0.25)
+            self.points.click("race_params_tab", ctx=ctx)
+            self.session.sleep(0.25)
 
-            self._set_field("departure_date_field", probe_date, "Дата отправления (probe)", submit=False)
+            self._set_field("departure_date_field", probe_date, "Дата отправления (probe)",
+                            submit=False, ctx=ctx)
 
-            self.session.click_anchor("departure_time_field")
+            self.points.click("departure_time_field", ctx=ctx)
             self.session.sleep(0.35)
 
             err = self.errors.detect()
@@ -171,7 +165,7 @@ class FillDepartureStep:
             return minute_floor(suggested)
 
         base_dt = self._resolve_base_dt(ctx)
-        finish_dt, last_probe_dt = self._probe_departure_finish_dt(base_dt)
+        finish_dt, last_probe_dt = self._probe_departure_finish_dt(base_dt, ctx=ctx)
 
         if finish_dt:
             candidate = minute_floor(finish_dt) + timedelta(minutes=1)
@@ -199,17 +193,15 @@ class FillDepartureStep:
             self.log(f"\n=== FILL DEPARTURE ROUND {round_idx} ===")
             self.log(f"🎯 target={current_dt:%d.%m.%Y %H:%M}")
 
-            race_params_tab = self.session.ui_map.get_optional_anchor("race_params_tab")
-            if race_params_tab:
-                self.session.click(*race_params_tab)
-                self.session.sleep(0.35)
+            self.points.click("race_params_tab", ctx=ctx)
+            self.session.sleep(0.35)
 
             self._set_field("departure_date_field",
                             fmt_date(current_dt),
                             "Дата отправления",
                             submit=False, ctx=ctx, )
 
-            self._refocus_time_field()
+            self._refocus_time_field(ctx=ctx)
 
             err = self.errors.detect()
             if err and err.kind == "date_conflict" and err.finish_dt:
@@ -226,7 +218,7 @@ class FillDepartureStep:
                 self._close_error_and_wait()
                 raise RuntimeError(f"Ошибка после ввода даты: {err.kind}")
 
-            self._refocus_time_field()
+            self._refocus_time_field(ctx=ctx)
             self._set_field("departure_time_field",
                             fmt_time(current_dt),
                             "Время отправления",

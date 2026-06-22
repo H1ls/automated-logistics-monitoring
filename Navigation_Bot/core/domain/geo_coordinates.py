@@ -3,14 +3,12 @@ from __future__ import annotations
 import re
 from typing import Any
 
-
-COORDINATE_RE = re.compile(
-    r"(?<!\d)"
-    r"(?P<lat>[+-]?(?:[1-8]?\d(?:[.,]\d+)?|90(?:[.,]0+)?))"
-    r"\s*[,;]\s*"
-    r"(?P<lon>[+-]?(?:(?:1[0-7]\d|[1-9]?\d)(?:[.,]\d+)?|180(?:[.,]0+)?))"
-    r"(?!\d)"
-)
+COORDINATE_RE = re.compile(r"(?<!\d)"
+                           r"(?P<lat>[+-]?(?:[1-8]?\d(?:[.,]\d+)?|90(?:[.,]0+)?))"
+                           r"\s*[,;]\s*"
+                           r"(?P<lon>[+-]?(?:(?:1[0-7]\d|[1-9]?\d)(?:[.,]\d+)?|180(?:[.,]0+)?))"
+                           r"(?!\d)"
+                           )
 
 
 def parse_coordinate_pair(value: Any) -> tuple[float | None, float | None]:

@@ -6,7 +6,7 @@ import tempfile
 import hashlib
 
 
-class JSONManager:
+class JsonStore:
     def __init__(self, file_path: str = None, log_func=None):
         self.file_path = file_path
         self.log = log_func or print
@@ -76,10 +76,6 @@ class JSONManager:
                     pass
             tmp_path.unlink()
             raise RuntimeError(f"Cannot save {filepath}") from e
-
-    # def save(self):
-    #     """Простое сохранение"""
-    #     self.save_in_json(self.data, self.file_path)
 
     def load_json(self, file_path: str = None) -> Any:
         path = file_path or self.file_path

@@ -21,8 +21,7 @@ class SignalsBinder:
         gui.btn_wialon.clicked.connect(gui.actions.open_wialon)                         # "Wialon 🌐"
         gui.btn_create_race.clicked.connect(gui.actions.open_create_race_dialog)        # "Настройки ⚙️"
         gui.btn_navigation_history.clicked.connect(gui.actions.open_navigation_history_dialog) #"История"
-
-
+        gui.btn_admin_users.clicked.connect(gui.actions.open_admin_users_dialog)
 
         # лог
         gui.btn_clear_log.clicked.connect(gui.logger.clear)
@@ -31,7 +30,6 @@ class SignalsBinder:
         gui.settings_ui.settings_changed.connect(gui.settings_controller.on_settings_changed)
 
         # горячие клавиши
-
         QShortcut(QKeySequence("F11"), gui).activated.connect(gui.hotkeys.start)
         QShortcut(QKeySequence("F12"), gui).activated.connect(gui.hotkeys.stop)
         QShortcut(QKeySequence("Ctrl+F"), gui).activated.connect(gui._toggle_search_bar)
