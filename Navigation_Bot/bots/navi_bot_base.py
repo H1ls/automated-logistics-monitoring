@@ -5,7 +5,7 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.common.action_chains import ActionChains
 from selenium.common.exceptions import NoSuchElementException
 
-from Navigation_Bot.core.json_manager import JSONManager
+from Navigation_Bot.core.json_store import JsonStore
 from Navigation_Bot.core.paths import CONFIG_JSON
 from pathlib import Path
 
@@ -28,7 +28,7 @@ class NaviBase:
     def load_selectors(self) -> dict:
         try:
             if self.SELECTOR_SECTION:
-                data = JSONManager.get_selectors(self.SELECTOR_SECTION, CONFIG_JSON)
+                data = JsonStore.get_selectors(self.SELECTOR_SECTION, CONFIG_JSON)
                 return data if isinstance(data, dict) else {}
 
             if self.SELECTOR_PATH:
@@ -53,8 +53,7 @@ class NaviBase:
     # --- B. Selenium helpers
     def _wait_visible_xpath(self, xpath: str, timeout: int = None):
         t = timeout or self.DEFAULT_TIMEOUT
-        return WebDriverWait(self.driver, t).until(
-            EC.visibility_of_element_located((By.XPATH, xpath)))
+        return WebDriverWait(self.driver, t).until(EC.visibility_of_element_located((By.XPATH, xpath)))
 
     def _wait_present_css(self, css: str, timeout: int = None):
         t = timeout or self.DEFAULT_TIMEOUT

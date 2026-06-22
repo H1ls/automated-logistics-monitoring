@@ -74,8 +74,18 @@ class NavigationSnapshotBatchRequest(BaseModel):
 class UserCreateRequest(BaseModel):
     username: str
     display_name: str = ""
+    password: str = ""
     role: str = "viewer"
     is_active: bool = True
+
+
+class UserUpdateRequest(UserCreateRequest):
+    pass
+
+
+class LoginRequest(BaseModel):
+    username: str
+    password: str
 
 
 class ApiKeyCreateRequest(BaseModel):

@@ -6,7 +6,7 @@ from PyQt6.QtWidgets import (QDialog, QTabWidget, QWidget, QVBoxLayout, QFormLay
                              QLineEdit, QSpinBox, QCheckBox, QPushButton, QHBoxLayout, QMessageBox,
                              QStyle, QStyleOptionViewItem, QApplication, QRadioButton, QGroupBox, QLabel)
 
-from Navigation_Bot.core.json_manager import JSONManager as JM
+from Navigation_Bot.core.json_store import JsonStore as JM
 from Navigation_Bot.core.paths import CONFIG_JSON
 from Navigation_Bot.core.secrets_manager import SecretsManager
 from Navigation_Bot.core.settings.settings_schema import SECTIONS

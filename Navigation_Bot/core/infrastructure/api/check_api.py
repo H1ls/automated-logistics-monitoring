@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from Navigation_Bot.api.main import app
+from Navigation_Bot.core.infrastructure.api.main import app
 
 
 def main() -> int:

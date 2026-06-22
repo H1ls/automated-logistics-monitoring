@@ -5,16 +5,24 @@ import re
 import time
 from datetime import timedelta
 
+from LogistX.onec.artifacts import OneCArtifacts
+from LogistX.onec.race_card_verifier import RaceCardVerifier
+
 
 class OpenRaceStep:
     stage = "open_race"
     RACE_CODE_RE = re.compile(r"\b[А-ЯA-Z]{2}\d{9}\b", re.IGNORECASE)
 
-    def __init__(self, session, errors, log_func=print, open_timeout: float = 10.0):
+    def __init__(self, session, errors, log_func=print, open_timeout: float = 10.0,
+                 artifacts=None, race_card_verifier=None):
         self.session = session
         self.errors = errors
         self.log = log_func
         self.open_timeout = open_timeout
+        self.artifacts = artifacts or getattr(session, "artifacts", None) or OneCArtifacts(
+            session, log_func=log_func
+        )
+        self.race_card_verifier = race_card_verifier or RaceCardVerifier()
 
     def _extract_expected_race_code(self, ctx) -> str | None:
         text = (ctx.race_name or "").strip()
@@ -48,21 +56,48 @@ class OpenRaceStep:
 
         return False
 
+    def _is_expected_race_opened_by_ocr(self, ctx) -> bool:
+        if not self.session.ui_map.get_optional_template("race_form_header"):
+            return False
+        if not self.session.find_template_global("race_form_header"):
+            return False
+
+        get_optional_region = getattr(self.session.ui_map, "get_optional_region", None)
+        capture_region = get_optional_region("race_card_capture_region") if get_optional_region else None
+        if not capture_region:
+            scale_point = getattr(self.session.ui_map, "scale_point", None)
+            width, height = scale_point(600, 560) if scale_point else (600, 560)
+            capture_region = (0, 0, width, height)
+        shot_path = self.artifacts.capture_rect(self.stage, "race_card_ocr", capture_region)
+        try:
+            result = self.race_card_verifier.verify(ctx, shot_path)
+        except Exception as exc:
+            self.log(f"⚠️ OCR-проверка карточки рейса не выполнена: {exc}")
+            return False
+
+        ctx.state["race_card_verification"] = {
+            "ok": result.ok,
+            "race_ok": result.race_ok,
+            "unit_ok": result.unit_ok,
+            "expected_race": result.expected_race,
+            "expected_plate": result.expected_plate,
+            "source": "ocr_fallback",
+        }
+        if result.ok:
+            self.log("✅ Карточка нужного рейса подтверждена OCR: рейс, ТС")
+            return True
+
+        self.log(
+            f"⚠️ OCR не подтвердил карточку ({', '.join(result.failed_fields)}): "
+            f"{result.recognized_text!r}"
+        )
+        return False
+
     def _is_race_opened(self, ctx) -> bool:
-        # 1. быстрый и главный способ — по Ctrl+C
         if self._is_expected_race_opened_by_clipboard(ctx):
             self.log("✅ Карточка нужного рейса подтверждена через Ctrl+C")
             return True
-
-        # 2. fallback по шаблону, если он есть
-        template = self.session.ui_map.get_optional_template("race_form_header")
-        if template:
-            m = self.session.find_template_global("race_form_header")
-            if m:
-                self.log("ℹ️ Найден race_form_header, но номер рейса через Ctrl+C не подтвердился")
-                return True
-
-        return False
+        return self._is_expected_race_opened_by_ocr(ctx)
 
     def _open_by_keyboard(self):
         self.log("⌨️ Открываю рейс: Enter -> Down -> Enter")
@@ -112,11 +147,12 @@ class OpenRaceStep:
         saw_date_conflict = False
 
         while time.time() - start < self.open_timeout:
-            # Сначала пробуем понять, что рейс уже открыт
-            if self._is_race_opened(ctx):
+            # Ctrl+C is the fast primary check. Before the slower OCR fallback,
+            # handle modal errors which may cover an otherwise opened form.
+            if self._is_expected_race_opened_by_clipboard(ctx):
+                self.log("✅ Карточка нужного рейса подтверждена через Ctrl+C")
                 return True
 
-            # Потом проверяем ошибки
             err = self.errors.detect()
             if err:
                 action = self._process_detected_error(ctx, err)
@@ -129,6 +165,9 @@ class OpenRaceStep:
 
                 if action == "opened_after_dialog":
                     return True
+
+            elif self._is_expected_race_opened_by_ocr(ctx):
+                return True
 
             self.log("⏳ Жду открытия рейса...")
             self.session.sleep(0.6)

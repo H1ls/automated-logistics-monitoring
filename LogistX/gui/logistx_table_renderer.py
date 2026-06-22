@@ -6,7 +6,7 @@ from PyQt6.QtCore import QTimer
 from PyQt6.QtGui import QColor
 from PyQt6.QtWidgets import QAbstractItemView, QPushButton, QTableWidget, QTableWidgetItem
 
-from Navigation_Bot.core.sites_db_registry import SitesDbRegistry
+from Navigation_Bot.core.infrastructure.persistence.sites_db_registry import SitesDbRegistry
 
 
 class LogistXTableRenderer:

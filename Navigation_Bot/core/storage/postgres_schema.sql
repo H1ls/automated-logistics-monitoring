@@ -7,6 +7,7 @@ CREATE TABLE IF NOT EXISTS app_users (
     id bigserial PRIMARY KEY,
     username text NOT NULL,
     display_name text NOT NULL DEFAULT '',
+    password_hash text NOT NULL DEFAULT '',
     role text NOT NULL CHECK (role IN ('admin', 'dispatcher', 'viewer')),
     is_active boolean NOT NULL DEFAULT true,
     created_at timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -191,6 +192,9 @@ ALTER TABLE status_events
 
 ALTER TABLE task_notes
     ADD COLUMN IF NOT EXISTS author_user_id bigint REFERENCES app_users(id) ON UPDATE CASCADE ON DELETE SET NULL;
+
+ALTER TABLE app_users
+    ADD COLUMN IF NOT EXISTS password_hash text NOT NULL DEFAULT '';
 
 CREATE INDEX IF NOT EXISTS idx_vehicles_carrier_id
     ON vehicles(carrier_id);

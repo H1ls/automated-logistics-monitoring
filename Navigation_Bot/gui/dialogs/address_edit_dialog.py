@@ -1,451 +1,179 @@
-import json
-import re
-from datetime import datetime, timedelta
+from __future__ import annotations
 
-from PyQt6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLabel, QSpinBox,
-                             QLineEdit, QPushButton, QScrollArea, QWidget, QTextEdit)
+from PyQt6.QtWidgets import (QDialog,
+                             QLabel,
+                             QPushButton,
+                             QScrollArea,
+                             QTextEdit,
+                             QVBoxLayout,
+                             QWidget)
 
 from LogistX.config.paths import SITES_DB_FILE
-from Navigation_Bot.core.dataset_archive import DatasetArchive
-from Navigation_Bot.gui.widgets.status_editor_widget import StatusEditorWidget
+from Navigation_Bot.core.infrastructure.persistence.dataset_archive import DatasetArchive
+from Navigation_Bot.core.infrastructure.persistence.sites_db_registry import SitesDbRegistry
+from Navigation_Bot.gui.dialogs.address_edit_models import AddressBlocksCodec, AddressPointDraft
 from Navigation_Bot.gui.dialogs.dialog_helpers import button_row_split
 from Navigation_Bot.gui.dialogs.sites_db_editor_dialog import SitesDbEditorDialog
+from Navigation_Bot.gui.widgets.address_point_editor import AddressPointEditor
+from Navigation_Bot.gui.widgets.status_editor_widget import StatusEditorWidget
 
 
 class AddressEditDialog(QDialog):
-    """Диалог редактирования блоков Погрузка/Выгрузка."""
+    """Редактирует адресные точки и возвращает legacy-блоки для task workflow."""
 
-    def __init__(self, row_data, full_data, prefix, parent=None, disable_save=False, task_repository=None, log_func=None):
+    def __init__(self,row_data,prefix,parent=None,log_func=None):
         super().__init__(parent)
         self.setWindowTitle(f"Редактирование: {prefix}")
         self.resize(1000, 500)
 
         self.prefix = prefix
         self.row_data = row_data
-        self.full_data = full_data
-        self.disable_save = disable_save
-        self.task_repository = task_repository
         self.log = log_func or print
-        self.sites_db = self._load_sites_db()
-        self.entries = []  # список кортежей (container, address_edit, arr_date_edit, arr_time_edit)
+        self.raw_key = "raw_load" if prefix == "Погрузка" else "raw_unload"
 
-        #  ключ для raw_*
-        if self.prefix == "Погрузка":
-            self.raw_key = "raw_load"
-        else:
-            self.raw_key = "raw_unload"
+        self.codec = AddressBlocksCodec(prefix)
+        self.sites_registry = SitesDbRegistry(log_func=self.log, path=SITES_DB_FILE)
+        points, comment = self.codec.parse(self.row_data.get(prefix, []) or [])
+        self._processed_seed = self._read_processed_flags()
+        self.entries: list[AddressPointEditor] = []
 
-        # --- Верхний уровень UI ---
-        self.layout = QVBoxLayout(self)
+        self._build_ui(points, comment)
 
-        # scroll для точек
+    def _build_ui(self, points: list[AddressPointDraft], comment: str) -> None:
+        self.main_layout = QVBoxLayout(self)
+
+        self.status_editor = self._build_status_editor(points)
+        if self.status_editor is not None:
+            self.main_layout.addWidget(self.status_editor)
+
+        self.raw_edit = QTextEdit(str(self.row_data.get(self.raw_key) or "").strip())
+        self.raw_edit.setPlaceholderText(self.raw_key)
+        self.raw_edit.setFixedHeight(50)
+        self.main_layout.addWidget(self.raw_edit)
+
+        self.main_layout.addWidget(QLabel("Комментарий:"))
+        self.comment_edit = QTextEdit(comment)
+        self.comment_edit.setPlaceholderText(f"{self.prefix} другое / комментарий")
+        self.comment_edit.setFixedHeight(60)
+        self.main_layout.addWidget(self.comment_edit)
+
         self.scroll_area = QScrollArea()
         self.scroll_area.setWidgetResizable(True)
         self.scroll_widget = QWidget()
         self.scroll_layout = QVBoxLayout(self.scroll_widget)
+        self.scroll_layout.addStretch(1)
         self.scroll_area.setWidget(self.scroll_widget)
+        self.main_layout.addWidget(self.scroll_area)
 
-        all_blocks = self.row_data.get(self.prefix, []) or []
-        points, self._comment_text = self._extract_points_and_comment(all_blocks)
+        for point in points:
+            self.add_entry(point.address, point.date, point.time, sync_status=False)
 
-        # loads для чекбоксов - только по реальным точкам
-        loads = [blk.get(f"{self.prefix} {i + 1}", "") for i, blk in enumerate(points)]
-
-        # processed выравниваем до длины points
-        proc = self.row_data.get("processed", []) or []
-        proc = (proc + [False] * len(points))[:len(points)]
-
-        self.status_editor = StatusEditorWidget(processed=proc,
-                                                loads=loads,
-                                                distance=row_data.get("distance", float("inf")))
-
-        # --- raw_* строка ---
-        raw_value = (self.row_data.get(self.raw_key) or "").strip()
-        self.raw_edit = QTextEdit(raw_value)
-        self.raw_edit.setPlaceholderText(self.raw_key)
-        self.raw_edit.setFixedHeight(50)
-
-        # --- Комментарий ---
-        self.comment_label = QLabel("Комментарий:")
-        self.comment_edit = QTextEdit()
-        self.comment_edit.setPlaceholderText(f"{self.prefix} другое / комментарий")
-        self.comment_edit.setFixedHeight(60)
-        if self._comment_text:
-            self.comment_edit.setPlainText(self._comment_text)
-
-        # --- Предзаполнение реальных точек (без комментария) ---
-        for i, item in enumerate(points, 1):
-            address = item.get(f"{self.prefix} {i}", "")
-            date = item.get(f"Дата {i}", "")
-            time = item.get(f"Время {i}", "")
-            self.add_entry(address, date, time)
-
-        # --- Кнопки ---
         self.btn_add = QPushButton("➕ Добавить точку")
-        self.btn_add.clicked.connect(lambda: self.add_entry())
-
+        self.btn_add.clicked.connect(self.add_entry)
         self.btn_archive = QPushButton("📦 В архив")
         self.btn_archive.clicked.connect(self._archive_sample)
-
         self.btn_save = QPushButton("✅ Сохранить")
-        self.btn_save.clicked.connect(self._accept)
+        self.btn_save.clicked.connect(self.accept)
+        self.main_layout.addLayout(button_row_split((self.btn_add,), (self.btn_archive, self.btn_save)))
 
-        # --- Сборка layout в нужном порядке ---
-        self.layout.addWidget(self.status_editor)  # чекбоксы
-        self.layout.addWidget(self.raw_edit)  # RAW строка
-
-        self.layout.addWidget(self.comment_label)  # Комментарий
-        self.layout.addWidget(self.comment_edit)
-
-        self.layout.addWidget(self.scroll_area)  # список точек
-
-        self.layout.addLayout(button_row_split((self.btn_add,), (self.btn_archive, self.btn_save), ))
-
-    def _extract_points_and_comment(self, all_blocks: list) -> tuple[list, str]:
-        """Отделяет блоки точек «{prefix} N» от блока комментария."""
-        points = []
-        comment = ""
-        for d in all_blocks:
-            if isinstance(d, dict) and any(k.startswith(f"{self.prefix} ") for k in d.keys()):
-                points.append(d)
-            elif isinstance(d, dict) and ("Комментарий" in d or f"{self.prefix} другое" in d):
-                comment = d.get("Комментарий", d.get(f"{self.prefix} другое", "")) or ""
-        return points, comment
-
-    def open_sites_editor(self, prefill_address: str = "") -> None:
-        dlg = SitesDbEditorDialog(parent=self, prefill_address=prefill_address, log_func=self.log)
-        dlg.exec()
-        self.sites_db = self._load_sites_db()
-
-    # Helpers
-    def _load_sites_db(self) -> list[dict]:
-        path = SITES_DB_FILE
-        try:
-            if not path.exists():
-                return []
-            data = json.loads(path.read_text(encoding="utf-8") or "[]")
-            return data if isinstance(data, list) else []
-        except Exception as e:
-            self.log(f"❌ Ошибка чтения sites_db.json: {e}")
-            return []
-
-    def _norm(self, s: str) -> str:
-        s = (s or "").lower().replace("ё", "е")
-        s = re.sub(r"[^\w\s]", " ", s)  # убрать пунктуацию
-        s = re.sub(r"\s+", " ", s).strip()
-        return s
-
-    def _resolve_site_by_aliases(self, address: str) -> dict | None:
-        """
-        Возвращает лучший match:
-        {"site_id": "...", "geofence": "...", "score": int}
-        либо None
-        """
-        addr_n = self._norm(address)
-        if not addr_n or not self.sites_db:
+    def _build_status_editor(self, points: list[AddressPointDraft]) -> StatusEditorWidget | None:
+        if self.prefix != "Выгрузка" or len(points) <= 1:
             return None
 
-        best = None
-        best_score = 0
+        flags = list(self._processed_seed)
+        flags = (flags + [False] * len(points))[:len(points)]
+        return StatusEditorWidget(processed=flags,
+                                  loads=[point.address for point in points],
+                                  distance=self.row_data.get("distance", float("inf")))
 
-        for obj in self.sites_db:
-            aliases = obj.get("aliases") or []
-            if not isinstance(aliases, list):
-                continue
+    def _read_processed_flags(self) -> list[bool]:
+        processed = self.row_data.get("processed_unloads")
+        if not isinstance(processed, list):
+            processed = self.row_data.get("processed", [])
+        return [bool(value) for value in processed] if isinstance(processed, list) else []
 
-            score = 0
-            for a in aliases:
-                a_n = self._norm(str(a))
-                if a_n and a_n in addr_n:
-                    score += 1
+    def add_entry(self, address="", date="", time="", sync_status=True) -> AddressPointEditor:
+        point = AddressPointDraft(address=str(address or ""),
+                                  date=str(date or ""),
+                                  time=str(time or ""))
+        editor = AddressPointEditor(prefix=self.prefix,
+                                    point=point,
+                                    sites_registry=self.sites_registry,
+                                    on_delete=self.remove_entry,
+                                    on_edit_sites=self.open_sites_editor,
+                                    on_address_changed=self._on_address_changed,
+                                    log=self.log,
+                                    parent=self.scroll_widget)
+        self.entries.append(editor)
+        self.scroll_layout.insertWidget(max(self.scroll_layout.count() - 1, 0), editor)
+        if sync_status:
+            if self.status_editor is not None:
+                self.status_editor.add_item(point.address)
+            elif self.prefix == "Выгрузка" and len(self.entries) > 1:
+                self.status_editor = self._build_status_editor(
+                    [entry.to_draft() for entry in self.entries])
+                if self.status_editor is not None:
+                    self.main_layout.insertWidget(0, self.status_editor)
+        return editor
 
-            if score > best_score:
-                best_score = score
-                best = obj
-
-        if best and best_score > 0:
-            return {"site_id": str(best.get("site_id", "") or ""),
-                    "geofence": str(best.get("geofence", "") or ""),
-                    "score": best_score}
-
-        return None
-
-    @staticmethod
-    def _normalize_date(line_edit: QLineEdit) -> None:
-        """Если введён только день - подставляем текущий месяц и год."""
-        text = line_edit.text().strip()
-        if not text:
+    def remove_entry(self, editor: AddressPointEditor) -> None:
+        if editor not in self.entries:
             return
-        parts = text.split(".")
-        now = datetime.now()
-        # варианты: "5", "05", "05.__.__"
-        try:
-            if len(parts) == 1 or (len(parts) == 3 and not parts[1] and not parts[2]):
-                day = int(parts[0])
-                line_edit.setText(f"{day:02d}.{now.month:02d}.{now.year}")
-        except Exception:
-            pass
+        index = self.entries.index(editor)
+        self.entries.remove(editor)
+        if self.status_editor is not None:
+            self.status_editor.remove_item(index)
+            if len(self.entries) <= 1:
+                self._processed_seed = self.status_editor.get_processed()
+                self.main_layout.removeWidget(self.status_editor)
+                self.status_editor.deleteLater()
+                self.status_editor = None
+        self.scroll_layout.removeWidget(editor)
+        editor.deleteLater()
 
-    @staticmethod
-    def _normalize_time(line_edit: QLineEdit) -> None:
-        """Доводим время до формата HH:MM, добивая нулями."""
-        text = line_edit.text().strip().replace("_", "")
-        if not text:
+    def _on_address_changed(self, editor: AddressPointEditor, address: str) -> None:
+        if self.status_editor is None or editor not in self.entries:
             return
+        self.status_editor.set_item_text(self.entries.index(editor), address)
+
+    def open_sites_editor(self, prefill_address: str = "") -> None:
+        dialog = SitesDbEditorDialog(parent=self,
+                                     prefill_address=prefill_address,
+                                     log_func=self.log)
+        dialog.exec()
+        self.sites_registry.reload()
+        for editor in self.entries:
+            editor.refresh_site_match()
+
+    def get_processed(self) -> list[bool] | None:
+        if self.status_editor is None:
+            return None
+        return self.status_editor.get_processed()
+
+    def get_raw_value(self) -> str:
+        return self.raw_edit.toPlainText().strip()
+
+    def get_result(self) -> tuple[list[dict[str, str]], dict[str, str]]:
+        points = [editor.to_draft() for editor in self.entries]
+        blocks = self.codec.serialize(points, self.comment_edit.toPlainText())
+        metadata: dict[str, str] = {}
+        for editor in self.entries:
+            metadata.update(editor.metadata())
+        return blocks, metadata
+
+    def _archive_sample(self) -> None:
         try:
-            parts = text.split(":")
-            if len(parts) == 1:
-                h = int(parts[0] or 0)
-                m = 0
-            else:
-                h = int(parts[0] or 0)
-                m = int(parts[1] or 0)
-            line_edit.setText(f"{h:02d}:{m:02d}")
-        except Exception:
-            pass
-
-    def _connect_normalizers(self, dep_date: QLineEdit, dep_time: QLineEdit,
-                             arr_date: QLineEdit, arr_time: QLineEdit) -> None:
-
-        dep_date.editingFinished.connect(lambda: self._normalize_date(dep_date))
-        arr_date.editingFinished.connect(lambda: self._normalize_date(arr_date))
-        dep_time.editingFinished.connect(lambda: self._normalize_time(dep_time))
-        arr_time.editingFinished.connect(lambda: self._normalize_time(arr_time))
-
-    def _connect_calculator(self, dep_date: QLineEdit, dep_time: QLineEdit,
-                            arr_date: QLineEdit, arr_time: QLineEdit,
-                            transit: QSpinBox, container: QWidget, btn_calc: QPushButton) -> None:
-        """Подключает логику кнопки-калькулятора."""
-
-        def calculate_arrival():
-            try:
-                dep_dt = datetime.strptime(dep_date.text().strip(), "%d.%m.%Y")
-                dep_tm = datetime.strptime(dep_time.text().strip(), "%H:%M").time()
-                full_dt = datetime.combine(dep_dt.date(), dep_tm)
-                if transit.value() <= 0:
-                    return
-                arrival_dt = full_dt + timedelta(hours=transit.value())
-
-                arr_date.setText(arrival_dt.strftime("%d.%m.%Y"))
-                arr_time.setText(arrival_dt.strftime("%H:%M"))
-
-                container._meta = {"Время отправки": full_dt.strftime("%d.%m.%Y %H:%M"),
-                                   "Транзит": f"{transit.value()} ч", }
-
-            except Exception as e:
-                self.log(f"[DEBUG] ❌ Ошибка расчёта: {e}")
-
-        btn_calc.clicked.connect(calculate_arrival)
-
-    #       UI для точек
-    def add_entry(self, address="", date="", time=""):
-        container = QWidget()
-        wrapper = QVBoxLayout(container)
-
-        wrapper.setSpacing(8)  # расстояние между строкой 4 и 5
-        wrapper.setContentsMargins(0, 0, 0, 0)
-
-        #  Строка 4. Погрузка + Дата выезда + Время + Транзит + Кнопка
-        top_row = QHBoxLayout()
-        top_row.setSpacing(6)
-
-        prefix_label = QLabel(self.prefix)
-        tags_label = QLabel("")
-        tags_label.setStyleSheet("color: #666;")  # можно убрать/изменить
-
-        # Лейбл "Погрузка" / "Выгрузка" слева
-        dep_date = QLineEdit()
-        dep_date.setInputMask("00.00.0000")
-        dep_date.setPlaceholderText("дд.мм.гггг")
-        dep_date.setFixedWidth(80)
-
-        dep_time = QLineEdit()
-        dep_time.setInputMask("00:00")
-        dep_time.setPlaceholderText("чч:мм")
-        dep_time.setFixedWidth(60)
-
-        transit = QSpinBox()
-        transit.setRange(0, 999)
-        transit.setSuffix(" ч")
-
-        btn_calc = QPushButton("🧮")
-        btn_calc.setFixedWidth(30)
-
-        btn_geo = QPushButton("🏷")
-        btn_geo.setFixedWidth(30)
-        btn_geo.setToolTip("Редактор геозон/складов")
-        btn_geo.clicked.connect(lambda: self.open_sites_editor(
-            prefill_address=address_input.toPlainText().strip() if 'address_input' in locals() else address.strip()))
-
-        # ред.гео
-        top_row.addWidget(btn_geo)
-
-        # слева текст "Погрузка"
-        top_row.addWidget(prefix_label)
-        top_row.addWidget(tags_label)  # <-- теги сразу рядом
-
-        top_row.addStretch()  # растяжка, чтобы увести дату/время вправо
-        top_row.addWidget(QLabel("Дата выезда:"))
-        top_row.addWidget(dep_date)
-        top_row.addWidget(dep_time)
-        top_row.addWidget(QLabel("Транзит:"))
-        top_row.addWidget(transit)
-        top_row.addWidget(btn_calc)
-
-        # Строка 5. Адрес + Дата прибытия + Время + Удалить
-        bottom_row = QHBoxLayout()
-        bottom_row.setSpacing(6)
-
-        address_input = QTextEdit(address)
-
-        def _update_tags_from_address():
-            addr = address_input.toPlainText().strip()
-            hit = self._resolve_site_by_aliases(addr)
-
-            if hit and hit["geofence"]:
-                container._site_id = hit["site_id"]
-                container._geo_tags = [hit["geofence"]]
-                tags_label.setText(f"  🏷 {hit['geofence']}")
-                tags_label.show()
-            else:
-                container._site_id = ""
-                container._geo_tags = []
-                tags_label.setText("")
-                tags_label.hide()
-
-        tags_label.hide()
-        # первичное заполнение (если address уже пришёл)
-        _update_tags_from_address()
-
-        # обновление на каждое изменение текста
-        address_input.textChanged.connect(_update_tags_from_address)
-        address_input.setPlaceholderText("Адрес")
-        address_input.setFixedHeight(24)
-
-        # даём адресу «вес» 1, чтобы он растягивался, а даты/кнопка были справа
-        bottom_row.addWidget(address_input, 1)
-
-        arr_date = QLineEdit()
-        arr_date.setInputMask("00.00.0000")
-        arr_date.setPlaceholderText("дд.мм.гггг")
-        arr_date.setFixedWidth(80)
-        if date:
-            arr_date.setText(date)
-
-        arr_time = QLineEdit()
-        arr_time.setInputMask("00:00")
-        arr_time.setPlaceholderText("чч:мм")
-        arr_time.setFixedWidth(60)
-        arr_time.setText(time[:5] if time else "")
-
-        btn_delete = QPushButton("🗑️")
-        btn_delete.setFixedWidth(30)
-        btn_delete.clicked.connect(lambda: self.remove_entry(container))
-
-        bottom_row.addWidget(arr_date)
-        bottom_row.addWidget(arr_time)
-        bottom_row.addWidget(btn_delete)
-
-        # нормализация дат/времени
-        self._connect_normalizers(dep_date, dep_time, arr_date, arr_time)
-        self._connect_calculator(dep_date, dep_time, arr_date, arr_time, transit, container, btn_calc)
-
-        # сборка блока точки
-        wrapper.addLayout(top_row)
-
-        wrapper.addLayout(bottom_row)
-        wrapper.addStretch(1)
-
-        self.scroll_layout.addWidget(container)
-        self.entries.append((container, address_input, arr_date, arr_time))
-
-    def remove_entry(self, widget: QWidget) -> None:
-        for i, (container, *_) in enumerate(self.entries):
-            if container == widget:
-                self.scroll_layout.removeWidget(container)
-                container.deleteLater()
-                del self.entries[i]
-                break
-
-    #  Сохранение / архив
-    def _accept(self):
-        try:
-            if hasattr(self, "status_editor"):
-                processed = self.status_editor.get_processed()
-                self.row_data["processed"] = processed
-
-            if hasattr(self, "raw_edit") and hasattr(self, "raw_key"):
-                self.row_data[self.raw_key] = self.raw_edit.toPlainText().strip()
-
-            super().accept()
-
-        except Exception as e:
-            self.log(f"[DEBUG] ❌ Ошибка в accept(): {e}")
-
-    def get_result(self):
-        """
-        Возвращает:result: список блоков [{prefix 1, Дата 1, Время 1}, ... ({'Комментарий': ...})]
-        """
-        result = []
-        meta_result = {}
-
-        for idx, (container, address_input, date_input, time_input) in enumerate(self.entries, 1):
-            address = address_input.toPlainText().strip()
-            date = date_input.text().strip()
-            time = time_input.text().strip()
-            if not address:
-                continue
-            row = {f"{self.prefix} {idx}": address,
-                   f"Дата {idx}": date or "Не указано",
-                   f"Время {idx}": time or "Не указано"}
-            result.append(row)
-
-            if hasattr(container, "_meta"):
-                meta = container._meta
-                if meta.get("Время отправки"):
-                    meta_result["Время отправки"] = meta["Время отправки"]
-                if meta.get("Транзит"):
-                    meta_result["Транзит"] = meta["Транзит"]
-
-        # добавляем комментарий отдельным блоком
-        comment_val = (self.comment_edit.toPlainText() if hasattr(self, "comment_edit") else "").strip()
-        if comment_val:
-            result.append({"Комментарий": comment_val})
-
-        return result, meta_result
-
-    def _archive_sample(self):
-        """
-        Архивируем :{"input": "<raw>",
-                     "output": [{"Адрес":".", "Дата":".", "Время":"."}, ...]}"""
-        try:
-            raw_input = (self.raw_edit.toPlainText().strip()
-                         if hasattr(self, "raw_edit")
-                         else (self.row_data.get(self.raw_key, "") or "").strip())
-
-            output = []
-            for idx, (container, address_input, date_input, time_input) in enumerate(self.entries, 1):
-                addr = address_input.toPlainText().strip()
-                date = (date_input.text() if hasattr(date_input, "text") else "").strip()
-                time = (time_input.text() if hasattr(time_input, "text") else "").strip()
-                if not addr:
-                    continue
-                output.append({"Адрес": addr,"Дата": date,"Время": time,})
-
-            comment_val = (self.comment_edit.toPlainText() if hasattr(self, "comment_edit") else "").strip()
-            if comment_val:
+            output = [item for editor in self.entries
+                      if (item := editor.archive_dict()) is not None]
+            comment = self.comment_edit.toPlainText().strip()
+            if comment:
                 if output:
-                    # комментарий в последнюю реальную точку,если там уже есть, аккуратно объединим
-                    if "Комментарий" in output[-1] and output[-1]["Комментарий"]:
-                        output[-1]["Комментарий"] = f"{output[-1]['Комментарий']}\n{comment_val}"
-                    else:
-                        output[-1]["Комментарий"] = comment_val
+                    output[-1]["Комментарий"] = comment
                 else:
-                    # точек нет — коммент отдельной записью
-                    output.append({"Адрес": "", "Дата": "", "Время": "", "Комментарий": comment_val})
+                    output.append({"Адрес": "", "Дата": "", "Время": "", "Комментарий": comment})
 
-            sample = {"input": raw_input,"output": output}
+            raw_input = self.get_raw_value()
+            DatasetArchive(log_func=self.log).append({"input": raw_input, "output": output})
             self.log(f"📦 В архив добавлено: {raw_input[:60]}...")
-            DatasetArchive(log_func=self.log).append(sample)
-        except Exception as e:
-            self.log(f"❌ Ошибка в _archive_sample: {e}")
+        except Exception as exc:
+            self.log(f"❌ Ошибка в _archive_sample: {exc}")

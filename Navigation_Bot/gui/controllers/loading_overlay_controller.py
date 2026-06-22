@@ -64,6 +64,12 @@ class LoadingOverlayController:
         self._timer.timeout.connect(self._tick)
         self._timer.setInterval(80)
 
+        self._delay_timer = QTimer(parent)
+        self._delay_timer.setSingleShot(True)
+        self._delay_timer.timeout.connect(self._show_pending)
+        self._pending_text = "Загрузка…"
+        self._pending_detail = "Пожалуйста, подождите…"
+
         self.overlay.hide()
 
     def _tick(self):
@@ -76,6 +82,7 @@ class LoadingOverlayController:
         self.overlay.move(x, y)
 
     def show(self, text="Загрузка…", detail="Пожалуйста, подождите…"):
+        self._delay_timer.stop()
         self.label.setText(text)
         self.detail.setText(detail)
         self.reposition()
@@ -87,7 +94,22 @@ class LoadingOverlayController:
 
         self.sync_paint()
 
+    def show_delayed(
+        self,
+        text="Загрузка…",
+        detail="Пожалуйста, подождите…",
+        delay_ms: int = 250,
+    ) -> None:
+        """Show the overlay only when an operation takes long enough to notice."""
+        self._pending_text = text
+        self._pending_detail = detail
+        self._delay_timer.start(max(0, delay_ms))
+
+    def _show_pending(self) -> None:
+        self.show(self._pending_text, self._pending_detail)
+
     def hide(self):
+        self._delay_timer.stop()
         self.overlay.hide()
         self._timer.stop()
         self.sync_paint()

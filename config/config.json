@@ -65,10 +65,12 @@
   },
   "processing": {
     "default": {
-      "timeout_seconds": 3
+      "timeout_seconds": 3,
+      "debug_mode": false
     },
     "custom": {
-      "timeout_seconds": 3
+      "timeout_seconds": 3,
+      "debug_mode": false
     }
   }
 }

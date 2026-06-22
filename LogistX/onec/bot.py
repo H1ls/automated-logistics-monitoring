@@ -11,7 +11,8 @@ from .scenarios.close_race import CloseRaceScenario
 
 class OneCBot:
     def __init__(self, rdp_activator, reportsbot=None, log_func=print,
-                 ui_map_path=None, templates_dir=None, tmp_dir=None, precheck_executor=None, ):
+                 ui_map_path=None, templates_dir=None, tmp_dir=None, precheck_executor=None,
+                 debug_mode: bool = False, ):
         self.log = log_func
         self.reportsbot = reportsbot
         self.precheck_executor = precheck_executor
@@ -27,7 +28,8 @@ class OneCBot:
 
         self.ui_map = UiMap(ui_map_path)
         self.session = OneCSession(rdp_activator=rdp_activator,ui_map=self.ui_map,
-                                   templates_dir=templates_dir,tmp_dir=tmp_dir,log_func=log_func, )
+                                   templates_dir=templates_dir,tmp_dir=tmp_dir,log_func=log_func,
+                                   debug_mode=debug_mode, )
         self.errors = OneCErrorHandler(self.session, log_func=log_func)
         # self.log(f"ui_map_path={ui_map_path}")
         # self.log(f"templates_dir={templates_dir}")

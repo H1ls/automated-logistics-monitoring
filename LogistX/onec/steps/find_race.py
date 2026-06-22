@@ -1,20 +1,23 @@
 # LogistX/onec/steps/find_race.py
 from __future__ import annotations
 
+from LogistX.onec.steps.ui_point_resolver import UiPointResolver
+
 
 class FindRaceStep:
     stage = "find_race"
 
-    def __init__(self, session, errors, log_func=print):
+    def __init__(self, session, errors, log_func=print, point_resolver=None):
         self.session = session
         self.errors = errors
         self.log = log_func
+        self.points = point_resolver or UiPointResolver(session)
 
     def run(self, ctx):
         search_text = ctx.get_search_text()
         self.log(f"🔎 Ищу рейс: {search_text}")
 
-        self.session.click_anchor("race_list_focus")
+        self.points.click("race_list_focus", ctx=ctx)
         self.session.sleep(0.15)
 
         self.session.hotkey("ctrl", "f")

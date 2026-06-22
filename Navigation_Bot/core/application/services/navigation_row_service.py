@@ -268,6 +268,13 @@ class NavigationRowService:
         legacy_row = self._task_to_legacy_row(task)
 
         mapsbot.process_navigation_from_point(legacy_row, unload_point)
+        #TODO: Доделать
+        # MapsBot по-прежнему является устаревшим компонентом и записывает вычисленный маршрут в
+        # ``Маршрут``. TaskMapper.to_dict также помещает предыдущее каноническое значение
+        # ``route_estimate`` в legacy_row, а TaskMapper.from_dict присваивает этому полю
+        # приоритет. Удаляем устаревшее каноническое значение, чтобы новый результат MapsBot
+        # был преобразован в task.forecast и впоследствии сохранен.
+        legacy_row.pop("route_estimate", None)
         task = self._apply_legacy_row_to_task(task, legacy_row)
 
         self._save_route_estimate(task, unload_idx, task_trip_number)

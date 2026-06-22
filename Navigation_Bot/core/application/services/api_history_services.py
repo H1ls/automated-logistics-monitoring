@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import asdict, is_dataclass
 from typing import Any, Callable
 
-from Navigation_Bot.core.api_client import NavigationApiClient
+from Navigation_Bot.core.infrastructure.api.api_client import NavigationApiClient
 
 
 def _to_row(item: Any) -> dict[str, Any]:

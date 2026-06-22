@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from Navigation_Bot.core.json_manager import JSONManager
+from Navigation_Bot.core.json_store import JsonStore
 from Navigation_Bot.core.paths import CONFIG_JSON
 
 
@@ -163,9 +163,11 @@ class SettingsController:
         if not processor:
             return
 
-        settings = JSONManager.get_selectors("processing", CONFIG_JSON)
+        settings = JsonStore.get_selectors("processing", CONFIG_JSON)
         timeout_seconds = settings.get("timeout_seconds", processor.DEFAULT_TIMEOUT_SECONDS)
+        debug_mode = settings.get("debug_mode", processor.DEFAULT_DEBUG_MODE)
         processor.set_timeout_seconds(timeout_seconds)
+        processor.set_debug_mode(debug_mode)
 
     # --- public
     def on_settings_changed(self, sections: set):

@@ -45,17 +45,9 @@ class SmokeClient:
         if api_key:
             self.session.headers.update({"X-API-Key": api_key})
 
-    def run(
-        self,
-        *,
-        iterations: int,
-        batch_size: int,
-        complete: bool,
-        update_existing: bool,
-        reuse_rows: bool,
-        source_key: str,
-        page_limit: int,
-    ) -> list[RequestStat]:
+    def run(self, *, iterations: int, batch_size: int, complete: bool, update_existing: bool, reuse_rows: bool,
+            source_key: str, page_limit: int,) -> list[RequestStat]:
+
         stats: list[RequestStat] = []
         for iteration in range(iterations):
             params = {"source_key": source_key, "strict_source_key": "true"} if source_key else {}
@@ -209,7 +201,8 @@ class SmokeClient:
                                            "offset": 0})
         stats.append(stat)
         baseline = self._updated_at_for_trip(page, trip_number)
-        stats.append(self._check_stat("CHECK incremental baseline", bool(baseline), "created smoke row was not returned"))
+        stats.append(
+            self._check_stat("CHECK incremental baseline", bool(baseline), "created smoke row was not returned"))
         if not baseline:
             return stats
 
@@ -406,7 +399,8 @@ class SmokeClient:
             existing_rows = [row for row in tasks_payload.get("items", []) if isinstance(row, dict)]
 
         rows: list[dict[str, Any]] = []
-        sample = random.sample(existing_rows, k=min(batch_size, len(existing_rows))) if update_existing and existing_rows else []
+        sample = random.sample(existing_rows,
+                               k=min(batch_size, len(existing_rows))) if update_existing and existing_rows else []
         for offset, row in enumerate(sample):
             updated = dict(row)
             updated["comm_unload"] = f"load_smoke client={self.client_id} iteration={iteration} row={offset}"

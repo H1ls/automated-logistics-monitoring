@@ -25,14 +25,25 @@ class TaskEditService:
 
         return True, patch, None
 
-    def build_unload_patch(self, data_block: list, meta: dict | None = None) -> tuple[bool, dict | None, str | None]:
+    def build_unload_patch(self,
+                           data_block: list,
+                           meta: dict | None = None,
+                           processed: list[bool] | None = None) -> tuple[bool, dict | None, str | None]:
         if not data_block:
             return False, None, "empty_unload_block"
 
-        return True, {
-            "unloads": self._legacy_blocks_to_points(data_block, "Выгрузка"),
+        unloads = self._legacy_blocks_to_points(data_block, "Выгрузка")
+        patch = {
+            "unloads": unloads,
             "Выгрузка": data_block,
-        }, None
+        }
+        if processed is not None:
+            real_unload_count = sum(bool(point.get("address")) for point in unloads)
+            flags = ([bool(value) for value in processed] + [False] * real_unload_count)[:real_unload_count]
+            patch["processed"] = flags
+            patch["processed_unloads"] = flags
+
+        return True, patch, None
 
     def build_task_from_buffer(
         self,

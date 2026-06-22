@@ -1,13 +1,12 @@
 from PyQt6.QtWidgets import QDialog, QLabel, QLineEdit, QPushButton, QVBoxLayout
 
-from Navigation_Bot.core.repositories.vehicle_registry_fields import (
-    CENTER_FIELD,
-    DB_ID_FIELD,
-    DEFAULT_MONITORING_CENTER,
-    ID_FIELD,
-    NAME_FIELD,
-    TS_FIELD,
-)
+from Navigation_Bot.core.repositories.postgres_vehicle_repository import (CENTER_FIELD,
+                                                                          DB_ID_FIELD,
+                                                                          DEFAULT_MONITORING_CENTER,
+                                                                          ID_FIELD,
+                                                                          NAME_FIELD,
+                                                                          TS_FIELD)
+
 
 class TrackingIdEditor(QDialog):
     def __init__(self, car_data, log_func=print, parent=None):

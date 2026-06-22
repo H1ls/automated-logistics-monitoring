@@ -6,7 +6,7 @@ from copy import deepcopy
 from dataclasses import dataclass
 from typing import Any, Callable
 
-from Navigation_Bot.core.api_client import NavigationApiClient
+from Navigation_Bot.core.infrastructure.api.api_client import NavigationApiClient
 from Navigation_Bot.core.domain.entities.task import Task
 from Navigation_Bot.core.domain.mappers.task_mapper import TaskMapper
 
@@ -66,11 +66,7 @@ class ApiTaskRepository:
         page_size = self._configured_page_size()
         self.reload_all_paged(limit=page_size)
 
-    def reload_page(self,
-                    *,
-                    limit: int = 100,
-                    offset: int = 0,
-                    strict_source_key: bool = True) -> dict[str, Any]:
+    def reload_page(self, *, limit: int = 100, offset: int = 0, strict_source_key: bool = True) -> dict[str, Any]:
         payload = self.client.get("/api/v1/tasks",
                                   params={"source_key": self.current_source_key,
                                           "strict_source_key": str(bool(strict_source_key)).lower(),
@@ -91,8 +87,7 @@ class ApiTaskRepository:
             offset = int(next_offset)
         self._replace_data(rows)
 
-    def reload_incremental(self,
-                           *,
+    def reload_incremental(self, *,
                            updated_since: str | None = None,
                            limit: int = 500,
                            offset: int = 0,
@@ -200,7 +195,7 @@ class ApiTaskRepository:
                     return False
                 self.client.post(f"/api/v1/tasks/{int(row_identity)}/complete",
                                  json={"source": "user",
-                                       "source_key": self.current_source_key} )
+                                       "source_key": self.current_source_key})
                 data.pop(i)
                 return True
         return False
@@ -232,17 +227,15 @@ class ApiTaskRepository:
                                          "source_key": self.current_source_key})
         completed = {int(item) for item in payload.get("items", [])}
         if self.data is not None and completed:
-            self.data = [
-                row for row in self.data
-                if self._row_identity_int(row) not in completed
-            ]
+            self.data = [row for row in self.data
+                         if self._row_identity_int(row) not in completed ]
+
             self._snapshot = self._build_snapshot(self.data)
             self._snapshot_rows = self._build_snapshot_rows(self.data)
         return payload
 
     def sync_rows(self, rows: list[dict], *, source: str = "user") -> None:
         snapshot = self._snapshot or {}
-        snapshot_rows = self._snapshot_rows or {}
         changed_rows: list[dict[str, Any]] = []
         for row in rows:
             if not isinstance(row, dict):
@@ -250,10 +243,6 @@ class ApiTaskRepository:
 
             fingerprint = self._row_fingerprint(row)
             if self._snapshot_fingerprint_for_row(snapshot, row) == fingerprint:
-                continue
-
-            changed_fields = self._changed_fields(snapshot_rows, row)
-            if source == "user" and changed_fields == {"processed"}:
                 continue
 
             changed_rows.append(row)

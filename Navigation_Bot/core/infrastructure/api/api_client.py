@@ -22,6 +22,17 @@ class NavigationApiClient:
     def post(self, path: str, *, json: dict[str, Any] | None = None) -> Any:
         return self._request("POST", path, json=json)
 
+    def put(self, path: str, *, json: dict[str, Any] | None = None) -> Any:
+        return self._request("PUT", path, json=json)
+
+    def login(self, username: str, password: str) -> dict[str, Any]:
+        payload = self.post("/api/v1/auth/login", json={"username": username, "password": password})
+        if isinstance(payload, dict):
+            api_key = payload.get("api_key", "")
+            if api_key:
+                self.api_key = str(api_key)
+        return payload
+
     def _request(self, method: str, path: str, **kwargs: Any) -> Any:
         headers = dict(kwargs.pop("headers", {}) or {})
         if self.api_key:

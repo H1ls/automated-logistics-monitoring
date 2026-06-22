@@ -4,7 +4,7 @@ from copy import deepcopy
 from dataclasses import dataclass
 from typing import Any, Callable
 
-from Navigation_Bot.core.api_client import NavigationApiClient
+from Navigation_Bot.core.infrastructure.api.api_client import NavigationApiClient
 from Navigation_Bot.core.repositories.vehicle_registry_fields import (
     DB_ID_FIELD,
     ID_FIELD,

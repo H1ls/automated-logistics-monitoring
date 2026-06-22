@@ -1,202 +1,168 @@
 # Navigation Manager
 
-Desktop-приложение для диспетчеров, которые ведут рейсы, машины и навигацию в одном окне.
+Windows-приложение для диспетчеров: ведение рейсов и транспорта, синхронизация с Google Sheets, сбор навигационных данных через Wialon и карты, расчёт ETA и автоматизация закрытия рейсов в 1С.
 
-Текущая рабочая схема хранения:
-
-```text
-GUI -> FastAPI -> PostgreSQL
-```
-
-GUI больше не подключается к базе напрямую. Все рабочие данные идут через API, а PostgreSQL хранит рейсы, ТС, водителей, перевозчиков, точки маршрута, историю навигации, ETA, заметки, пользователей, роли и audit log.
-
-## Возможности
-
-- Загрузка активных рейсов из Google Sheets и разделение данных по листам.
-- Сохранение рейсов и справочника ТС в PostgreSQL.
-- Обработка одной строки или пакетный прогон ТС через Wialon и карты.
-- Сбор навигационных данных: адрес/геозона, координаты, скорость, свежесть GPS.
-- Расчет расстояния, ETA и запаса времени до выгрузки.
-- Запись результатов обработки обратно в Google Sheets.
-- Создание и редактирование рейсов из GUI.
-- Редактирование ID мониторинга, адресов, заметок и отдельных полей рейса.
-- История навигации по рейсу и по ТС.
-- Audit log: кто и что поменял.
-- Роли пользователей: `admin`, `dispatcher`, `viewer`.
-- Локальные вкладки: реестр PIN-кодов и LogistX.
+```Ждем сервер для переезда с local```
 
 ## Архитектура
 
+Рабочие данные проходят через единый серверный контур:
+
 ```text
-main.py
-Navigation_Bot/
-  api/                  FastAPI API для GUI и внешних клиентов
-  gui/                  PyQt6-интерфейс, контроллеры, диалоги, таблицы
-  core/                 доменная модель, сервисы, PostgreSQL/API repositories, настройки
-  bots/                 Selenium/WebDriver, Wialon, карты, Google Sheets
-LogistX/
-  gui/                  локальная страница LogistX
-  onec/                 сценарии автоматизации 1C
-  controllers/          импорт отчетов и вспомогательные контроллеры
-config/                 локальные настройки, cookies, медиа и служебные файлы
+PyQt6 GUI ──HTTP/X-API-Key──> FastAPI ──connection pool──> PostgreSQL
+    │                              │
+    ├── Google Sheets              ├── аутентификация и роли
+    ├── Selenium: Wialon/карты     ├── audit log
+    └── LogistX: RDP/1С            └── optimistic locking и batch-запись
 ```
 
-Ключевые слои:
+GUI не подключается к PostgreSQL напрямую. При запуске пользователь входит по логину и паролю; API выдаёт временный ключ сессии, который GUI передаёт в заголовке `X-API-Key`.
 
-- `Navigation_Bot.api` - HTTP API, роли, API-ключи, audit log, доступ к PostgreSQL.
-- `Navigation_Bot.gui` - рабочее окно приложения и пользовательские сценарии.
-- `Navigation_Bot.core.application.services` - бизнес-сервисы задач, Google-синхронизации, истории и редактирования.
-- `Navigation_Bot.core.repositories` - API/PostgreSQL репозитории.
-- `Navigation_Bot.core.NavigationProcessor` - обработка строк, браузерная сессия, Wialon/карты и пакетный прогон.
-- `LogistX.onec` - шаги закрытия рейса в 1C.
+Проект разделён по ответственности:
 
-## Данные и конфигурация
+```text
+main.py                                      точка входа PyQt6
+Navigation_Bot/
+  gui/
+    app/                                     composition root и контекст GUI
+    builders/, controllers/                  сборка интерфейса и сценарии UI
+    dialogs/, widgets/, main_window/         представление
+    services/, settings/                     UI-сервисы и локальные настройки
+  core/
+    domain/                                  сущности, value objects и доменные правила
+    application/
+      services/                              прикладные сценарии
+      services/google/                       синхронизация с Google Sheets
+      services/navigation/                   обработка строки и пакетная навигация
+      mappers/                               преобразование внешних данных
+    repositories/                            API- и PostgreSQL-репозитории
+    infrastructure/
+      api/                                   FastAPI, HTTP-клиент, схемы и smoke-тесты
+      persistence/                           файловые адаптеры
+    storage/                                 PostgreSQL-схема, подключения и pool
+    settings/                                настройки приложения
+  bots/                                      Selenium, Wialon, карты и Google Sheets
+LogistX/
+  gui/, services/                            локальная страница LogistX
+  onec/                                      сценарии и шаги автоматизации 1С
+  controllers/, runner/                      импорт отчётов и отдельный запуск
+config/                                      локальная конфигурация и runtime-данные
+tests/                                       модульные тесты
+```
 
-Основные локальные файлы:
+Направление зависимостей для основного сценария:
 
-- `config/config.json` - настройки Google Sheets, селекторы Wialon/карт и параметры приложения.
-- `config/Credentials_wialon.json` - учетные данные Wialon, если используются текущими сценариями.
-- `config/cookies.pkl` - cookies браузерной сессии.
-- `config/ui_settings.json` - размеры окна, таблицы и UI-настройки.
-- `config/media/notes/` - медиафайлы заметок.
-- `LogistX/config/logistx_sample.json` - локальные данные LogistX.
-- `LogistX/config/sites_db.json` - база соответствий адресов и геозон.
+```text
+GUI -> application services -> repositories -> HTTP API
+API routes -> PostgreSQL repositories/services -> PostgreSQL
+bots/infrastructure -> внешние системы
+```
 
-Секреты, реальные credentials и API tokens не нужно коммитить в репозиторий.
+`Navigation_Bot.gui.app.AppServices` — composition root GUI: создаёт API-клиент и репозитории, прикладные сервисы, процессор навигации и UI-контроллеры. FastAPI собирает серверные зависимости в `core.infrastructure.api`.
 
-## Установка
+## Основные возможности
 
-Требуется Windows, Python 3.11+, PostgreSQL и браузер/драйвер, совместимый с Selenium.
+- загрузка и обновление активных рейсов из Google Sheets;
+- хранение рейсов, транспорта, маршрутов, навигации, ETA, заметок и событий в PostgreSQL;
+- одиночная и пакетная обработка транспорта через Wialon и карты;
+- запись результатов навигации обратно в Google Sheets;
+- создание и редактирование рейсов из GUI;
+- история по рейсу и автомобилю, audit log изменений;
+- роли `admin`, `dispatcher`, `viewer`;
+- локальные страницы реестра PIN-кодов и LogistX;
+- импорт отчёта и автоматизация закрытия рейса в 1С.
+
+## Требования и установка
+
+- Windows;
+- Python 3.11+;
+- PostgreSQL;
+- браузер и совместимый WebDriver;
+- для LogistX: доступ к RDP/1С, при использовании OCR — Tesseract.
 
 ```powershell
 python -m venv .venv
-.\.venv\Scripts\activate
-pip install -r requirements.txt
+.\.venv\Scripts\Activate.ps1
+python -m pip install -r requirements.txt
 ```
 
-Для OCR/LogistX-сценариев может понадобиться Tesseract и доступ к RDP/1C-окну.
+## Конфигурация
 
-## Запуск API
+Приложение читает переменные окружения и корневой `.env` (существующие переменные окружения имеют приоритет).
+
+Минимальный `.env`:
+
+```dotenv
+POSTGRES_DSN=postgresql://pet_user:pet_password@localhost:5432/pet_project
+NAV_API_BASE_URL=http://127.0.0.1:8000
+GOOGLE_CREDENTIALS_PATH=D:\secrets\google-service-account.json
+WIALON_USERNAME=user
+WIALON_PASSWORD=password
+```
+
+Дополнительные параметры:
+
+| Переменная | По умолчанию | Назначение |
+|---|---:|---|
+| `POSTGRES_POOL_MIN_SIZE` | `2` | Минимальный размер pool API |
+| `POSTGRES_POOL_MAX_SIZE` | `10` | Максимальный размер pool API |
+| `POSTGRES_POOL_TIMEOUT` | `10` | Ожидание подключения, секунд |
+| `NAV_GUI_SESSION_HOURS` | `12` | Срок ключа GUI-сессии, 1–168 часов |
+| `NAV_API_TASK_PAGE_SIZE` | `500` | Размер страницы при полной загрузке GUI |
+| `NAV_API_INCREMENTAL_REFRESH` | выключен | Инкрементальное обновление списка рейсов |
+| `NAV_GUI_SKIP_LOGIN` | выключен | Пропустить форму входа и взять `NAV_API_KEY`; только для отладки |
+| `NAV_API_KEY` | — | Постоянный API-ключ или аварийный env-admin ключ |
+
+Локальные файлы:
+
+- `config/config.json` — Google Sheets, селекторы и параметры обработки;
+- `config/cookies.pkl` — cookies браузерной сессии;
+- `config/ui_settings.json` — состояние окна и таблиц;
+- `config/media/notes/` — вложения заметок;
+- `LogistX/config/sites_db.json` — адреса, aliases и геозоны;
+- `LogistX/config/onec_ui_map_v2.json` — карта элементов интерфейса 1С.
+
+Секреты, cookies и рабочие конфигурации не должны попадать в Git.
+
+## Запуск
+
+Сначала запустите API из корня проекта:
 
 ```powershell
-.venv\Scripts\uvicorn.exe Navigation_Bot.api.main:app --host 127.0.0.1 --port 8000
+.\.venv\Scripts\uvicorn.exe Navigation_Bot.core.infrastructure.api.main:app `
+  --host 127.0.0.1 `
+  --port 8000
 ```
 
-Полная документация API: [Navigation_Bot/api/README.md](Navigation_Bot/api/README.md)
+При старте API применяет `Navigation_Bot/core/storage/postgres_schema.sql`, открывает pool и публикует:
 
-Swagger:
+- Swagger: `http://127.0.0.1:8000/docs`;
+- ReDoc: `http://127.0.0.1:8000/redoc`;
+- API: `http://127.0.0.1:8000/api/v1`.
 
-```text
-http://127.0.0.1:8000/docs
-```
-
-Health:
-
-```text
-http://127.0.0.1:8000/api/v1/health
-```
-
-## Запуск GUI
-
-В отдельном PowerShell после запуска API:
+Затем в другом PowerShell запустите GUI:
 
 ```powershell
-$env:DB_BACKEND = "api"
 $env:NAV_API_BASE_URL = "http://127.0.0.1:8000"
-$env:NAV_API_KEY = "nav_..."
-.venv\Scripts\python.exe main.py
+.\.venv\Scripts\python.exe main.py
 ```
 
-`NAV_API_KEY` - API token пользователя. GUI отправляет его в API как заголовок `X-API-Key`.
+Если в БД ещё нет активных пользователей с паролем, первая успешная попытка входа создаёт пользователя с ролью `admin`. Дальше пользователей создаёт администратор через диалог GUI или API.
 
-При старте GUI пишет текущего пользователя в лог:
+Подробные endpoint-ы, модель доступа и нагрузочные проверки описаны в [документации API](Navigation_Bot/core/infrastructure/api/README.md).
 
-```text
-API user: dispatcher1 (dispatcher)
-```
+## Проверки
 
-## PostgreSQL
-
-Подключение задается через `POSTGRES_DSN`.
-
-Пример:
+Модульные тесты:
 
 ```powershell
-$env:POSTGRES_DSN = "postgresql://pet_user:postgres@localhost:5432/pet_project"
+.\.venv\Scripts\python.exe -m unittest discover -s tests -v
 ```
 
-API использует connection pool. Для локального режима и 30-50 пользователей можно начать с:
+Проверка регистрации маршрутов без запуска сервера:
 
 ```powershell
-$env:POSTGRES_POOL_MIN_SIZE = "2"
-$env:POSTGRES_POOL_MAX_SIZE = "10"
-$env:POSTGRES_POOL_TIMEOUT = "10"
+.\.venv\Scripts\python.exe -m Navigation_Bot.core.infrastructure.api.check_api
 ```
 
-## Пользователи
-
-Роли:
-
-- `admin` - пользователи, API-ключи, чтение/запись всех данных, audit log.
-- `dispatcher` - чтение/запись рейсов, машин, заметок, навигации и истории.
-- `viewer` - только чтение.
-
-API token создается через:
-
-```text
-POST /api/v1/users/{user_id}/api-keys
-```
-
-Отзыв ключа:
-
-```text
-POST /api/v1/api-keys/{key_id}/revoke
-```
-
-## Работа с Google Sheets
-
-Менеджер Google Sheets читает настройки из `config/config.json`.
-
-Используется service account. Файл credentials должен содержать блок `credentials`, из которого создается клиент `gspread`. Таблица должна быть доступна сервисному аккаунту.
-
-Загрузка берет рабочие диапазоны из листа, пропускает завершенные строки и сохраняет результат через FastAPI в PostgreSQL. Обработка строки обновляет состояние через API и пишет результаты обратно в Google Sheets через сервис записи.
-
-## Работа с Wialon и картами
-
-Selenium-сессия создается лениво при первом открытии Wialon или обработке строки. Селекторы Wialon и карт настраиваются в GUI:
-
-- поиск ТС;
-- блок ТС;
-- адрес, геозона, координаты, скорость и GPS-индикаторы;
-- построение маршрута, длительность и расстояние.
-
-При изменении селекторов приложение сбрасывает внутренние bot-объекты, чтобы следующие операции шли с обновленными настройками.
-
-## LogistX
-
-Вкладка LogistX предназначена для отдельного процесса закрытия рейсов:
-
-- импорт отчета из 1C через RDP;
-- отображение ТС, номера рейса, отправления, назначения и плановой даты;
-- сопоставление адресов с геозонами из `sites_db.json`;
-- ручное редактирование базы адресов;
-- запуск сценария закрытия рейса кнопкой в строке;
-- сохранение результата обратно в локальный JSON.
-
-## Технологии
-
-- Python
-- PyQt6
-- FastAPI
-- PostgreSQL
-- psycopg / psycopg_pool
-- Selenium
-- gspread / Google Sheets API
-- PyAutoGUI / PyDirectInput / pywin32
-- OpenCV / Pillow / pytesseract
-- openpyxl
-- PyInstaller
-
-## Статус
-
-Основное направление сейчас - стабилизация многопользовательского режима через FastAPI/PostgreSQL, очистка старого legacy-слоя и дальнейшая оптимизация API-запросов под 30-50 пользователей.
+Smoke- и нагрузочные команды приведены в документации API.

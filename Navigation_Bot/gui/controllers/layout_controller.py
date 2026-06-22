@@ -19,9 +19,7 @@ class LayoutController:
         self.gui = gui
         self._layout_manager: WindowLayoutManager | None = None
 
-    # ------------------------------------------------------------------
     # init
-    # ------------------------------------------------------------------
     def setup(self) -> None:
         g = self.gui
 
@@ -43,9 +41,7 @@ class LayoutController:
 
         g.browser_rect = self._layout_manager.apply_dual_screen_layout(g)
 
-    # ------------------------------------------------------------------
     # public api
-    # ------------------------------------------------------------------
     def apply_from_settings(self):
         g = self.gui
 
@@ -84,10 +80,9 @@ class LayoutController:
 
         current_monitor_str = "first" if self._layout_manager.monitor_index == 0 else "second"
 
-        g.ui_settings.data["layout_mode"] = {
-            "mode": mode_str,
-            "monitor": current_monitor_str,
-        }
+        g.ui_settings.data["layout_mode"] = {"mode": mode_str,
+                                             "monitor": current_monitor_str,
+                                             }
         g.ui_settings._schedule_save()
 
         self._reposition_browser_if_open()
@@ -111,10 +106,9 @@ class LayoutController:
             g.ui_settings.data["layout_mode"] = {}
         elif isinstance(g.ui_settings.data["layout_mode"], str):
             mode_str = g.ui_settings.data["layout_mode"]
-            g.ui_settings.data["layout_mode"] = {
-                "mode": mode_str,
-                "monitor": "second",
-            }
+            g.ui_settings.data["layout_mode"] = {"mode": mode_str,
+                                                 "monitor": "second",
+                                                 }
 
         g.ui_settings.data["layout_mode"]["monitor"] = monitor_str
         g.ui_settings._schedule_save()
@@ -132,7 +126,6 @@ class LayoutController:
             return 1
         return self._layout_manager.monitor_index
 
-    # ------------------------------------------------------------------
     # internals
     def _reposition_browser_if_open(self):
         g = self.gui

@@ -71,6 +71,17 @@ class WialonReportsBot(NaviBase):
             except Exception:
                 pass
 
+    def _run_wialon_stage(self, stage: str, operation):
+        """Run one report operation and preserve its name in any error."""
+        try:
+            return operation()
+        except Exception as exc:
+            details = self._short_err(exc).strip() or exc.__class__.__name__
+            raise RuntimeError(
+                f"Wialon: ошибка на этапе «{stage}»: "
+                f"{exc.__class__.__name__}: {details}"
+            ) from exc
+
     def _safe_click_xpath(self, xpath: str, timeout: int | None = None, name: str = ""):
         t = timeout or self.DEFAULT_TIMEOUT
         last_err = None
@@ -190,8 +201,17 @@ class WialonReportsBot(NaviBase):
         except Exception:
             pass
 
-        self._wait_gone_css(self.selectors["spinner_waiting_css"], timeout=timeout)
-        self._wait_present_css(self.selectors["results_table_css"], timeout=10)
+        try:
+            self._wait_gone_css(self.selectors["spinner_waiting_css"], timeout=timeout)
+        except Exception as exc:
+            raise RuntimeError(
+                f"не дождались исчезновения spinner_waiting за {timeout} с"
+            ) from exc
+
+        try:
+            self._wait_present_css(self.selectors["results_table_css"], timeout=10)
+        except Exception as exc:
+            raise RuntimeError("таблица результатов не появилась за 10 с") from exc
 
     def expand_all_details(self, max_clicks: int = 25):
         """Развернуть детализацию"""
@@ -213,100 +233,13 @@ class WialonReportsBot(NaviBase):
 
     def extract_times(self, load_zone: str, unload_zone: str) -> dict:
         """Извлечение времен по геозонам с защитой от дребезга навигации."""
-        table = self._wait_present_css(self.selectors["results_table_css"], timeout=10)
-        rows = table.find_elements(By.CSS_SELECTOR, self.selectors["result_rows_css"])
-
         want_load = self._norm(load_zone)
         want_unload = self._norm(unload_zone)
-
         res = {"load_in": "", "load_out": "", "unload_in": "", "unload_out": ""}
-
-        dt_re = re.compile(r"\b\d{2}\.\d{2}\.\d{4}\s+\d{2}:\d{2}:\d{2}\b")
-
-        MIN_STAY_SECONDS = 120  # менее 2 минут считаем шумом
-        MERGE_GAP_SECONDS = 900  # разрыв до 15 минут склеиваем
-
-        def to_dt(s: str):
-            try:
-                return datetime.strptime(s, "%d.%m.%Y %H:%M:%S")
-            except Exception:
-                return None
-
-        visits = []
-
         self.log(f"🎯 want_load={want_load!r}, want_unload={want_unload!r}")
-        # 1. Собираем все посещения
-        for tr in rows:
-            tds = tr.find_elements(By.CSS_SELECTOR, self.selectors.get("row_cells_css", "td"))
-            if len(tds) < 4:
-                continue
-
-            texts = [(td.text or "").strip() for td in tds]
-            time_idxs = [i for i, tx in enumerate(texts) if dt_re.search(tx)]
-            if len(time_idxs) < 2:
-                continue
-
-            in_i = time_idxs[0]
-            out_i = time_idxs[1]
-            gf_i = in_i - 1
-            if gf_i < 0:
-                continue
-
-            gf_raw = texts[gf_i]
-            gf = self._norm(gf_raw)
-            time_in = texts[in_i]
-            time_out = texts[out_i]
-            # self.log(f"GF raw={gf_raw!r} | norm={gf!r} | "f"load_match={self._zone_match(gf_raw, load_zone)} | "f"unload_match={self._zone_match(gf_raw, unload_zone)}")
-
-            in_dt = to_dt(time_in)
-            out_dt = to_dt(time_out)
-            if not in_dt or not out_dt:
-                continue
-
-            stay_sec = int((out_dt - in_dt).total_seconds())
-            if stay_sec < 0:
-                continue
-
-            visits.append({"gf": gf,
-                           "in": time_in,
-                           "out": time_out,
-                           "in_dt": in_dt,
-                           "out_dt": out_dt,
-                           "stay_sec": stay_sec, })
-
-        if not visits:
+        merged = self._collect_merged_visits()
+        if not merged:
             return res
-
-        # 2. Фильтруем короткий шум
-        filtered = []
-        for v in visits:
-            if v["stay_sec"] < MIN_STAY_SECONDS:
-                self.log(f"⚠️ Игнорирую короткое посещение как шум: {v['gf']} {v['in']} -> {v['out']}")
-                continue
-            filtered.append(v)
-
-        if not filtered:
-            return res
-
-        # 3. Склеиваем соседние посещения одной геозоны, если разрыв маленький
-        merged = []
-        for v in filtered:
-            if not merged:
-                merged.append(v.copy())
-                continue
-
-            prev = merged[-1]
-
-            same_zone = prev["gf"] == v["gf"]
-            gap_sec = int((v["in_dt"] - prev["out_dt"]).total_seconds())
-
-            if same_zone and 0 <= gap_sec <= MERGE_GAP_SECONDS:
-                prev["out"] = v["out"]
-                prev["out_dt"] = v["out_dt"]
-                prev["stay_sec"] = int((prev["out_dt"] - prev["in_dt"]).total_seconds())
-                self.log(f"🔗 Склеил дребезг геозоны: {prev['gf']} до {prev['out']}")
-            else:
-                merged.append(v.copy())
 
         # 4. Особый случай: погрузка и выгрузка в одной геозоне
         if want_load and want_unload and want_load == want_unload:
@@ -326,6 +259,7 @@ class WialonReportsBot(NaviBase):
 
         # 5. Обычный случай: разные геозоны
         load_visit = None
+        unload_visit = None
 
         for v in merged:
             if not load_visit and want_load and self._zone_match(v["gf"], load_zone):
@@ -336,9 +270,26 @@ class WialonReportsBot(NaviBase):
 
             if load_visit and want_unload and self._zone_match(v["gf"], unload_zone):
                 if v["out_dt"] >= load_visit["in_dt"]:
+                    unload_visit = v
                     res["unload_in"] = v["in"]
                     res["unload_out"] = v["out"]
                     break
+
+        # Keep the selected interval unchanged, but notify the operator when
+        # the same unload point has another interval that was not merged.
+        if unload_visit:
+            additional_visits = [
+                v for v in merged
+                if v is not unload_visit
+                and self._zone_match(v["gf"], unload_zone)
+                and v["in_dt"] > unload_visit["out_dt"]
+            ]
+            if additional_visits:
+                extra = additional_visits[0]
+                self.log(
+                    f"⚠️ Есть дополнительное время в точке «{unload_zone}»: "
+                    f"{extra['in']} — {extra['out']}. Проверить вручную."
+                )
         # self.log(f"VISITS={visits}")
         # self.log(f"MERGED={merged}")
         # self.log(f"RESULT={res}")
@@ -348,19 +299,25 @@ class WialonReportsBot(NaviBase):
                                 date_from: str, date_to: str,
                                 load_zone: str, unload_zone: str,
                                 template: str = "Crossing geozones") -> dict:
-        self._ensure_on_wialon_tab()
-        self._wait_page_settled(timeout=5)
+        self._prepare_geo_report(unit, date_from, date_to, template)
+        return self._run_wialon_stage(
+            "чтение времени погрузки и выгрузки",
+            lambda: self.extract_times(load_zone, unload_zone),
+        )
 
-        self.open_reports()
-        self.select_template_by_typing(template)
-        self.select_unit_by_typing(unit)
-        self.set_interval(date_from, date_to)
-        self.run_and_wait(timeout=75)
-        self.expand_all_details()
+    def _prepare_geo_report(self, unit: str, date_from: str, date_to: str, template: str) -> None:
+        found = self._run_wialon_stage("поиск вкладки Wialon", self._ensure_on_wialon_tab)
+        if not found:
+            raise RuntimeError("Wialon: вкладка Wialon не найдена")
 
-        return self.extract_times(load_zone, unload_zone)
+        self._run_wialon_stage("ожидание готовности страницы", lambda: self._wait_page_settled(timeout=5))
+        self._run_wialon_stage("открытие раздела отчётов", self.open_reports)
+        self._run_wialon_stage("выбор шаблона отчёта", lambda: self.select_template_by_typing(template))
+        self._run_wialon_stage("выбор машины", lambda: self.select_unit_by_typing(unit))
+        self._run_wialon_stage("ввод интервала отчёта", lambda: self.set_interval(date_from, date_to))
+        self._run_wialon_stage("формирование отчёта", lambda: self.run_and_wait(timeout=75))
+        self._run_wialon_stage("раскрытие детализации", self.expand_all_details)
 
-    # ---- Todo:для предчека переопределить чтоб не было дубля кода
     def _collect_merged_visits(self) -> list[dict]:
         """
         Общая заготовка:
@@ -374,9 +331,6 @@ class WialonReportsBot(NaviBase):
         rows = table.find_elements(By.CSS_SELECTOR, self.selectors["result_rows_css"])
 
         dt_re = re.compile(r"\b\d{2}\.\d{2}\.\d{4}\s+\d{2}:\d{2}:\d{2}\b")
-
-        MIN_STAY_SECONDS = 120
-        MERGE_GAP_SECONDS = 900
 
         def to_dt(s: str):
             try:
@@ -430,7 +384,7 @@ class WialonReportsBot(NaviBase):
 
         filtered = []
         for v in visits:
-            if v["stay_sec"] < MIN_STAY_SECONDS:
+            if v["stay_sec"] < self.MIN_STAY_SECONDS:
                 self.log(f"⚠️ Игнорирую короткое посещение как шум: {v['gf']} {v['in']} -> {v['out']}")
                 continue
             filtered.append(v)
@@ -445,11 +399,13 @@ class WialonReportsBot(NaviBase):
                 merged.append(v.copy())
                 continue
 
-            prev = merged[-1]
-            same_zone = prev["gf"] == v["gf"]
-            gap_sec = int((v["in_dt"] - prev["out_dt"]).total_seconds())
+            # A row of an overlapping geozone may sit between split rows of
+            # this zone, so adjacency in the report is not required.
+            prev = next((item for item in reversed(merged) if item["gf"] == v["gf"]), None)
+            same_zone = prev is not None
+            gap_sec = int((v["in_dt"] - prev["out_dt"]).total_seconds()) if prev else -1
 
-            if same_zone and 0 <= gap_sec <= MERGE_GAP_SECONDS:
+            if same_zone and 0 <= gap_sec <= self.MERGE_GAP_SECONDS:
                 prev["out"] = v["out"]
                 prev["out_dt"] = v["out_dt"]
                 prev["stay_sec"] = int((prev["out_dt"] - prev["in_dt"]).total_seconds())
@@ -491,14 +447,8 @@ class WialonReportsBot(NaviBase):
                                        date_from: str, date_to: str,
                                        unload_zone: str,
                                        template: str = "Пересечение гео") -> dict:
-        self._ensure_on_wialon_tab()
-        self._wait_page_settled(timeout=5)
-
-        self.open_reports()
-        self.select_template_by_typing(template)
-        self.select_unit_by_typing(unit)
-        self.set_interval(date_from, date_to)
-        self.run_and_wait(timeout=75)
-        self.expand_all_details()
-
-        return self.extract_precheck_unload_state(unload_zone)
+        self._prepare_geo_report(unit, date_from, date_to, template)
+        return self._run_wialon_stage(
+            "чтение времени выгрузки precheck",
+            lambda: self.extract_precheck_unload_state(unload_zone),
+        )

@@ -3,11 +3,12 @@ import json
 from PyQt6.QtWidgets import QMessageBox
 
 from Navigation_Bot.core.paths import BATCH_PROGRESS_FILE
+from Navigation_Bot.gui.dialogs.admin_users_dialog import AdminUsersDialog
 from Navigation_Bot.gui.dialogs.create_race_dialog import CreateRaceDialog
 from Navigation_Bot.gui.dialogs.id_manager_dialog import IDManagerDialog
 from Navigation_Bot.gui.dialogs.navigation_history_dialog import NavigationHistoryDialog
 from Navigation_Bot.gui.dialogs.tracking_id_editor import TrackingIdEditor
-from Navigation_Bot.core.task_identity import google_sheet_row, trip_number
+from Navigation_Bot.core.domain.task_identity import google_sheet_row, trip_number
 
 
 class MainActionsController:
@@ -44,7 +45,10 @@ class MainActionsController:
 
             gui.google_sync_service.load_current_sheet_async(
                 executor=gui.executor,
-                on_started=lambda: gui.loading.show("Загрузка из Google Sheets", "Получение данных"),
+                on_started=lambda: gui.loading.show_delayed(
+                    "Загрузка из Google Sheets",
+                    "Получение данных",
+                ),
                 on_success=lambda: gui.ui_bridge.call.emit(self._on_google_load_success),
                 on_error=lambda err: gui.ui_bridge.call.emit(lambda: self._on_google_load_error(err)),
             )
@@ -143,6 +147,13 @@ class MainActionsController:
             dialog.exec()
         except Exception as e:
             gui.log(f"❌ Ошибка открытия истории навигации: {e}")
+
+    def open_admin_users_dialog(self) -> None:
+        gui = self.gui
+        if (getattr(gui, "api_user", {}) or {}).get("role") != "admin":
+            QMessageBox.warning(gui, "Пользователи", "Недостаточно прав.")
+            return
+        AdminUsersDialog(gui.api_client, parent=gui).exec()
 
     def _selected_trip_number(self):
         task_row = self._selected_task_row()

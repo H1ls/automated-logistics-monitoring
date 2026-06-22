@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Callable
 
 from LogistX.config.paths import LOGISTX_SAMPLE
+from Navigation_Bot.core.json_store import JsonStore
 
 
 class LogistXDataService:
@@ -29,8 +30,7 @@ class LogistXDataService:
 
     def save_rows(self, rows: list[dict]) -> bool:
         try:
-            self.sample_path.parent.mkdir(parents=True, exist_ok=True)
-            self.sample_path.write_text(json.dumps(rows, ensure_ascii=False, indent=2), encoding="utf-8")
+            JsonStore(log_func=self.log).save_in_json(rows, self.sample_path)
             self.log(f"💾 LogistX: сохранено строк: {len(rows)}")
             return True
         except Exception as e:

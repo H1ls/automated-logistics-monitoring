@@ -11,7 +11,7 @@ from Navigation_Bot.core.domain.value_objects.processing_state import Processing
 from Navigation_Bot.core.domain.value_objects.vehicle import Vehicle
 import re
 
-from Navigation_Bot.core.geo_coordinates import format_coordinate_pair, parse_coordinate_pair
+from Navigation_Bot.core.domain.geo_coordinates import format_coordinate_pair, parse_coordinate_pair
 from Navigation_Bot.core.domain.value_objects.route_plan import RoutePlan
 from Navigation_Bot.core.domain.value_objects.route_point import RoutePoint
 

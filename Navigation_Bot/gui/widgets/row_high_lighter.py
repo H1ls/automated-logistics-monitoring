@@ -1,8 +1,8 @@
-from PyQt6.QtCore import QTimer, Qt
+from PyQt6.QtCore import QTimer
 from datetime import datetime, timedelta, timezone
 from PyQt6.QtGui import QColor, QBrush
 
-from Navigation_Bot.core.task_identity import row_identity_for_gui
+from Navigation_Bot.core.domain.task_identity import row_identity_for_gui
 
 
 class RowHighlighter:
@@ -17,7 +17,6 @@ class RowHighlighter:
         self.until_map = {}
         self.key_to_visual = None  # callable: row_identity -> visual_row
 
-        # Colors used by this highlighter (keep in one place)
         self._row_manual_brush = QBrush(QColor("#e9f2d3"))  # light green
         self._unload_expired_brush = QBrush(QColor("#FFD6D6"))  # light red (cell only)
 

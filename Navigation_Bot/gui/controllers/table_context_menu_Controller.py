@@ -3,7 +3,7 @@ from PyQt6.QtWidgets import QMenu
 
 from Navigation_Bot.gui.dialogs.add_note_dialog import AddNoteDialog
 from Navigation_Bot.core.domain.entities.note import Note
-from Navigation_Bot.core.task_identity import google_sheet_row, row_identity_for_gui, trip_number
+from Navigation_Bot.core.domain.task_identity import google_sheet_row, row_identity_for_gui, trip_number
 
 
 class TableContextMenuController:
@@ -12,7 +12,6 @@ class TableContextMenuController:
         self.table = gui.table
         self.tasks = tasks_service
         self.google_sync = google_sync_service
-        # self.google_sync = getattr(gui, "google_sync_service", None)
 
     def install(self):
         self.table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)

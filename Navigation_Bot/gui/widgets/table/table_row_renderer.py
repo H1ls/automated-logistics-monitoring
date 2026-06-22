@@ -6,7 +6,7 @@ from PyQt6.QtGui import QColor
 from PyQt6.QtWidgets import (QTableWidgetItem, QPushButton, QWidget, QHBoxLayout, QLabel, )
 from PyQt6.QtCore import Qt
 
-from Navigation_Bot.core.task_identity import row_identity_for_gui
+from Navigation_Bot.core.domain.task_identity import row_identity_for_gui
 
 
 class TableRowRenderer:
@@ -63,7 +63,7 @@ class TableRowRenderer:
         self.table.setItem(row, col, item)
 
     def _render_row_actions(self, row_idx: int, row: dict, real_idx: int):
-        btn = QPushButton("▶" if row.get("id") else "🛠")
+        btn = QPushButton("▶" if row.get("id") else "🛠", self.table)
 
         row_identity = row_identity_for_gui(row)
         self.row_action_controller.register_button(row_identity, btn)
@@ -78,20 +78,18 @@ class TableRowRenderer:
 
     def _render_row_id_cell(self, row_idx: int, row: dict, real_idx: int):
         id_value = str(row.get("id", ""))
-        container = QWidget()
-        layout = QHBoxLayout()
+        container = QWidget(self.table)
+        layout = QHBoxLayout(container)
         layout.setContentsMargins(0, 0, 0, 0)
 
-        label = QLabel(id_value)
-        btn_tool = QPushButton("🛠")
+        label = QLabel(id_value, container)
+        btn_tool = QPushButton("🛠", container)
         btn_tool.setFixedWidth(30)
         btn_tool.clicked.connect(lambda _=False, idx=real_idx: self.on_edit_id_click(idx))
 
         layout.addWidget(label)
         layout.addWidget(btn_tool)
         layout.addStretch()
-        container.setLayout(layout)
-
         self.table.setCellWidget(row_idx, 1, container)
 
     def _render_row_main_cells(self, row_idx: int, row: dict):

@@ -160,11 +160,8 @@ class CreateRaceDialog(QDialog):
                       "Выгрузка": self._buffer.get("Выгрузка", []), }
 
         dialog = AddressEditDialog(row_data=temp_entry,
-                                   full_data=self.task_repository.get() or [],
                                    prefix=prefix,
                                    parent=self,
-                                   disable_save=True,
-                                   task_repository=self.task_repository,
                                    log_func=self.log, )
 
         if dialog.exec():

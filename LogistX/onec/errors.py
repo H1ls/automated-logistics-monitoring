@@ -106,7 +106,7 @@ class OneCErrorHandler:
         best_score = -1
 
         for i, region in enumerate(regions, start=1):
-            path = self.session.tmp_dir / f"error_text_{i}.png"
+            path = self.session.tmp_dir / self.session.artifacts.filename("error", f"text_{i}")
             img = pyautogui.screenshot(region=region)
             img.save(path)
 
@@ -237,9 +237,7 @@ class OneCErrorHandler:
                 mm = int(time_m.group(2))
                 ss = int(time_m.group(3))
                 try:
-                    best = datetime.strptime(f"{date_part} {hh:02d}:{mm:02d}:{ss:02d}",
-                                             "%d.%m.%Y %H:%M:%S",
-                                             )
+                    best = datetime.strptime(f"{date_part} {hh:02d}:{mm:02d}:{ss:02d}", "%d.%m.%Y %H:%M:%S")
                     best = self._sanitize_finish_dt_year(best, norm)
                     self.log(f"🧠 finish_dt extracted from 'выполнен': {best:%d.%m.%Y %H:%M:%S}")
                     return best

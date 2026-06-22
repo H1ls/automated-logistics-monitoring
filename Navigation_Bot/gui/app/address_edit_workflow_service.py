@@ -41,13 +41,9 @@ class AddressEditWorkflowService:
         if not row_data:
             return False, None, "row_not_found"
 
-        full_data = self.task_repository.get() or []
-
         dialog = AddressEditDialog(row_data=row_data,
-                                   full_data=full_data,
                                    prefix=prefix,
                                    parent=parent,
-                                   task_repository=self.task_repository,
                                    log_func=self.log)
 
         if not dialog.exec():
@@ -64,11 +60,15 @@ class AddressEditWorkflowService:
         if prefix == "Погрузка":
             ok, patch, err = self.task_edit_service.build_load_patch(data_block, meta)
         else:
-            ok, patch, err = self.task_edit_service.build_unload_patch(data_block, meta)
+            ok, patch, err = self.task_edit_service.build_unload_patch(data_block,
+                                                                       meta,
+                                                                       processed=dialog.get_processed())
 
         if not ok:
             self._log(f"build_patch error: {err}")
             return False, None, err
+
+        patch[dialog.raw_key] = dialog.get_raw_value()
 
         ok, updated_row, err = self.tasks_service.apply_patch(real_idx, patch)
         if not ok:
