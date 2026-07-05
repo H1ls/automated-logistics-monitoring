@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtWidgets import (QDialog, QDialogButtonBox, QHBoxLayout, QLabel, QListWidget, QListWidgetItem,
@@ -8,6 +8,7 @@ from LogistX.controllers.oneC_report_importer import OneCReportImporter
 from LogistX.gui.logistx_table_renderer import LogistXTableRenderer
 from LogistX.services.logistx_data_service import LogistXDataService
 from Navigation_Bot.gui.dialogs.sites_db_editor_dialog import SitesDbEditorDialog
+from Navigation_Bot.core.logging import normalize_log_func
 
 
 class CounterpartyFilterDialog(QDialog):
@@ -56,7 +57,7 @@ class LogistXPage(QWidget):
 
     def __init__(self, parent=None, log_func=print):
         super().__init__(parent)
-        self.log = log_func
+        self.log = normalize_log_func(log_func)
         self.rows: list[dict] = []
         self.view_order: list[int] = []
         self.hidden_row_keys: set[tuple[str, str, str, str]] = set()

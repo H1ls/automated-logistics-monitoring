@@ -275,6 +275,17 @@ class WialonReportsBot(NaviBase):
                     res["unload_out"] = v["out"]
                     break
 
+        if not unload_visit and want_unload:
+            unload_candidates = [
+                v for v in merged
+                if self._zone_match(v["gf"], unload_zone)
+                and (not load_visit or v["out_dt"] >= load_visit["in_dt"])
+            ]
+            if unload_candidates:
+                unload_visit = unload_candidates[0]
+                res["unload_in"] = unload_visit["in"]
+                res["unload_out"] = unload_visit["out"]
+
         # Keep the selected interval unchanged, but notify the operator when
         # the same unload point has another interval that was not merged.
         if unload_visit:

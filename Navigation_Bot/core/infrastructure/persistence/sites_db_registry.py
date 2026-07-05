@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import json
 import re
@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from LogistX.config.paths import SITES_DB_FILE
+from Navigation_Bot.core.logging import normalize_log_func
 
 SITES_DB_PATH = SITES_DB_FILE
 
@@ -21,7 +22,7 @@ class SitesDbRegistry:
     """Читает sites_db.json и сопоставляет адреса с aliases/geofence."""
 
     def __init__(self, log_func=None, path: Path | None = None):
-        self.log = log_func or print
+        self.log = normalize_log_func(log_func)
         self.path = path or SITES_DB_PATH
         self._data: list[dict] = []
         self.reload()

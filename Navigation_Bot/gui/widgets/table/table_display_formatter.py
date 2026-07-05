@@ -156,10 +156,16 @@ class TableDisplayFormatter:
             processed = []
 
         point_suffixes = None
-        if len(points) > 1:
-            point_suffixes = ["☑️" if (idx < len(processed) and processed[idx]) else "⬜️"
-                              for idx in range(len(points))
-                              ]
+        address_indexes = [
+            idx for idx, point in enumerate(points)
+            if isinstance(point, dict) and str(point.get("address") or "").strip()
+        ]
+        if len(address_indexes) > 1:
+            point_suffixes = [""] * len(points)
+            for processed_idx, point_idx in enumerate(address_indexes):
+                point_suffixes[point_idx] = (
+                    "☑️" if (processed_idx < len(processed) and processed[processed_idx]) else "⬜️"
+                )
 
         return self.points_text(points,
                                 point_suffixes=point_suffixes,

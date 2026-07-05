@@ -11,6 +11,7 @@ from Navigation_Bot.core.repositories.vehicle_registry_fields import (
     NAME_FIELD,
     TS_FIELD,
     compact_vehicle_key,
+    vehicle_lookup_keys,
 )
 
 
@@ -58,6 +59,7 @@ class ApiVehicleRepository:
 
     def registry_lookup(self) -> dict[str, dict[str, Any]]:
         lookup: dict[str, dict[str, Any]] = {}
+        base_candidates: dict[str, dict[str, Any] | None] = {}
         for entry in self.list_registry_entries():
             monitoring_id = self._to_int_or_none(entry.get("monitoring_id") or entry.get(ID_FIELD))
             if monitoring_id is None:
@@ -71,11 +73,21 @@ class ApiVehicleRepository:
                           payload["plate_number"],
                           payload["vehicle_full_name"],
                           entry.get(NAME_FIELD),
-                          entry.get(TS_FIELD)
-                          ):
-                key = compact_vehicle_key(value)
-                if key:
-                    lookup[key] = payload
+                          entry.get(TS_FIELD)):
+                exact_key = compact_vehicle_key(value)
+                if exact_key:
+                    lookup[exact_key] = payload
+                for key in vehicle_lookup_keys(value):
+                    if key and key != exact_key:
+                        existing = base_candidates.get(key)
+                        if key not in base_candidates:
+                            base_candidates[key] = payload
+                        elif existing is not None and existing.get("monitoring_id") != payload.get("monitoring_id"):
+                            base_candidates[key] = None
+
+        for key, payload in base_candidates.items():
+            if payload is not None and key not in lookup:
+                lookup[key] = payload
         return lookup
 
     def monitoring_lookup(self) -> dict[str, int]:

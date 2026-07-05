@@ -1,4 +1,4 @@
-# LogistX/controllers/onec/errors.py
+﻿# LogistX/controllers/onec/errors.py
 from __future__ import annotations
 
 import os
@@ -13,6 +13,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from LogistX.config.paths import TESSERACT_LOCAL_EXE
 from .session import OneCSession
+from Navigation_Bot.core.logging import normalize_log_func
 
 
 @dataclass
@@ -25,7 +26,7 @@ class ErrorInfo:
 class OneCErrorHandler:
     def __init__(self, session: OneCSession, log_func=print):
         self.session = session
-        self.log = log_func
+        self.log = normalize_log_func(log_func)
 
         # 1. Определяем путь к tesseract.exe
         tesseract_path = self._get_tesseract_path()

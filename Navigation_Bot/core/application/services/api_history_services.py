@@ -1,9 +1,10 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 from dataclasses import asdict, is_dataclass
 from typing import Any, Callable
 
 from Navigation_Bot.core.infrastructure.api.api_client import NavigationApiClient
+from Navigation_Bot.core.logging import noop_log, normalize_log_func
 
 
 def _to_row(item: Any) -> dict[str, Any]:
@@ -27,11 +28,10 @@ def _trip_number_from(item: dict[str, Any]) -> int | None:
 class _ApiHistoryBase:
     def __init__(self, client: NavigationApiClient, log: Callable[[str], None] | None = None):
         self.client = client
-        self.log = log
+        self.log = normalize_log_func(log or noop_log)
 
     def _log(self, msg: str) -> None:
-        if self.log:
-            self.log(msg)
+        self.log(msg)
 
     def _get_items(self, path: str) -> list[dict]:
         payload = self.client.get(path)

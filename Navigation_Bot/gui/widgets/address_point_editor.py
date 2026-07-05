@@ -1,8 +1,9 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 from datetime import datetime, timedelta
 from typing import Callable
 
+from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import (QHBoxLayout,
                              QLabel,
                              QLineEdit,
@@ -13,7 +14,8 @@ from PyQt6.QtWidgets import (QHBoxLayout,
                              QWidget)
 
 from Navigation_Bot.core.infrastructure.persistence.sites_db_registry import SitesDbRegistry
-from Navigation_Bot.gui.dialogs.address_edit_models import AddressPointDraft
+from Navigation_Bot.gui.dialogs.components.address_edit_models import AddressPointDraft
+from Navigation_Bot.core.logging import noop_log, normalize_log_func
 
 
 class AddressPointEditor(QWidget):
@@ -33,7 +35,7 @@ class AddressPointEditor(QWidget):
         self.on_delete = on_delete
         self.on_edit_sites = on_edit_sites
         self.on_address_changed = on_address_changed
-        self.log = log or (lambda _message: None)
+        self.log = normalize_log_func(log or noop_log)
         self._metadata: dict[str, str] = {}
         self.site_id = ""
         self.geo_tags: list[str] = []
@@ -48,6 +50,13 @@ class AddressPointEditor(QWidget):
 
         top_row = QHBoxLayout()
         top_row.setSpacing(6)
+
+        self.drag_handle = QPushButton("☰")
+        self.drag_handle.setFixedWidth(30)
+        self.drag_handle.setToolTip("Перетащить точку")
+        self.drag_handle.setProperty("address_drag_handle", True)
+        self.drag_handle.setProperty("address_editor", self)
+        self.drag_handle.setCursor(Qt.CursorShape.OpenHandCursor)
 
         btn_geo = QPushButton("🏷")
         btn_geo.setFixedWidth(30)
@@ -69,6 +78,7 @@ class AddressPointEditor(QWidget):
         btn_calculate.setToolTip("Рассчитать время прибытия")
         btn_calculate.clicked.connect(self._calculate_arrival)
 
+        top_row.addWidget(self.drag_handle)
         top_row.addWidget(btn_geo)
         top_row.addWidget(QLabel(self.prefix))
         top_row.addWidget(self.tags_label)
@@ -86,6 +96,7 @@ class AddressPointEditor(QWidget):
         self.address_edit = QTextEdit(point.address)
         self.address_edit.setPlaceholderText("Адрес")
         self.address_edit.setFixedHeight(24)
+        self.address_edit.setAcceptDrops(False)
         self.address_edit.textChanged.connect(self._address_changed)
 
         self.arrival_date_edit = self._date_edit(point.date)
@@ -119,6 +130,7 @@ class AddressPointEditor(QWidget):
         editor.setInputMask("00.00.0000")
         editor.setPlaceholderText("дд.мм.гггг")
         editor.setFixedWidth(80)
+        editor.setAcceptDrops(False)
         if value:
             editor.setText(value)
         return editor
@@ -129,6 +141,7 @@ class AddressPointEditor(QWidget):
         editor.setInputMask("00:00")
         editor.setPlaceholderText("чч:мм")
         editor.setFixedWidth(60)
+        editor.setAcceptDrops(False)
         if value:
             editor.setText(value[:5])
         return editor

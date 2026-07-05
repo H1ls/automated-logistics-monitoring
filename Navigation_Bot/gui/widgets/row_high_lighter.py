@@ -1,15 +1,16 @@
-from PyQt6.QtCore import QTimer
+﻿from PyQt6.QtCore import QTimer
 from datetime import datetime, timedelta, timezone
 from PyQt6.QtGui import QColor, QBrush
 
 from Navigation_Bot.core.domain.task_identity import row_identity_for_gui
+from Navigation_Bot.core.logging import normalize_log_func
 
 
 class RowHighlighter:
     def __init__(self, table, task_repository, log, hours_default=2):
         self.table = table
         self.task_repository = task_repository
-        self.log = log
+        self.log = normalize_log_func(log)
         self.hours_default = hours_default
         self.duration_minutes = hours_default * 60
         self.expired_unload_grace_minutes = 0

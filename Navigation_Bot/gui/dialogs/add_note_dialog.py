@@ -3,52 +3,36 @@ from __future__ import annotations
 from pathlib import Path
 from datetime import datetime
 from PyQt6.QtWidgets import QApplication
-from PyQt6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QPushButton, QTextEdit, QFileDialog, QLabel,
-                             QListWidget)
+from PyQt6.QtWidgets import QTextEdit, QFileDialog, QLabel, QListWidget
 
 from Navigation_Bot.core.paths import NOTE_MEDIA_DIR
+from Navigation_Bot.gui.dialogs.base_dialog import BaseDialog
 
 
-class AddNoteDialog(QDialog):
+class AddNoteDialog(BaseDialog):
     def __init__(self, parent=None):
-        super().__init__(parent)
-
-        self.setWindowTitle("Добавить заметку")
-        self.resize(600, 400)
+        super().__init__(title="Добавить заметку", size=(600, 400), parent=parent)
 
         self.media_paths: list[str] = []
 
-        layout = QVBoxLayout(self)
-
-        layout.addWidget(QLabel("Текст заметки:"))
+        self.root.addWidget(QLabel("Текст заметки:"))
 
         self.text_edit = QTextEdit()
-        layout.addWidget(self.text_edit)
+        self.root.addWidget(self.text_edit)
 
-        layout.addWidget(QLabel("Прикреплённые файлы:"))
+        self.root.addWidget(QLabel("Прикреплённые файлы:"))
 
         self.files_list = QListWidget()
-        layout.addWidget(self.files_list)
+        self.root.addWidget(self.files_list)
 
-        buttons = QHBoxLayout()
-
-        self.btn_add_file = QPushButton("Прикрепить фото/видео")
-        self.btn_paste_clipboard = QPushButton("Вставить из буфера")
-        self.btn_save = QPushButton("Сохранить")
-        self.btn_cancel = QPushButton("Отмена")
-
-        buttons.addWidget(self.btn_add_file)
-        buttons.addWidget(self.btn_paste_clipboard)
-        buttons.addStretch()
-        buttons.addWidget(self.btn_save)
-        buttons.addWidget(self.btn_cancel)
-
-        layout.addLayout(buttons)
-
-        self.btn_add_file.clicked.connect(self._add_file)
-        self.btn_paste_clipboard.clicked.connect(self._paste_from_clipboard)
-        self.btn_save.clicked.connect(self.accept)
-        self.btn_cancel.clicked.connect(self.reject)
+        self.btn_add_file = self.make_button("Прикрепить фото/видео", self._add_file)
+        self.btn_paste_clipboard = self.make_button("Вставить из буфера", self._paste_from_clipboard)
+        self.btn_save = self.make_button("Сохранить", self.accept)
+        self.btn_cancel = self.make_button("Отмена", self.reject)
+        self.add_button_row(
+            left=(self.btn_add_file, self.btn_paste_clipboard),
+            right=(self.btn_save, self.btn_cancel),
+        )
 
     def _paste_from_clipboard(self):
         clipboard = QApplication.clipboard()

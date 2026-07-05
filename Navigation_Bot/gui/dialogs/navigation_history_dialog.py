@@ -1,15 +1,17 @@
 from __future__ import annotations
 from pathlib import Path
-from PyQt6.QtWidgets import QDialog, QVBoxLayout, QTableWidget, QTableWidgetItem, QLabel
+from PyQt6.QtWidgets import QTableWidget, QTableWidgetItem, QLabel
 from PyQt6.QtWidgets import QPushButton, QHBoxLayout
 from PyQt6.QtGui import QPixmap, QDesktopServices
 from PyQt6.QtCore import Qt, QUrl
 
 from Navigation_Bot.gui.dialogs.add_note_dialog import AddNoteDialog
+from Navigation_Bot.gui.dialogs.base_dialog import BaseDialog
 from Navigation_Bot.core.domain.entities.note import Note
 from datetime import datetime
 
-class NavigationHistoryDialog(QDialog):
+
+class NavigationHistoryDialog(BaseDialog):
     def __init__(self,
                  trip_number: int,
                  nav_rows: list[dict],
@@ -21,7 +23,7 @@ class NavigationHistoryDialog(QDialog):
                  note_history_service=None,
                  parent=None, ):
 
-        super().__init__(parent)
+        super().__init__(title="История навигации", size=(1000, 500), parent=parent)
         self.trip_number = trip_number
         self.vehicle_monitoring_id = vehicle_monitoring_id
         self.vehicle_plate = vehicle_plate
@@ -33,11 +35,6 @@ class NavigationHistoryDialog(QDialog):
         self.route_rows = route_rows or []
         self.history_mode = "race"
         self.rows = self._build_rows()
-        self.setWindowTitle("История навигации")
-        self.resize(1000, 500)
-
-        layout = QVBoxLayout(self)
-
         self.table = QTableWidget()
         self.table.setColumnCount(11)
         self.table.setHorizontalHeaderLabels([
@@ -69,9 +66,9 @@ class NavigationHistoryDialog(QDialog):
         top.addStretch()
         top.addWidget(self.btn_add_note)
         self.btn_add_note.clicked.connect(self._on_add_note_clicked)
-        layout.addLayout(top)
+        self.root.addLayout(top)
 
-        layout.addWidget(self.table)
+        self.root.addWidget(self.table)
         self._fill()
 
     def _on_add_note_clicked(self):

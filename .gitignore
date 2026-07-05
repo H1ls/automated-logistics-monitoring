@@ -32,6 +32,7 @@ env/
 /config/Id_car.json
 /config/cookies.pkl
 /config/pincodes_cache.json
+/config/pin_card_images/
 /config/navigation_bot.db
 /config/ui_settings.json
 /config/Credentials_wialon.json
@@ -43,7 +44,7 @@ LogistX/config/sites_db.json
 LogistX/assets/
 LogistX/tmp/
 
-Tesseract-OCR
+LogistX/Tesseract-OCR
 scripts
 
 /main.spec

@@ -1,8 +1,9 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 from dataclasses import dataclass
 
 from LogistX.onec.artifacts import OneCArtifacts
+from Navigation_Bot.core.logging import normalize_log_func
 
 
 @dataclass
@@ -39,9 +40,9 @@ class CaptureRaceUiStep:
                  artifacts=None, find_attempts: int = 3):
         self.session = session
         self.errors = errors
-        self.log = log_func
+        self.log = normalize_log_func(log_func)
         self.persist_min_score = float(persist_min_score)
-        self.artifacts = artifacts or getattr(session, "artifacts", None) or OneCArtifacts(session, log_func=log_func)
+        self.artifacts = artifacts or getattr(session, "artifacts", None) or OneCArtifacts(session, log_func=self.log)
         self.find_attempts = max(1, int(find_attempts))
 
     def _put_ctx(self, ctx, point: UiPoint):
@@ -82,10 +83,8 @@ class CaptureRaceUiStep:
         for name in point_names:
             point = self._find_with_retries(shot_path, name, name)
             if not point:
-                raise RuntimeError(
-                    f"В ui_map отсутствует anchor '{name}' и template "
-                    f"не найден за {self.find_attempts} попытки"
-                )
+                raise RuntimeError(f"В ui_map отсутствует anchor '{name}' и template "
+                                   f"не найден за {self.find_attempts} попытки")
 
             self._put_ctx(ctx, point)
             if point.score is not None and point.score >= self.persist_min_score:

@@ -1,4 +1,4 @@
-import pickle
+﻿import pickle
 import time
 
 from selenium import webdriver
@@ -11,6 +11,7 @@ from selenium.webdriver.chrome.options import Options as ChromeOptions
 
 from Navigation_Bot.core.secrets_manager import SecretsManager
 from Navigation_Bot.core.paths import CREDENTIALS_WIALON, COOKIES_FILE
+from Navigation_Bot.core.logging import normalize_log_func
 
 """6. Настройка WebDriver"""
 
@@ -20,7 +21,7 @@ YANDEX_MAPS_URL = "https://yandex.ru/maps"
 
 class WebDriverManager:
     def __init__(self, log_func=None):
-        self.log = log_func or print
+        self.log = normalize_log_func(log_func)
         self.config_path = str(CREDENTIALS_WIALON)
         self.cookies_path = str(COOKIES_FILE)
         self.driver = None
@@ -44,7 +45,7 @@ class WebDriverManager:
                 try:
                     btn = self.web_driver_wait("//*[@id='hb_mi_monitoring']", timeout=3)
                     btn.click()
-                    self.log("📡 Открыт 'Мониторинг'.")
+                    self.log("📡 Открыт 'Мониторинг'.",audience="user+")
                     clicked = True
                     break
                 except TimeoutException:
@@ -54,7 +55,7 @@ class WebDriverManager:
             if not clicked:
                 self.log("⚠️ Не удалось кликнуть 'Мониторинг' после логина.")
         except ValueError as e:
-            self.log(f"❌ Ошибка credentials: {e}")
+            self.log(f"❌ Ошибка credentials: {e}",audience="user+")
             raise
         except Exception as e:
             self.log(f"❌ Ошибка при логине в Wialon ")

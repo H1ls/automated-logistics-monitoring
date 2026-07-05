@@ -1,9 +1,10 @@
 from PyQt6.QtCore import Qt
-from PyQt6.QtWidgets import QMenu
+from PyQt6.QtWidgets import QMenu, QMessageBox
 
 from Navigation_Bot.gui.dialogs.add_note_dialog import AddNoteDialog
 from Navigation_Bot.core.domain.entities.note import Note
 from Navigation_Bot.core.domain.task_identity import google_sheet_row, row_identity_for_gui, trip_number
+from Navigation_Bot.gui.settings.sheet_tab_definitions import KEY_LOCAL_PINCODES
 
 
 class TableContextMenuController:
@@ -31,6 +32,7 @@ class TableContextMenuController:
         act_refresh = menu.addAction("🔄 Перезаписать из Google")  # по google_sheet_row
         act_complete = menu.addAction("Завершить рейс")
         menu.addSeparator()
+        act_pincodes = menu.addAction("ПИН-коды")
 
         act_add_note = menu.addAction("📝 Добавить заметку")
         duration_actions = {}
@@ -48,9 +50,12 @@ class TableContextMenuController:
             return
 
         if chosen == act_complete:
-            self._complete_row(real_idx)
+            self._confirm_complete_row(real_idx)
         elif chosen == act_refresh:
             self._refresh_row(real_idx)
+            return
+        elif chosen == act_pincodes:
+            self._open_pincodes(real_idx)
             return
         elif chosen == act_add_note:
             self._add_note(real_idx)
@@ -71,6 +76,45 @@ class TableContextMenuController:
             return None
         row = data[real_idx]
         return row if isinstance(row, dict) else None
+
+    def _open_pincodes(self, real_idx: int):
+        try:
+            row = self._get_row(real_idx)
+            if row is None:
+                self.gui.log("⚠️ Строка не найдена")
+                return
+
+            vehicle_number = str(row.get("ТС") or row.get("РўРЎ") or "").strip()
+            if not vehicle_number:
+                self.gui.log("⚠️ В строке нет номера ТС")
+                return
+
+            tab = (getattr(self.gui, "_tabs_by_key", {}) or {}).get(KEY_LOCAL_PINCODES)
+            btn = (getattr(self.gui, "_tab_buttons_by_key", {}) or {}).get(KEY_LOCAL_PINCODES)
+            tabs_controller = getattr(self.gui, "sheet_tabs_controller", None)
+
+            if not tab or not btn or not tabs_controller:
+                self.gui.log("⚠️ Вкладка ПИН-коды не найдена")
+                return
+
+            if not btn.isVisible():
+                btn.setVisible(True)
+                action = (getattr(self.gui, "_tab_actions", {}) or {}).get(KEY_LOCAL_PINCODES)
+                if action:
+                    action.setChecked(True)
+
+            tabs_controller.on_tab_clicked(tab, btn)
+
+            local_pages = getattr(self.gui, "local_pages_controller", None)
+            page = local_pages.get_or_create_page(KEY_LOCAL_PINCODES) if local_pages else None
+            if not page or not hasattr(page, "set_vehicle_query"):
+                self.gui.log("⚠️ Страница ПИН-кодов не готова")
+                return
+
+            page.set_vehicle_query(vehicle_number)
+
+        except Exception as e:
+            self.gui.log(f"❌ Ошибка открытия ПИН-кодов: {e}")
 
     def _add_note(self, real_idx: int):
         try:
@@ -211,6 +255,14 @@ class TableContextMenuController:
                      f"google_sheet_row = {google_sheet_row(item)},"
                      f"trip_number = {trip_number(item)}")
         self.gui.reload_and_show()
+
+    def _confirm_complete_row(self, real_idx: int):
+        reply = QMessageBox.question(
+            self.table, "Подтверждение", "Завершить рейс?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No, QMessageBox.StandardButton.No)
+
+        if reply == QMessageBox.StandardButton.Yes:
+            self._complete_row(real_idx)
 
     def _refresh_row(self, real_idx: int):
         try:

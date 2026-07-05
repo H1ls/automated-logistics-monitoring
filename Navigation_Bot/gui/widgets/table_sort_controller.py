@@ -1,10 +1,11 @@
-from datetime import datetime
+﻿from datetime import datetime
+from Navigation_Bot.core.logging import normalize_log_func
 
 
 class TableSortController:
     def __init__(self, task_repository, log):
         self.task_repository = task_repository
-        self.log = log
+        self.log = normalize_log_func(log)
         self.current = None  # None / "buffer" / "arrival"
 
     def build_view_order(self) -> list[int]:

@@ -1,4 +1,4 @@
-import traceback
+﻿import traceback
 from concurrent.futures import Future
 from concurrent.futures import ThreadPoolExecutor
 from threading import Lock
@@ -6,6 +6,7 @@ from Navigation_Bot.core.application.services.navigation.batch_processing_servic
 from Navigation_Bot.core.application.services.navigation.browser_session import BrowserSession
 from Navigation_Bot.core.application.services.navigation.logistx_race_service import LogistxRaceService
 from Navigation_Bot.core.application.services.navigation_row_service import NavigationRowService
+from Navigation_Bot.core.logging import normalize_log_func
                                                                                                    
 
 class NavigationProcessor:
@@ -18,7 +19,7 @@ class NavigationProcessor:
                  pause_dialog_factory=None, gui_parent=None, timeout_seconds=None, debug_mode=None):
 
         self.task_repository = task_repository
-        self.log = logger
+        self.log = normalize_log_func(logger)
         self.gsheet = gsheet
         self.display_callback = display_callback
         self._single_row_processing = single_row
@@ -230,8 +231,8 @@ class NavigationProcessor:
 
         except Exception as e:
             error_msg = str(e)
-            self.log(f"❌ Ошибка в process_row_wrapper: {error_msg}")
-            self.log(traceback.format_exc())
+            self.log(f"❌ Ошибка в process_row_wrapper")
+            # self.log(traceback.format_exc())
             return False, error_msg, row_identity
 
     def process_all(self):

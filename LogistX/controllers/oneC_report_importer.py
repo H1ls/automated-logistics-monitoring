@@ -1,4 +1,4 @@
-# pet.project\LogistX\controllers\oneC_report_importer.py
+﻿# pet.project\LogistX\controllers\oneC_report_importer.py
 from __future__ import annotations
 
 import json
@@ -14,11 +14,12 @@ from openpyxl.utils import get_column_letter
 
 from LogistX.config.paths import ONEC_UI_MAP, LOGISTX_SAMPLE, ONEC_UNCLOSED_RACES_XLSX
 from Navigation_Bot.core.json_store import JsonStore
+from Navigation_Bot.core.logging import normalize_log_func
 
 
 class OneCReportImporter:
     def __init__(self, log_func=print, config_path=None):
-        self.log = log_func
+        self.log = normalize_log_func(log_func)
 
         # путь к конфигу по умолчанию
         if config_path is None:

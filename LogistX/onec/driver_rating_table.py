@@ -94,17 +94,27 @@ class DriverRatingTableReader:
     def parse_lines(cls, lines: list[tuple[int, str]]) -> RatingTableSnapshot:
         rows = []
         for y, text in lines:
+            normalized = cls._normalize(text)
+            has_date = bool(re.search(r"\b\d{2}\.\d{2}\.\d{4}\b", text))
+            looks_like_header = (not has_date and (re.match(r"\s*(?:n|№)\b", text, flags=re.IGNORECASE)
+                                                   or ("вид" in normalized and ("оценка" in normalized or "водителя" in normalized))))
+            if looks_like_header:
+                continue
+
             scored = [(cls._kind_score(kind, text), kind) for kind in KNOWN_RATING_KINDS]
             score, kind = max(scored, default=(0.0, ""))
+            hours_match = re.search(r"(?<!\d)(\d{1,3})\s*(?:ч|4)\s*\.?", text, flags=re.IGNORECASE)
+            hours = int(hours_match.group(1)) if hours_match else 0
+
             if score < 0.62:
-                looks_like_data_row = bool(re.search(r"\b\d{2}\.\d{2}\.\d{4}\b", text)
+                looks_like_data_row = bool(has_date
                                            or re.match(r"\s*\d+\s+", text))
                 if not looks_like_data_row:
                     continue
+                if hours == 0:
+                    continue
                 kind = "__unknown__"
 
-            hours_match = re.search(r"(?<!\d)(\d{1,3})\s*(?:ч|4)\s*\.?", text, flags=re.IGNORECASE)
-            hours = int(hours_match.group(1)) if hours_match else 0
             rows.append(RatingRow(kind=kind, hours=hours, y=int(y), text=text))
 
         recognized = "\n".join(text for _, text in lines)

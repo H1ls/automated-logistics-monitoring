@@ -3,11 +3,12 @@ import json
 from PyQt6.QtWidgets import QMessageBox
 
 from Navigation_Bot.core.paths import BATCH_PROGRESS_FILE
+from Navigation_Bot.gui.debug import qt_debug_logger
 from Navigation_Bot.gui.dialogs.admin_users_dialog import AdminUsersDialog
 from Navigation_Bot.gui.dialogs.create_race_dialog import CreateRaceDialog
 from Navigation_Bot.gui.dialogs.id_manager_dialog import IDManagerDialog
 from Navigation_Bot.gui.dialogs.navigation_history_dialog import NavigationHistoryDialog
-from Navigation_Bot.gui.dialogs.tracking_id_editor import TrackingIdEditor
+from Navigation_Bot.gui.dialogs.tracking_id_dialog import TrackingIdDialog
 from Navigation_Bot.core.domain.task_identity import google_sheet_row, trip_number
 
 
@@ -34,37 +35,50 @@ class MainActionsController:
 
     def load_from_google(self) -> None:
         gui = self.gui
+        qt_debug_logger.log(gui, "load_google", "clicked; set _reload_after_gsheet=True")
         gui._reload_after_gsheet = True
 
         try:
-            gui.task_repository.set_source_key(gui._get_sheet_source_key(), reload=False)
+            source_key = gui._get_sheet_source_key()
+            qt_debug_logger.log(gui, "load_google", f"source_key={source_key!r}; set_source_key(reload=False)")
+            gui.task_repository.set_source_key(source_key, reload=False)
 
             if not getattr(gui, "google_sync_service", None):
                 gui.log("⚠️ GoogleSyncService не подключён")
+                qt_debug_logger.log(gui, "load_google", "abort: google_sync_service is missing")
                 return
 
+            qt_debug_logger.log(gui, "load_google", "submit google_sync_service.load_current_sheet_async")
             gui.google_sync_service.load_current_sheet_async(
                 executor=gui.executor,
-                on_started=lambda: gui.loading.show_delayed(
-                    "Загрузка из Google Sheets",
-                    "Получение данных",
-                ),
+                on_started=lambda: (qt_debug_logger.log(gui, "load_google", "on_started -> loading.show_delayed"),
+                                    gui.loading.show_delayed("Загрузка из Google Sheets", "Получение данных")),
                 on_success=lambda: gui.ui_bridge.call.emit(self._on_google_load_success),
-                on_error=lambda err: gui.ui_bridge.call.emit(lambda: self._on_google_load_error(err)),
-            )
+                on_error=lambda err: gui.ui_bridge.call.emit(lambda: self._on_google_load_error(err)))
         except Exception as e:
             gui.log(f"❌ Ошибка в NavigationGUI._load_from_google\n {e}")
+            qt_debug_logger.log(gui, "load_google", f"exception: {e}")
 
     def _on_google_load_success(self) -> None:
+        qt_debug_logger.log(self.gui, "load_google", "success callback entered -> hide_loading")
         self.gui.hide_loading()
         if getattr(self.gui, "sheet_tabs_controller", None):
+            qt_debug_logger.log(self.gui, "load_google", "rebuild sheet tabs")
             self.gui.sheet_tabs_controller.build()
         if hasattr(self.gui, "display_current_data"):
+            qt_debug_logger.log(self.gui, "load_google", "display_current_data start")
             self.gui.display_current_data()
+            qt_debug_logger.log(self.gui, "load_google", "display_current_data done")
         else:
+            qt_debug_logger.log(self.gui, "load_google", "reload_and_show start")
             self.gui.reload_and_show()
+            qt_debug_logger.log(self.gui, "load_google", "reload_and_show done")
+        qt_debug_logger.dump_top_level_widgets(self.gui, "after load_google success callback")
+        qt_debug_logger.dump_top_level_widgets_later(self.gui, "after load_google success +200ms", 200)
+        qt_debug_logger.log(self.gui, "load_google", "success callback finished")
 
     def _on_google_load_error(self, err: str) -> None:
+        qt_debug_logger.log(self.gui, "load_google", f"error callback entered err={err!r} -> hide_loading")
         self.gui.hide_loading()
         self.gui.log(f"❌ Ошибка загрузки из Google: {err}")
 
@@ -92,7 +106,8 @@ class MainActionsController:
 
             gui.reload_and_show()
             if google_sheet_row(new_task):
-                gui.log(f"✅ Рейс создан и отправлен в Google (trip_number={trip_number(new_task)}, google_sheet_row={google_sheet_row(new_task)})")
+                gui.log(
+                    f"✅ Рейс создан и отправлен в Google (trip_number={trip_number(new_task)}, google_sheet_row={google_sheet_row(new_task)})")
             else:
                 gui.log(f"✅ Рейс создан локально (trip_number={trip_number(new_task)})")
         except Exception as e:
@@ -101,7 +116,7 @@ class MainActionsController:
     def open_id_editor(self, row: int) -> None:
         gui = self.gui
         car = gui.task_rows[row]
-        dialog = TrackingIdEditor(car, log_func=gui.log, parent=gui)
+        dialog = TrackingIdDialog(car, log_func=gui.log, parent=gui)
         if dialog.exec():
             gui.task_repository.set(gui.task_rows, source="user")
             gui.reload_and_show()

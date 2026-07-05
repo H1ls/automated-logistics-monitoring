@@ -1,9 +1,10 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 from Navigation_Bot.bots.maps_bot import MapsBot
 from Navigation_Bot.bots.scenarios.navigation_bot import NavigationBot
 from Navigation_Bot.bots.web_driver_manager import WebDriverManager
 from Navigation_Bot.bots.scenarios.reports_bot import WialonReportsBot
+from Navigation_Bot.core.logging import normalize_log_func
 
 
 class BrowserSession:
@@ -16,7 +17,7 @@ class BrowserSession:
     """
 
     def __init__(self, logger, browser_rect=None, ui_bridge=None):
-        self.log = logger
+        self.log = normalize_log_func(logger)
         self.browser_rect = browser_rect
         self.ui_bridge = ui_bridge
 

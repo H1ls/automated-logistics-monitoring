@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 from datetime import datetime, timedelta
 
@@ -6,7 +6,8 @@ from PyQt6.QtGui import QColor
 from PyQt6.QtWidgets import (QTableWidgetItem, QPushButton, QWidget, QHBoxLayout, QLabel, )
 from PyQt6.QtCore import Qt
 
-from Navigation_Bot.core.domain.task_identity import row_identity_for_gui
+from Navigation_Bot.core.domain.task_identity import row_identity_for_gui, vehicle_monitoring_id
+from Navigation_Bot.core.logging import normalize_log_func
 
 
 class TableRowRenderer:
@@ -19,7 +20,7 @@ class TableRowRenderer:
     def __init__(self, *, table, log_func, formatter, row_action_controller, on_row_click, on_edit_id_click, ):
 
         self.table = table
-        self.log = log_func
+        self.log = normalize_log_func(log_func)
         self.formatter = formatter
         self.row_action_controller = row_action_controller
         self.on_row_click = on_row_click
@@ -63,12 +64,13 @@ class TableRowRenderer:
         self.table.setItem(row, col, item)
 
     def _render_row_actions(self, row_idx: int, row: dict, real_idx: int):
-        btn = QPushButton("▶" if row.get("id") else "🛠", self.table)
+        monitoring_id = vehicle_monitoring_id(row)
+        btn = QPushButton("▶" if monitoring_id else "🛠", self.table)
 
         row_identity = row_identity_for_gui(row)
         self.row_action_controller.register_button(row_identity, btn)
 
-        if not row.get("id"):
+        if not monitoring_id:
             btn.setStyleSheet("color: red;")
             btn.clicked.connect(lambda _=False, idx=real_idx: self.on_edit_id_click(idx))
         else:
@@ -77,7 +79,8 @@ class TableRowRenderer:
         self.table.setCellWidget(row_idx, 0, btn)
 
     def _render_row_id_cell(self, row_idx: int, row: dict, real_idx: int):
-        id_value = str(row.get("id", ""))
+        monitoring_id = vehicle_monitoring_id(row)
+        id_value = "" if monitoring_id is None else str(monitoring_id)
         container = QWidget(self.table)
         layout = QHBoxLayout(container)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -135,16 +138,8 @@ class TableRowRenderer:
         self._set_cell(row_idx, 2, f"{ts}\n{phone}" if phone else ts, editable=True)
 
         self._set_cell(row_idx, 3, row.get("carrier_name") or row.get("КА", ""), editable=True)
-        self._set_cell(
-            row_idx,
-            4,
-            self.formatter.points_text(row.get("loads") or [], separator_table=self.table, separator_col=4),
-        )
-        self._set_cell(
-            row_idx,
-            5,
-            self.formatter.unload_points_text_with_status(row, separator_table=self.table, separator_col=5),
-        )
+        self._set_cell(row_idx,4,self.formatter.points_text(row.get("loads") or [], separator_table=self.table, separator_col=4))
+        self._set_cell(row_idx,5,self.formatter.unload_points_text_with_status(row, separator_table=self.table, separator_col=5))
 
         navigation = row.get("navigation") if isinstance(row.get("navigation"), dict) else {}
         self._set_cell(row_idx, 6, navigation.get("geo_text") or row.get("гео", ""))

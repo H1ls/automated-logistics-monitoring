@@ -4,11 +4,13 @@
 """
 from __future__ import annotations
 
-from PyQt6.QtWidgets import QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton
+from PyQt6.QtWidgets import QDialog, QHBoxLayout, QLabel, QPushButton
 from PyQt6.QtCore import QTimer, Qt, QRect
 
+from Navigation_Bot.gui.dialogs.base_dialog import BaseDialog
 
-class PauseBetweenRowsDialog(QDialog):
+
+class PauseBetweenRowsDialog(BaseDialog):
     """
     Модальный диалог, который появляется между обработкой ТС.
     Показывает:
@@ -36,11 +38,9 @@ class PauseBetweenRowsDialog(QDialog):
             timeout_seconds: сколько секунд длится таймер
             parent: родительское окно
         """
-        super().__init__(parent)
-        self.setWindowTitle("Пауза между обработкой ТС")
+        super().__init__(title="Пауза между обработкой ТС", size=(500, 250), parent=parent)
         self.setModal(True)
         self.setWindowFlags(self.windowFlags() | Qt.WindowType.WindowStaysOnTopHint)
-        self.resize(500, 250)
 
         # Отцентрируем относительно родительского окна
         if parent:
@@ -59,9 +59,8 @@ class PauseBetweenRowsDialog(QDialog):
 
     def _init_ui(self):
         """Построить интерфейс диалога"""
-        layout = QVBoxLayout(self)
-        layout.setSpacing(15)
-        layout.setContentsMargins(20, 20, 20, 20)
+        self.root.setSpacing(15)
+        self.root.setContentsMargins(20, 20, 20, 20)
 
         # Заголовок
         title = QLabel("✅ Обработка ТС завершена")
@@ -69,7 +68,7 @@ class PauseBetweenRowsDialog(QDialog):
         title_font.setPointSize(14)
         title_font.setBold(True)
         title.setFont(title_font)
-        layout.addWidget(title)
+        self.root.addWidget(title)
 
         # Информация о ТС
         info_text = f"ТС: {self.current_row_info}"
@@ -77,15 +76,15 @@ class PauseBetweenRowsDialog(QDialog):
         info_font = info_label.font()
         info_font.setPointSize(11)
         info_label.setFont(info_font)
-        layout.addWidget(info_label)
+        self.root.addWidget(info_label)
 
         # Статус прогресса
         progress_text = f"Обработано: {self.processed_count} из {self.total_count}"
         progress_label = QLabel(progress_text)
-        layout.addWidget(progress_label)
+        self.root.addWidget(progress_label)
 
         # Таймер
-        layout.addSpacing(10)
+        self.root.addSpacing(10)
         timer_label = QLabel()
         timer_font = timer_label.font()
         timer_font.setPointSize(16)
@@ -93,7 +92,7 @@ class PauseBetweenRowsDialog(QDialog):
         timer_label.setFont(timer_font)
         timer_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.timer_label = timer_label
-        layout.addWidget(timer_label)
+        self.root.addWidget(timer_label)
 
         # Описание
         desc = QLabel("Обработка будет продолжена автоматически через таймер\n"
@@ -101,9 +100,9 @@ class PauseBetweenRowsDialog(QDialog):
 
         desc.setStyleSheet("color: #666; font-size: 10px;")
         desc.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        layout.addWidget(desc)
+        self.root.addWidget(desc)
 
-        layout.addStretch()
+        self.root.addStretch()
 
         # Кнопки
         button_layout = QHBoxLayout()
@@ -125,7 +124,7 @@ class PauseBetweenRowsDialog(QDialog):
         button_layout.addWidget(self.btn_stop)
         button_layout.addStretch()
 
-        layout.addLayout(button_layout)
+        self.root.addLayout(button_layout)
 
         # Инициализируем отображение таймера
         self._update_timer_display()

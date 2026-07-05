@@ -1,9 +1,11 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import re
 from dataclasses import asdict, is_dataclass
 from datetime import datetime
 from typing import Any, Callable
+
+from Navigation_Bot.core.logging import noop_log, normalize_log_func
 
 
 def _now_text() -> str:
@@ -45,11 +47,10 @@ def _parse_coordinates(value: Any) -> tuple[float | None, float | None]:
 class _PostgresHistoryBase:
     def __init__(self, connection: Any, log: Callable[[str], None] | None = None):
         self.connection = connection
-        self.log = log
+        self.log = normalize_log_func(log or noop_log)
 
     def _log(self, msg: str) -> None:
-        if self.log:
-            self.log(msg)
+        self.log(msg)
 
     def _task_id_by_trip_number(self, value: int | str | None) -> int | None:
         parsed = _to_int_or_none(value)

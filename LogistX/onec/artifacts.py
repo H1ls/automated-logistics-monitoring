@@ -1,9 +1,10 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import re
 from pathlib import Path
 
 from PIL import Image, ImageDraw
+from Navigation_Bot.core.logging import normalize_log_func
 
 
 class OneCArtifacts:
@@ -12,7 +13,7 @@ class OneCArtifacts:
     def __init__(self, session, enabled: bool = False, log_func=print):
         self.session = session
         self.enabled = bool(enabled)
-        self.log = log_func
+        self.log = normalize_log_func(log_func)
 
     @staticmethod
     def _slug(value: str) -> str:

@@ -49,6 +49,7 @@ PyRect==0.2.0
 PyScreeze==1.0.1
 PySocks==1.7.1
 pytesseract==0.3.13
+pytest==9.1.1
 python-dotenv==1.2.2
 pytweening==1.2.0
 pywin32==311

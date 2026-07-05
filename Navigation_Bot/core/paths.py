@@ -30,6 +30,7 @@ CLIPBOARD_MEDIA_DIR = NOTE_MEDIA_DIR
 # === Pin codes ===
 PIN_XLSX_FILEPATH = CONFIG_DIR / "Обновленный РЕЕСТР ПИН ТОПЛИВНЫЕ КАРТЫ.xlsx"
 PIN_JSON_FILEPATH = CONFIG_DIR / "pincodes_cache.json"
+PIN_CARD_IMAGES_DIR = CONFIG_DIR / "pin_card_images"
 
 
-VERSION = "11062026"
+VERSION = "05072026"

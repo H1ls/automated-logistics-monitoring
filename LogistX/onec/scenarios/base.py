@@ -1,9 +1,10 @@
-# LogistX/onec/scenarios/base.py
+﻿# LogistX/onec/scenarios/base.py
 from __future__ import annotations
 
 from LogistX.onec.results import BotResult
 from PIL import Image, ImageDraw
 from pathlib import Path
+from Navigation_Bot.core.logging import normalize_log_func
 
 
 class ScenarioError(Exception):
@@ -19,7 +20,7 @@ class BaseScenario:
     def __init__(self, session, error_handler, log_func=print):
         self.session = session
         self.errors = error_handler
-        self.log = log_func
+        self.log = normalize_log_func(log_func)
 
     def starts(self, ctx) -> BotResult:
         raise NotImplementedError

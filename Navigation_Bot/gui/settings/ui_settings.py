@@ -1,9 +1,10 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 from typing import Dict, Any
 from PyQt6.QtCore import QPoint, QSize, QTimer
 from PyQt6.QtWidgets import QWidget, QTableWidget
 from Navigation_Bot.core.paths import UI_SETTINGS_FILE
 from Navigation_Bot.core.json_store import JsonStore
+from Navigation_Bot.core.logging import noop_log, normalize_log_func
 
 
 class UiSettingsManager:
@@ -15,7 +16,7 @@ class UiSettingsManager:
 
     def __init__(self, log_func=print):
 
-        self.log = log_func or (lambda *_: None)
+        self.log = normalize_log_func(log_func or noop_log)
         self.store = JsonStore(str(UI_SETTINGS_FILE), log_func=self.log)
         data = self.store.load_json() or {}
         if not isinstance(data, dict):

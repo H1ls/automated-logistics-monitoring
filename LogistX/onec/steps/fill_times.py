@@ -1,10 +1,11 @@
-# LogistX/onec/steps/fill_times.py
+﻿# LogistX/onec/steps/fill_times.py
 from __future__ import annotations
 
 from LogistX.onec.artifacts import OneCArtifacts
-from LogistX.onec.steps.base_code import ensure_state, fmt_dt_1c
+from LogistX.onec.steps.base_code import ensure_state_dict, fmt_dt_1c
 from LogistX.onec.steps.ui_point_resolver import UiPointResolver
 from LogistX.onec.trip_time_calculator import TripTimeCalculator, TripTimeInput
+from Navigation_Bot.core.logging import normalize_log_func
 
 
 class FillTimesStep:
@@ -14,18 +15,10 @@ class FillTimesStep:
                  calculator=None):
         self.session = session
         self.errors = errors
-        self.log = log_func
+        self.log = normalize_log_func(log_func)
         self.points = point_resolver or UiPointResolver(session)
-        self.artifacts = artifacts or getattr(session, "artifacts", None) or OneCArtifacts(session, log_func=log_func)
+        self.artifacts = artifacts or getattr(session, "artifacts", None) or OneCArtifacts(session, log_func=self.log)
         self.calculator = calculator or TripTimeCalculator()
-
-    def _ensure_calc_state(self, ctx) -> dict:
-        state = ensure_state(ctx)
-        calc = state.get("calc")
-        if not isinstance(calc, dict):
-            calc = {}
-            state["calc"] = calc
-        return calc
 
     def _copy_deadline(self, x_dep: int, y_row: int, plan_dy: int, label: str) -> str:
         x = x_dep
@@ -46,7 +39,7 @@ class FillTimesStep:
             raise RuntimeError(f"Ошибка при заполнении {label}: {err.kind}")
 
     def _store_calc(self, ctx):
-        calc = self._ensure_calc_state(ctx)
+        calc = ensure_state_dict(ctx, "calc")
         result = self.calculator.calculate(TripTimeInput(
             load_in=ctx.load_in,
             load_out=ctx.load_out,

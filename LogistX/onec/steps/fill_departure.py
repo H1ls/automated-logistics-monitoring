@@ -1,10 +1,11 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 from datetime import datetime, timedelta
 
 from LogistX.onec.steps.base_code import (ensure_progress, ensure_state, fmt_date, fmt_dt_minute, fmt_time,
-                                          minute_floor, parse_race_dt, require_dt)
+                                          minute_floor, parse_race_dt, replace_focused_field, require_dt)
 from LogistX.onec.steps.ui_point_resolver import UiPointResolver
+from Navigation_Bot.core.logging import normalize_log_func
 
 
 class FillDepartureStep:
@@ -13,7 +14,7 @@ class FillDepartureStep:
     def __init__(self, session, errors, log_func=print, max_rounds: int = 5, point_resolver=None):
         self.session = session
         self.errors = errors
-        self.log = log_func
+        self.log = normalize_log_func(log_func)
         self.max_rounds = max_rounds
         self.points = point_resolver or UiPointResolver(session)
 
@@ -60,11 +61,7 @@ class FillDepartureStep:
         self.log(f"📝 {label}: {value}")
         self.points.click(anchor_name, ctx=ctx)
 
-        self.session.sleep(0.08)
-        self.session.press("f2")
-        self.session.sleep(0.08)
-        self.session.replace_current_field(value, submit=submit)
-        self.session.sleep(0.15)
+        replace_focused_field(self.session, value, submit=submit)
 
     def _apply_conflict(self, ctx, current_dt: datetime, finish_dt: datetime) -> tuple[datetime, bool]:
         candidate = minute_floor(finish_dt) + timedelta(minutes=1)

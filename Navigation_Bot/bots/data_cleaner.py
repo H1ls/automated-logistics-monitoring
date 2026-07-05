@@ -1,9 +1,10 @@
-import os
+﻿import os
 import re
 from datetime import datetime
 from typing import List, Dict, Any
 
 from Navigation_Bot.core.repositories.vehicle_registry_fields import compact_vehicle_key
+from Navigation_Bot.core.logging import normalize_log_func
 
 """2. Очистка данных"""
 
@@ -13,7 +14,7 @@ class DataCleaner:
                  id_context=None,
                  log_func=print):
 
-        self.log = log_func
+        self.log = normalize_log_func(log_func)
 
         if task_repository is None:
             raise RuntimeError("DataCleaner requires task_repository")

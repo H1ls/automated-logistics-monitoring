@@ -1,16 +1,17 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 from LogistX.onec.steps.base_code import ensure_state, wialon_precheck_interval
 from LogistX.onec.wialon_times import WialonMeta, WialonTimesPolicy, WialonTimesService
+from Navigation_Bot.core.logging import normalize_log_func
 
 
 class WialonUnloadPrecheckStep:
     stage = "wialon_precheck"
 
     def __init__(self, reportsbot=None, log_func=print, service=None, policy=None):
-        self.log = log_func
-        self.service = service or WialonTimesService(reportsbot, log_func=log_func)
-        self.policy = policy or WialonTimesPolicy(log_func=log_func)
+        self.log = normalize_log_func(log_func)
+        self.service = service or WialonTimesService(reportsbot, log_func=self.log)
+        self.policy = policy or WialonTimesPolicy(log_func=self.log)
 
     @staticmethod
     def _status_from_payload(payload: dict) -> tuple[str, str]:

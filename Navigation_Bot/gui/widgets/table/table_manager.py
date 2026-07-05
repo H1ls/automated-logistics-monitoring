@@ -1,10 +1,11 @@
-from PyQt6.QtCore import QTimer
+﻿from PyQt6.QtCore import QTimer
 
-from Navigation_Bot.gui.dialogs.combined_settings_dialog import VerticalTextDelegate
+from Navigation_Bot.gui.dialogs.components.combined_settings_tabs import VerticalTextDelegate
 from Navigation_Bot.gui.widgets.table.row_action_controller import RowActionController
 from Navigation_Bot.gui.widgets.table.table_display_formatter import TableDisplayFormatter
 from Navigation_Bot.gui.widgets.table.table_row_renderer import TableRowRenderer
 from Navigation_Bot.core.domain.task_identity import row_identity_for_gui
+from Navigation_Bot.core.logging import normalize_log_func
 
 
 class TableManager:
@@ -13,14 +14,14 @@ class TableManager:
 
         self.task_repository = task_repository
         self.table = table_widget
-        self.log = log_func
+        self.log = normalize_log_func(log_func)
         self.on_row_click = on_row_click
         self.on_edit_id_click = on_edit_id_click
         self.address_edit_workflow = address_edit_workflow
         self.editable_field_workflow = editable_field_workflow
         self.reload_callback = reload_callback
 
-        self.formatter = TableDisplayFormatter(log_func=log_func)
+        self.formatter = TableDisplayFormatter(log_func=self.log)
         self._editable_headers = {"Телефон", "ФИО", "КА", "id"}
         self.after_display = None
         self.view_order = []

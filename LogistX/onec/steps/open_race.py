@@ -1,4 +1,4 @@
-# LogistX/onec/steps/open_race.py
+﻿# LogistX/onec/steps/open_race.py
 from __future__ import annotations
 
 import re
@@ -7,6 +7,7 @@ from datetime import timedelta
 
 from LogistX.onec.artifacts import OneCArtifacts
 from LogistX.onec.race_card_verifier import RaceCardVerifier
+from Navigation_Bot.core.logging import normalize_log_func
 
 
 class OpenRaceStep:
@@ -17,10 +18,10 @@ class OpenRaceStep:
                  artifacts=None, race_card_verifier=None):
         self.session = session
         self.errors = errors
-        self.log = log_func
+        self.log = normalize_log_func(log_func)
         self.open_timeout = open_timeout
         self.artifacts = artifacts or getattr(session, "artifacts", None) or OneCArtifacts(
-            session, log_func=log_func
+            session, log_func=self.log
         )
         self.race_card_verifier = race_card_verifier or RaceCardVerifier()
 

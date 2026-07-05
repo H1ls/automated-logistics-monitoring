@@ -34,6 +34,24 @@ class StatusEditorWidget(QWidget):
         self._layout.removeWidget(checkbox)
         checkbox.deleteLater()
 
+    def move_item(self, from_index: int, to_index: int) -> None:
+        if not (0 <= from_index < len(self._cbs)):
+            return
+        to_index = max(0, min(to_index, len(self._cbs) - 1))
+        if from_index == to_index:
+            return
+
+        checkbox = self._cbs.pop(from_index)
+        load = self._loads.pop(from_index)
+        processed = self._processed.pop(from_index)
+
+        self._cbs.insert(to_index, checkbox)
+        self._loads.insert(to_index, load)
+        self._processed.insert(to_index, processed)
+        self._layout.removeWidget(checkbox)
+        self._layout.insertWidget(to_index, checkbox)
+        self._on_state_changed(None)
+
     def set_item_text(self, index: int, text: str) -> None:
         if not (0 <= index < len(self._cbs)):
             return

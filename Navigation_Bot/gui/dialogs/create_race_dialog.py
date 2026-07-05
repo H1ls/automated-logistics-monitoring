@@ -1,12 +1,11 @@
 from __future__ import annotations
-from PyQt6.QtCore import Qt
-from PyQt6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QFormLayout, QLabel, QLineEdit, QPushButton, QTextEdit,
-                             QMessageBox, )
+from PyQt6.QtWidgets import QHBoxLayout, QFormLayout, QLabel, QLineEdit, QPushButton, QTextEdit
 
+from Navigation_Bot.gui.dialogs.base_dialog import BaseDialog
 from Navigation_Bot.gui.dialogs.address_edit_dialog import AddressEditDialog
 
 
-class CreateRaceDialog(QDialog):
+class CreateRaceDialog(BaseDialog):
     """
     Диалог создания новой задачи / рейса.
 
@@ -18,23 +17,17 @@ class CreateRaceDialog(QDialog):
     """
 
     def __init__(self, task_repository, log_func=None, parent=None):
-        super().__init__(parent)
+        super().__init__(title="Создать рейс", size=(760, 720), parent=parent, log_func=log_func)
         self.task_repository = task_repository
-        self.log = log_func or print
 
         self._buffer = {"Погрузка": [],
                         "Выгрузка": [],}
         self._upload_to_google = False
 
-        self.setWindowTitle("Создать рейс")
-        self.resize(760, 720)
-
         self._build_ui()
 
     # --- UI
     def _build_ui(self):
-        root = QVBoxLayout(self)
-
         form = QFormLayout()
 
         self.edit_ts = QLineEdit()
@@ -52,7 +45,7 @@ class CreateRaceDialog(QDialog):
         form.addRow("КА:", self.edit_ka)
         form.addRow("ФИО:", self.edit_fio)
 
-        root.addLayout(form)
+        self.root.addLayout(form)
 
         # --- кнопки редактирования адресов ---
         addr_btns = QHBoxLayout()
@@ -66,39 +59,29 @@ class CreateRaceDialog(QDialog):
         addr_btns.addWidget(self.btn_edit_load)
         addr_btns.addWidget(self.btn_edit_unload)
 
-        root.addLayout(addr_btns)
+        self.root.addLayout(addr_btns)
 
         # --- preview погрузки ---
-        root.addWidget(QLabel("Погрузка:"))
+        self.root.addWidget(QLabel("Погрузка:"))
         self.preview_load = QTextEdit()
         self.preview_load.setReadOnly(True)
         self.preview_load.setMinimumHeight(180)
-        root.addWidget(self.preview_load)
+        self.root.addWidget(self.preview_load)
 
         # --- preview выгрузки ---
-        root.addWidget(QLabel("Выгрузка:"))
+        self.root.addWidget(QLabel("Выгрузка:"))
         self.preview_unload = QTextEdit()
         self.preview_unload.setReadOnly(True)
         self.preview_unload.setMinimumHeight(220)
-        root.addWidget(self.preview_unload)
+        self.root.addWidget(self.preview_unload)
 
         # --- кнопки действий ---
-        actions = QHBoxLayout()
-        actions.addStretch()
-
-        self.btn_save = QPushButton("Сохранить")
-        self.btn_save_send = QPushButton("Сохранить и отправить")
-        self.btn_cancel = QPushButton("Отмена")
-
-        self.btn_save.clicked.connect(lambda: self._accept_if_valid(upload_to_google=False))
-        self.btn_save_send.clicked.connect(lambda: self._accept_if_valid(upload_to_google=True))
-        self.btn_cancel.clicked.connect(self.reject)
-
-        actions.addWidget(self.btn_save)
-        actions.addWidget(self.btn_save_send)
-        actions.addWidget(self.btn_cancel)
-
-        root.addLayout(actions)
+        self.btn_save = self.make_button("Сохранить",
+                                         lambda: self._accept_if_valid(upload_to_google=False))
+        self.btn_save_send = self.make_button("Сохранить и отправить",
+                                              lambda: self._accept_if_valid(upload_to_google=True))
+        self.btn_cancel = self.make_button("Отмена", self.reject)
+        self.add_button_row(right=(self.btn_save, self.btn_save_send, self.btn_cancel))
 
         self._refresh_previews()
 
@@ -192,23 +175,23 @@ class CreateRaceDialog(QDialog):
         fio = self.edit_fio.text().strip()
 
         if not ts:
-            QMessageBox.warning(self, "Проверка", "Заполни поле ТС.")
+            self.warn("Проверка", "Заполни поле ТС.")
             return
 
         if not ka:
-            QMessageBox.warning(self, "Проверка", "Заполни поле КА.")
+            self.warn("Проверка", "Заполни поле КА.")
             return
 
         if not fio:
-            QMessageBox.warning(self, "Проверка", "Заполни поле ФИО.")
+            self.warn("Проверка", "Заполни поле ФИО.")
             return
 
         if not self._buffer.get("Погрузка"):
-            QMessageBox.warning(self, "Проверка", "Добавь погрузку.")
+            self.warn("Проверка", "Добавь погрузку.")
             return
 
         if not self._buffer.get("Выгрузка"):
-            QMessageBox.warning(self, "Проверка", "Добавь выгрузку.")
+            self.warn("Проверка", "Добавь выгрузку.")
             return
 
         self._upload_to_google = bool(upload_to_google)

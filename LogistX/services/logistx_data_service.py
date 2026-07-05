@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import json
 from pathlib import Path
@@ -6,12 +6,13 @@ from typing import Callable
 
 from LogistX.config.paths import LOGISTX_SAMPLE
 from Navigation_Bot.core.json_store import JsonStore
+from Navigation_Bot.core.logging import normalize_log_func
 
 
 class LogistXDataService:
     def __init__(self, sample_path: Path = LOGISTX_SAMPLE, log_func: Callable[[str], None] | None = None):
         self.sample_path = sample_path
-        self.log = log_func or print
+        self.log = normalize_log_func(log_func)
 
     def load_rows(self) -> list[dict]:
         if not self.sample_path.exists():

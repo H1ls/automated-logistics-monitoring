@@ -1,15 +1,16 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 from datetime import datetime
 from typing import Any
 
+from Navigation_Bot.core.logging import noop_log, normalize_log_func
 from Navigation_Bot.core.infrastructure.persistence.sites_db_registry import SitesDbRegistry
 
 
 class GoogleNavigationWriter:
     def __init__(self, gsheet, log=None):
         self.gsheet = gsheet
-        self.log = log
+        self.log = normalize_log_func(log or noop_log)
         self._sites_db = SitesDbRegistry(log_func=log)
 
     def _log(self, msg: str) -> None:

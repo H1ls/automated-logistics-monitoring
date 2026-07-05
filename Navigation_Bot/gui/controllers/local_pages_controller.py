@@ -1,5 +1,5 @@
 from __future__ import annotations
-from Navigation_Bot.gui.main_window.pin_codes_page import PinCodesPage
+from Navigation_Bot.gui.main_window.pin_page.pin_codes_page import PinCodesPage
 
 
 class LocalPagesController:

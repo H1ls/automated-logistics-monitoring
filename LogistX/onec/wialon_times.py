@@ -1,9 +1,10 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 
 from LogistX.onec.steps.base_code import parse_dt
+from Navigation_Bot.core.logging import normalize_log_func
 
 
 @dataclass(frozen=True)
@@ -33,7 +34,7 @@ class WialonTimesService:
 
     def __init__(self, reportsbot, log_func=print):
         self.reportsbot = reportsbot
-        self.log = log_func
+        self.log = normalize_log_func(log_func)
 
     def _require_reportsbot(self) -> None:
         if self.reportsbot is None:
@@ -41,32 +42,26 @@ class WialonTimesService:
 
     def fetch_trip(self, meta: WialonMeta, date_from: str, date_to: str) -> dict:
         self._require_reportsbot()
-        self.log(
-            f"🌍 Wialon: unit={meta.unit}, load_zone={meta.load_zone}, "
-            f"unload_zone={meta.unload_zone}, from={date_from}, to={date_to}"
-        )
-        return self.reportsbot.run_geo_report_for_trip(
-            unit=meta.unit,
-            date_from=date_from,
-            date_to=date_to,
-            load_zone=meta.load_zone,
-            unload_zone=meta.unload_zone,
-            template="Crossing geozones",
-        )
+        self.log(f"🌍 Wialon: unit={meta.unit}, load_zone={meta.load_zone}, "
+                 f"unload_zone={meta.unload_zone}, from={date_from}, to={date_to}")
+
+        return self.reportsbot.run_geo_report_for_trip(unit=meta.unit,
+                                                       date_from=date_from,
+                                                       date_to=date_to,
+                                                       load_zone=meta.load_zone,
+                                                       unload_zone=meta.unload_zone,
+                                                       template="Crossing geozones")
 
     def fetch_unload_precheck(self, meta: WialonMeta, date_from: str, date_to: str) -> dict:
         self._require_reportsbot()
-        self.log(
-            f"🌍 Wialon PRECHECK: unit={meta.unit}, load_zone={meta.load_zone}, "
-            f"unload_zone={meta.unload_zone}, from={date_from}, to={date_to}"
-        )
-        return self.reportsbot.run_geo_report_precheck_unload(
-            unit=meta.unit,
-            date_from=date_from,
-            date_to=date_to,
-            unload_zone=meta.unload_zone,
-            template="Пересечение гео",
-        )
+        self.log(f"🌍 Wialon PRECHECK: unit={meta.unit}, load_zone={meta.load_zone}, "
+                 f"unload_zone={meta.unload_zone}, from={date_from}, to={date_to}")
+
+        return self.reportsbot.run_geo_report_precheck_unload(unit=meta.unit,
+                                                              date_from=date_from,
+                                                              date_to=date_to,
+                                                              unload_zone=meta.unload_zone,
+                                                              template="Пересечение гео")
 
 
 class WialonTimesPolicy:
@@ -74,7 +69,7 @@ class WialonTimesPolicy:
 
     def __init__(self, unload_out_guard_minutes: int = 20, log_func=print, now_func=None):
         self.unload_out_guard_minutes = int(unload_out_guard_minutes)
-        self.log = log_func
+        self.log = normalize_log_func(log_func)
         self.now_func = now_func or datetime.now
 
     @staticmethod
@@ -107,17 +102,13 @@ class WialonTimesPolicy:
             now = self.now_func()
             delta = now - unload_out
             if unload_out > now:
-                self.log(
-                    f"⚠️ unload_out={unload_out:%d.%m.%Y %H:%M:%S} находится в будущем "
-                    f"относительно now={now:%d.%m.%Y %H:%M:%S} — закрытие рейса заблокировано"
-                )
+                self.log(f"⚠️ unload_out={unload_out:%d.%m.%Y %H:%M:%S} находится в будущем "
+                         f"относительно now={now:%d.%m.%Y %H:%M:%S} — закрытие рейса заблокировано")
                 result["unload_out"] = ""
             elif timedelta(0) <= delta < timedelta(minutes=self.unload_out_guard_minutes):
-                self.log(
-                    f"⏳ unload_out={unload_out:%d.%m.%Y %H:%M:%S} слишком близко к "
-                    f"now={now:%d.%m.%Y %H:%M:%S} (< {self.unload_out_guard_minutes} мин) — "
-                    f"считаю, что машина еще на выгрузке"
-                )
+                self.log(f"⏳ unload_out={unload_out:%d.%m.%Y %H:%M:%S} слишком близко к "
+                         f"now={now:%d.%m.%Y %H:%M:%S} (< {self.unload_out_guard_minutes} мин) — "
+                         f"считаю, что машина еще на выгрузке" )
                 result["unload_out"] = ""
 
         return result

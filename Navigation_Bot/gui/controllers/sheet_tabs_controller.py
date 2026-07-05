@@ -46,11 +46,21 @@ class SheetTabsController:
         gui = self.gui
 
         try:
+            existing_filter_button = getattr(gui, "sheet_filter_button", None)
+            self._cleanup_sheet_filter_menu()
+
             # очистить layout
             while gui.sheet_tabs_layout.count():
                 item = gui.sheet_tabs_layout.takeAt(0)
                 w = item.widget()
                 if w:
+                    if w is existing_filter_button:
+                        continue
+                    menu_getter = getattr(w, "menu", None)
+                    menu = menu_getter() if callable(menu_getter) else None
+                    if menu:
+                        menu.hide()
+                        menu.deleteLater()
                     w.deleteLater()
 
             if not getattr(gui, "gsheet", None):
@@ -119,7 +129,7 @@ class SheetTabsController:
                 key = t["key"]
                 title = t["title"]
 
-                btn = QPushButton(title)
+                btn = QPushButton(title, gui)
                 btn.setCheckable(True)
 
                 visible = key not in hidden
@@ -137,11 +147,22 @@ class SheetTabsController:
             # спейсер + выпадающее меню
             gui.sheet_tabs_layout.addStretch()
 
-            gui.sheet_filter_button = QToolButton(gui)
-            gui.sheet_filter_button.setText("Листы ▼")
-            gui.sheet_filter_button.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
+            if existing_filter_button is not None:
+                gui.sheet_filter_button = existing_filter_button
+            else:
+                gui.sheet_filter_button = QToolButton(gui)
+                gui.sheet_filter_button.setObjectName("sheet_filter_button")
+                gui.sheet_filter_button.setText("Листы ▼")
+                gui.sheet_filter_button.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
 
-            menu = QMenu(gui)
+            menu = gui.sheet_filter_button.menu()
+            if menu is None:
+                menu = QMenu(gui.sheet_filter_button)
+                menu.setObjectName("sheet_filter_menu")
+                gui.sheet_filter_button.setMenu(menu)
+            else:
+                menu.hide()
+                menu.clear()
             gui._tab_actions = {}
 
             for t in tabs:
@@ -156,13 +177,26 @@ class SheetTabsController:
                 menu.addAction(act)
                 gui._tab_actions[key] = act
 
-            gui.sheet_filter_button.setMenu(menu)
             gui.sheet_tabs_layout.addWidget(gui.sheet_filter_button)
 
 
 
         except Exception as e:
             gui.log(f"❌ SheetTabsController.build: {e}")
+
+    def _cleanup_sheet_filter_menu(self) -> None:
+        gui = self.gui
+
+        old_button = getattr(gui, "sheet_filter_button", None)
+        old_menu = old_button.menu() if old_button and hasattr(old_button, "menu") else None
+        if old_menu:
+            old_menu.hide()
+
+        for menu in gui.findChildren(QMenu, "sheet_filter_menu"):
+            if menu is old_menu:
+                continue
+            menu.hide()
+            menu.deleteLater()
 
     def on_tab_clicked(self, tab: dict, clicked_btn: QPushButton):
         gui = self.gui

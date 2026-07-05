@@ -1,4 +1,4 @@
-# LogistX/controllers/onec/session.py
+﻿# LogistX/controllers/onec/session.py
 from __future__ import annotations
 
 import time
@@ -11,6 +11,7 @@ import pyperclip
 from LogistX.controllers.vision_locator import VisionLocator
 from .artifacts import OneCArtifacts
 from .uimap import UiMap
+from Navigation_Bot.core.logging import normalize_log_func
 
 
 class OneCSession:
@@ -22,13 +23,13 @@ class OneCSession:
 
         self.rdp_activator = rdp_activator
         self.ui_map = ui_map
-        self.log = log_func
+        self.log = normalize_log_func(log_func)
 
         self.tmp_dir = Path(tmp_dir)
         self.tmp_dir.mkdir(parents=True, exist_ok=True)
 
-        self.vision = VisionLocator(templates_dir=templates_dir, threshold=threshold, log_func=log_func, )
-        self.artifacts = OneCArtifacts(self, enabled=debug_mode, log_func=log_func)
+        self.vision = VisionLocator(templates_dir=templates_dir, threshold=threshold, log_func=self.log, )
+        self.artifacts = OneCArtifacts(self, enabled=debug_mode, log_func=self.log)
         self.ui_calibrated = False
         pyautogui.FAILSAFE = True
         screen = pyautogui.size()

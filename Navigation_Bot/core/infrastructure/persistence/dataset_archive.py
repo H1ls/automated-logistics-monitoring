@@ -1,10 +1,11 @@
-import json
+﻿import json
 from Navigation_Bot.core.paths import DATASET_DIR, DATASET_FILE
+from Navigation_Bot.core.logging import normalize_log_func
 
 
 class DatasetArchive:
     def __init__(self, log_func=print):
-        self.log = log_func
+        self.log = normalize_log_func(log_func)
         DATASET_DIR.mkdir(parents=True, exist_ok=True)
         self.filepath = DATASET_FILE
 

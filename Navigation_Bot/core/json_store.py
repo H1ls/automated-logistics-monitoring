@@ -1,15 +1,17 @@
-import os
+﻿import os
 import json
 from typing import Any
 from pathlib import Path
 import tempfile
 import hashlib
 
+from Navigation_Bot.core.logging import normalize_log_func
+
 
 class JsonStore:
     def __init__(self, file_path: str = None, log_func=None):
         self.file_path = file_path
-        self.log = log_func or print
+        self.log = normalize_log_func(log_func)
         self.data = self.load_json(file_path)
 
     def save_in_json(self, data, filepath=None):
@@ -60,7 +62,7 @@ class JsonStore:
 
         # 5. Атомарный rename
         try:
-            tmp_path.rename(filepath)
+            os.replace(tmp_path, filepath)
             # self.log(f"✅ Сохранено: {filepath}")
 
             # Удалим backup если сохранение успешно
@@ -74,8 +76,9 @@ class JsonStore:
                     self.log(f"⚠️ Восстановлено из backup")
                 except:
                     pass
-            tmp_path.unlink()
-            raise RuntimeError(f"Cannot save {filepath}") from e
+            if tmp_path.exists():
+                tmp_path.unlink()
+            raise
 
     def load_json(self, file_path: str = None) -> Any:
         path = file_path or self.file_path

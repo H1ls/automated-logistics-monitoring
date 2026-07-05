@@ -1,7 +1,8 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 from LogistX.onec.bot import OneCBot
 from LogistX.onec.context import RaceContext
+from Navigation_Bot.core.logging import normalize_log_func
 
 
 class LogistxRaceService:
@@ -17,7 +18,7 @@ class LogistxRaceService:
 
     def __init__(self, logger, executor, browser_session, ui_bridge=None, rdp_activator=None,
                  debug_mode: bool = False):
-        self.log = logger
+        self.log = normalize_log_func(logger)
         self.executor = executor
         self.browser_session = browser_session
         self.ui_bridge = ui_bridge

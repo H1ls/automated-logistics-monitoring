@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional, Tuple
@@ -6,6 +6,7 @@ from typing import Optional, Tuple
 import cv2
 import numpy as np
 import pyautogui
+from Navigation_Bot.core.logging import normalize_log_func
 
 
 @dataclass
@@ -25,7 +26,7 @@ class VisionLocator:
     def __init__(self, templates_dir: str | Path, threshold: float = 0.82, log_func=print):
         self.templates_dir = Path(templates_dir)
         self.threshold = float(threshold)
-        self.log = log_func
+        self.log = normalize_log_func(log_func)
 
     def screenshot(self, path: str | Path, region: Optional[tuple[int, int, int, int]] = None) -> Path:
         path = Path(path)

@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
@@ -7,6 +7,8 @@ from html import escape
 
 from PyQt6.QtCore import QObject, pyqtSignal
 from PyQt6.QtGui import QTextCursor
+
+from Navigation_Bot.core.logging import LogFunc, noop_log, normalize_log_func
 
 
 class LogAudience(str, Enum):
@@ -27,7 +29,6 @@ class LogRecord:
     message: str
     severity: LogSeverity = LogSeverity.INFO
     audience: LogAudience = LogAudience.USER
-
 
 class LogController(QObject):
     """
@@ -79,8 +80,14 @@ class LogController(QObject):
         return self.audience.value
 
     def log(self, message: str, audience: str | LogAudience = LogAudience.USER,
-            severity: str | LogSeverity = LogSeverity.INFO):
+            severity: str | LogSeverity = LogSeverity.INFO,
+            *, visible: str | LogAudience | None = None,
+            visiable: str | LogAudience | None = None):
         """self.log(f"❗️Ошибка",severity="error",audience="user+", )"""
+        if visible is not None:
+            audience = visible
+        if visiable is not None:
+            audience = visiable
         self.emit_record(message=message, severity=severity, audience=audience)
 
     def emit_record(self, message: str, severity: str | LogSeverity = LogSeverity.INFO,

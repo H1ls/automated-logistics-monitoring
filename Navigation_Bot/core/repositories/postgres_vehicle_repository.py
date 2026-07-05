@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import re
 from typing import Any, Callable
@@ -12,13 +12,15 @@ from Navigation_Bot.core.repositories.vehicle_registry_fields import (
     TS_FIELD,
     compact_vehicle_key,
     plate_from_monitoring_name,
+    vehicle_lookup_keys,
 )
+from Navigation_Bot.core.logging import noop_log, normalize_log_func
 
 
 class PostgresVehicleRepository:
     def __init__(self, connection: Any, log: Callable[[str], None] | None = None):
         self.connection = connection
-        self.log = log
+        self.log = normalize_log_func(log or noop_log)
 
     def list_registry_entries(self) -> list[dict[str, Any]]:
         rows = self.connection.execute(
@@ -129,6 +131,7 @@ class PostgresVehicleRepository:
             """
         ).fetchall()
         lookup: dict[str, dict[str, Any]] = {}
+        base_candidates: dict[str, dict[str, Any] | None] = {}
         for row in rows:
             monitoring_id = self._to_int_or_none(row["monitoring_id"])
             if monitoring_id is None:
@@ -140,9 +143,20 @@ class PostgresVehicleRepository:
                 "vehicle_full_name": row["vehicle_full_name"] or "",
             }
             for value in (row["monitoring_name"], row["plate_number"], row["vehicle_full_name"]):
-                key = self.compact_key(value)
-                if key:
-                    lookup[key] = payload
+                exact_key = compact_vehicle_key(value)
+                if exact_key:
+                    lookup[exact_key] = payload
+                for key in vehicle_lookup_keys(value):
+                    if key and key != exact_key:
+                        existing = base_candidates.get(key)
+                        if key not in base_candidates:
+                            base_candidates[key] = payload
+                        elif existing is not None and existing.get("monitoring_id") != payload.get("monitoring_id"):
+                            base_candidates[key] = None
+
+        for key, payload in base_candidates.items():
+            if payload is not None and key not in lookup:
+                lookup[key] = payload
         return lookup
 
     def monitoring_lookup(self) -> dict[str, int]:

@@ -1,10 +1,14 @@
-from PyQt6.QtCore import Qt
+from PyQt6.QtCore import QEvent, Qt
 from PyQt6.QtGui import QColor
-from PyQt6.QtWidgets import (QWidget, QHBoxLayout, QPushButton, QLabel, QAbstractItemView, QLineEdit)
+from PyQt6.QtWidgets import QAbstractItemView, QHBoxLayout, QLabel, QLineEdit, QPushButton, QWidget
+
+from Navigation_Bot.core.logging import normalize_log_func
+
 try:
     from PyQt6 import sip
 except Exception:
     import sip  # fallback
+
 
 class GlobalSearchBar(QWidget):
     """Плавающая строка поиска по таблице."""
@@ -12,9 +16,12 @@ class GlobalSearchBar(QWidget):
     def __init__(self, table, log_func=print, parent=None):
         super().__init__(parent)
         self.table = table
-        self.log = log_func
+        self.log = normalize_log_func(log_func)
         self._hits: list[tuple[int, int]] = []
         self._idx: int = -1
+        self.cols_to_check: list[int] | None = None
+        self.row_filter = None
+        self.cell_text_provider = None
 
         # для подсветки текущей ячейки
         self._highlight_pos: tuple[int, int] | None = None
@@ -26,6 +33,7 @@ class GlobalSearchBar(QWidget):
 
         self.edit = QLineEdit()
         self.edit.setPlaceholderText("Поиск...")
+        self.edit.installEventFilter(self)
         self.counter = QLabel("0 из 0")
 
         self.btn_prev = QPushButton("↑")
@@ -47,6 +55,19 @@ class GlobalSearchBar(QWidget):
         self.btn_next.clicked.connect(lambda: self._step(1))
         self.btn_prev.clicked.connect(lambda: self._step(-1))
         self.btn_close.clicked.connect(self._close_bar)
+
+    def eventFilter(self, obj, event):
+        if obj is self.edit and event.type() == QEvent.Type.KeyPress:
+            if event.key() == Qt.Key.Key_Down:
+                self._step(1)
+                return True
+            if event.key() == Qt.Key.Key_Up:
+                self._step(-1)
+                return True
+            if event.key() == Qt.Key.Key_Escape:
+                self._close_bar()
+                return True
+        return super().eventFilter(obj, event)
 
     def set_table(self, table):
         # если была подсветка в старой таблице — снимаем
@@ -88,6 +109,11 @@ class GlobalSearchBar(QWidget):
         self.edit.selectAll()
         self._rebuild_hits()
 
+    def refresh(self):
+        """Пересобрать результаты поиска, если панель открыта."""
+        if self.isVisible():
+            self._rebuild_hits()
+
     def set_cols(self, cols: list[int] | None):
         """Задать колонки, по которым ищем. None/[] => искать по всем."""
         if cols:
@@ -96,9 +122,23 @@ class GlobalSearchBar(QWidget):
             self.cols_to_check = None
         self._rebuild_hits()
 
-    #  внутренняя логика поиска
-    from PyQt6 import sip
+    def set_row_filter(self, row_filter):
+        """Задать проверку строки. False => строка не участвует в поиске."""
+        self.row_filter = row_filter
+        self._rebuild_hits()
 
+    def set_cell_text_provider(self, cell_text_provider):
+        """Задать извлечение текста ячейки для нестандартных таблиц."""
+        self.cell_text_provider = cell_text_provider
+        self._rebuild_hits()
+
+    def _cell_text(self, row: int, col: int) -> str:
+        if self.cell_text_provider is not None:
+            return str(self.cell_text_provider(row, col) or "")
+        item = self.table.item(row, col)
+        return item.text() if item else ""
+
+    #  внутренняя логика поиска
     def _rebuild_hits(self):
         try:
             # защита: table может быть None или sip-deleted
@@ -120,18 +160,21 @@ class GlobalSearchBar(QWidget):
             rows = self.table.rowCount()
 
             # локальная переменная, не self.*
-            cols_to_check = getattr(self, "cols_to_check", None) or list(range(self.table.columnCount()))
-            
+            cols_to_check = self.cols_to_check or list(range(self.table.columnCount()))
+
             for r in range(rows):
+                if self.row_filter is not None and not self.row_filter(r):
+                    continue
                 for c in cols_to_check:
-                    item = self.table.item(r, c)
-                    if item and term in item.text().lower():
+                    if term in self._cell_text(r, c).lower():
                         self._hits.append((r, c))
                         break
 
             if self._hits:
                 self._idx = 0
                 self._select_current()
+            else:
+                self._clear_highlight()
 
             self._update_counter()
 
@@ -173,6 +216,7 @@ class GlobalSearchBar(QWidget):
         item.setBackground(QColor("#ffe5b4"))  # мягкий оранжевый
         self._highlight_pos = (row, col)
 
+        self.table.setCurrentCell(row, col)
         self.table.selectRow(row)
         self.table.scrollToItem(item, QAbstractItemView.ScrollHint.PositionAtCenter)
 

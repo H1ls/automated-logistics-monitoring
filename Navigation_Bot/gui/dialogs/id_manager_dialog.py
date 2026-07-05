@@ -1,8 +1,8 @@
-from PyQt6.QtCore import Qt
-from PyQt6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLineEdit,QTableWidget, QTableWidgetItem, QPushButton)
+﻿from PyQt6.QtCore import Qt
+from PyQt6.QtWidgets import QHBoxLayout, QLineEdit, QTableWidget, QTableWidgetItem, QPushButton
 
 from Navigation_Bot.core.repositories.vehicle_registry_fields import (CENTER_FIELD, ID_FIELD, NAME_FIELD, TS_FIELD)
-from Navigation_Bot.gui.dialogs.dialog_helpers import button_row_trailing
+from Navigation_Bot.gui.dialogs.base_dialog import BaseDialog
 
 _ID = ID_FIELD
 _NAME = NAME_FIELD
@@ -10,13 +10,11 @@ _TS = TS_FIELD
 _CENTER = CENTER_FIELD
 
 
-class IDManagerDialog(QDialog):
+class IDManagerDialog(BaseDialog):
     def __init__(self, parent=None):
-        super().__init__(parent)
-        self.setWindowTitle("Редактор ID-справочника")
-        self.resize(550, 600)
+        super().__init__(title="Редактор ID-справочника", size=(550, 600), parent=parent)
 
-        self.log_func = getattr(parent, "log", print)
+        self.log_func = self.log
         self.vehicle_repository = getattr(parent, "vehicle_repository", None)
         if self.vehicle_repository is None:
             raise RuntimeError("IDManagerDialog requires parent.vehicle_repository")
@@ -25,12 +23,10 @@ class IDManagerDialog(QDialog):
         self._initializing = True
 
         # --- Собираем UI ---
-        vbox = QVBoxLayout(self)
-
         # Поиск
         self.search = QLineEdit()
         self.search.setPlaceholderText("Поиск по любому полю...")
-        vbox.addWidget(self.search)
+        self.root.addWidget(self.search)
 
         add_layout = QHBoxLayout()
 
@@ -47,17 +43,15 @@ class IDManagerDialog(QDialog):
         add_layout.addWidget(self.new_name)
         add_layout.addWidget(btn_add)
 
-        vbox.addLayout(add_layout)
+        self.root.addLayout(add_layout)
 
         # Таблица
         self.table = QTableWidget(0, 4)
         self.table.setHorizontalHeaderLabels(["ИД-Объекта", _NAME, _TS, _CENTER])
         self.table.horizontalHeader().setStretchLastSection(True)
-        vbox.addWidget(self.table)
+        self.root.addWidget(self.table)
 
-        btn_ok = QPushButton("Сохранить")
-        btn_cancel = QPushButton("Отмена")
-        vbox.addLayout(button_row_trailing(btn_ok, btn_cancel))
+        btn_ok, btn_cancel = self.add_save_cancel_buttons()
 
         # Заполняем таблицу
         self._populate_table(self.original_entries)

@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 from typing import Callable
 
@@ -7,6 +7,7 @@ from PyQt6.QtGui import QColor
 from PyQt6.QtWidgets import QAbstractItemView, QPushButton, QTableWidget, QTableWidgetItem
 
 from Navigation_Bot.core.infrastructure.persistence.sites_db_registry import SitesDbRegistry
+from Navigation_Bot.core.logging import normalize_log_func
 
 
 class LogistXTableRenderer:
@@ -21,7 +22,7 @@ class LogistXTableRenderer:
 
     def __init__(self, table: QTableWidget, log_func: Callable[[str], None] | None = None):
         self.table = table
-        self.log = log_func or print
+        self.log = normalize_log_func(log_func)
         self.sites_db = SitesDbRegistry(log_func=self.log)
         self._on_play_clicked: Callable[[int], None] | None = None
         self._source_to_visual: dict[int, int] = {}

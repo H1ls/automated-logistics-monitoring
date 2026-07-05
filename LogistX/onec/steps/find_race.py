@@ -1,7 +1,8 @@
-# LogistX/onec/steps/find_race.py
+﻿# LogistX/onec/steps/find_race.py
 from __future__ import annotations
 
 from LogistX.onec.steps.ui_point_resolver import UiPointResolver
+from Navigation_Bot.core.logging import normalize_log_func
 
 
 class FindRaceStep:
@@ -10,7 +11,7 @@ class FindRaceStep:
     def __init__(self, session, errors, log_func=print, point_resolver=None):
         self.session = session
         self.errors = errors
-        self.log = log_func
+        self.log = normalize_log_func(log_func)
         self.points = point_resolver or UiPointResolver(session)
 
     def run(self, ctx):

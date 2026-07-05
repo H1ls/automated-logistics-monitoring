@@ -1,5 +1,6 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
+import time
 from collections import Counter
 
 from LogistX.onec.artifacts import OneCArtifacts
@@ -7,6 +8,7 @@ from LogistX.onec.checkbox import CheckboxController
 from LogistX.onec.driver_rating_table import DriverRatingTableReader
 from LogistX.onec.steps.base_code import ensure_state, positive_minutes_between
 from LogistX.onec.steps.ui_point_resolver import UiPointResolver
+from Navigation_Bot.core.logging import normalize_log_func
 
 
 class DriverRatingStep:
@@ -16,12 +18,12 @@ class DriverRatingStep:
                  table_reader=None, verify_attempts: int = 3, checkbox_controller=None):
         self.session = session
         self.errors = errors
-        self.log = log_func
+        self.log = normalize_log_func(log_func)
         self.points = point_resolver or UiPointResolver(session)
-        self.artifacts = artifacts or getattr(session, "artifacts", None) or OneCArtifacts(session, log_func=log_func)
+        self.artifacts = artifacts or getattr(session, "artifacts", None) or OneCArtifacts(session, log_func=self.log)
         self.table_reader = table_reader or DriverRatingTableReader()
         self.verify_attempts = max(1, int(verify_attempts))
-        self.checkboxes = checkbox_controller or CheckboxController(session, artifacts=self.artifacts)
+        self.checkboxes = checkbox_controller or CheckboxController(session, artifacts=self.artifacts, log_func=self.log)
 
     def _get_rating_items(self, ctx) -> list[dict]:
         state = getattr(ctx, "state", {}) or {}
@@ -48,9 +50,7 @@ class DriverRatingStep:
         self.log(f"⏳ Ожидание погрузки {wait_minutes} мин > {threshold_hours}ч - ставлю галку")
         anchor = self.points.resolve("wait_load", ctx=ctx)
         dx, dy = self.session.ui_map.get_offset("wait_load_checkbox_from_anchor")
-        self.checkboxes.ensure_checked(
-            (anchor.x + dx, anchor.y + dy), stage=self.stage, name="wait_load"
-        )
+        self.checkboxes.ensure_checked((anchor.x + dx, anchor.y + dy), stage=self.stage, name="wait_load")
 
         err = self.errors.handle_generic()
         if err:
@@ -71,7 +71,7 @@ class DriverRatingStep:
 
         return self.session.vision.find(shot_path,
                                         self.session.ui_map.get_template("btn_insert"),
-                                        region_offset=region_offset,)
+                                        region_offset=region_offset, )
 
     def _click_insert_button(self) -> bool:
         m = self._find_insert_button()
@@ -126,6 +126,7 @@ class DriverRatingStep:
 
     def _verify_and_repair(self, ctx, items: list[dict]) -> None:
         expected = Counter(self._expected_rows(items))
+        attempted_repairs = set()
 
         for attempt in range(1, self.verify_attempts + 1):
             snapshot = self.table_reader.read(self._capture_rating_table())
@@ -143,31 +144,61 @@ class DriverRatingStep:
                 self.log(f"✅ Оценка водителя проверена, попытка {attempt}")
                 return
 
-            if not snapshot.rows:
+            if not snapshot.rows and not str(snapshot.recognized_text or "").strip():
                 self.log(f"⚠️ OCR не распознал строки оценки: {snapshot.recognized_text!r}")
                 if attempt < self.verify_attempts:
                     self.session.sleep(0.4)
                     continue
                 raise RuntimeError("Не удалось распознать таблицу оценки водителя")
 
-            if attempt >= self.verify_attempts:
-                raise RuntimeError(
-                    f"Оценка водителя не совпала после {self.verify_attempts} попыток: "
-                    f"expected={list(expected.elements())}, actual={list(actual.elements())}"
-                )
-
             remaining = expected.copy()
             extra_rows = []
+            unconfirmed_rows = []
             for row in snapshot.rows:
                 if remaining[row.key] > 0:
                     remaining[row.key] -= 1
+                elif row.hours == 0:
+                    expected_key = next((key for key in remaining
+                                         if key[0] == row.kind and key[1] > 0 and remaining[key] > 0),
+                                        None)
+
+                    if expected_key:
+                        remaining[expected_key] -= 1
+                        unconfirmed_rows.append(row)
+                    else:
+                        extra_rows.append(row)
                 else:
                     extra_rows.append(row)
+
+            missing = +remaining
+            if unconfirmed_rows and not extra_rows and not missing:
+                ensure_state(ctx)["driver_rating_verification"].update({
+                    "ok": True,
+                    "actual": list(expected.elements()),
+                    "unconfirmed_hours": [row.text for row in unconfirmed_rows],
+                })
+                self.log("⚠️ Вид отклонения найден, но часы OCR не распознал. Подтверждаю по виду из ctx.")
+                return
+
+            if attempt >= self.verify_attempts:
+                raise RuntimeError(
+                    f"Оценка водителя не совпала после {self.verify_attempts} попыток: "
+                    f"expected={list(expected.elements())}, actual={list(actual.elements())}")
+
+            repair_signature = (tuple((row.key, row.y, row.text) for row in extra_rows + unconfirmed_rows),
+                                tuple(sorted(missing.elements()))
+                                )
+            if repair_signature in attempted_repairs:
+                raise RuntimeError(
+                    "Оценка водителя не изменилась после исправления: "
+                    f"expected={list(expected.elements())}, actual={list(actual.elements())}. "
+                    "Возможно, 1С не приняла ввод или зависла.")
+            attempted_repairs.add(repair_signature)
 
             for row in sorted(extra_rows, key=lambda value: value.y, reverse=True):
                 self._delete_rating_row(row)
 
-            for key, count in remaining.items():
+            for key, count in missing.items():
                 for _ in range(count):
                     self.log(f"🔁 Повторно добавляю: {key[0]} = {key[1]} ч.")
                     self._add_expected_row(key)
@@ -223,22 +254,8 @@ class DriverRatingStep:
         if err:
             raise RuntimeError(f"Ошибка при переходе на оценку водителя: {err.kind}")
 
-        if not items:
-            self._add_nothing()
-            self._verify_and_repair(ctx, items)
-            return
-
-        for item in items:
-            kind = str(item.get("kind") or "").strip()
-            hours = int(item.get("hours") or 0)
-            if not kind or hours <= 0:
-                continue
-
-            self.log(f"🟧 {kind}: {hours} ч.")
-            self._add_driver_deviation(kind, hours)
-
         err = self.errors.handle_generic()
         if err:
             raise RuntimeError(f"Ошибка в блоке оценки водителя: {err.kind}")
-
+        time.sleep(1)
         self._verify_and_repair(ctx, items)

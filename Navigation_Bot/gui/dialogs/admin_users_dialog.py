@@ -5,38 +5,32 @@ from typing import Any
 from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import (QCheckBox,
                              QComboBox,
-                             QDialog,
                              QFormLayout,
                              QHBoxLayout,
                              QLabel,
                              QLineEdit,
-                             QMessageBox,
                              QPushButton,
                              QTableWidget,
-                             QTableWidgetItem,
-                             QVBoxLayout)
+                             QTableWidgetItem)
 
 from Navigation_Bot.core.infrastructure.api.api_client import NavigationApiError
+from Navigation_Bot.gui.dialogs.base_dialog import BaseDialog
 
 
 ROLES = ("admin", "dispatcher", "viewer")
 
 
-class AdminUsersDialog(QDialog):
+class AdminUsersDialog(BaseDialog):
     def __init__(self, api_client, parent=None):
-        super().__init__(parent)
+        super().__init__(title="Пользователи и роли", size=(760, 460), parent=parent)
         self.api_client = api_client
-        self.setWindowTitle("Пользователи и роли")
-        self.resize(760, 460)
-
-        layout = QVBoxLayout(self)
 
         self.table = QTableWidget(0, 7)
         self.table.setHorizontalHeaderLabels(["ID", "Username", "Имя", "Роль", "Активен", "API-ключи", "Обновлен"])
         self.table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         self.table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         self.table.itemSelectionChanged.connect(self._fill_from_selection)
-        layout.addWidget(self.table)
+        self.root.addWidget(self.table)
 
         form = QFormLayout()
         self.username_edit = QLineEdit()
@@ -60,7 +54,7 @@ class AdminUsersDialog(QDialog):
         form.addRow("Подтверждение", self.password_confirm_edit)
         form.addRow("Роль", self.role_combo)
         form.addRow("", self.active_check)
-        layout.addLayout(form)
+        self.root.addLayout(form)
 
         buttons = QHBoxLayout()
         self.status_label = QLabel("")
@@ -77,7 +71,7 @@ class AdminUsersDialog(QDialog):
         buttons.addWidget(btn_new)
         buttons.addWidget(btn_save)
         buttons.addWidget(btn_close)
-        layout.addLayout(buttons)
+        self.root.addLayout(buttons)
 
         self.refresh()
 
@@ -85,7 +79,7 @@ class AdminUsersDialog(QDialog):
         try:
             payload = self.api_client.get("/api/v1/users")
         except NavigationApiError as exc:
-            QMessageBox.warning(self, "Пользователи", str(exc))
+            self.warn("Пользователи", str(exc))
             return
 
         rows = payload.get("items", []) if isinstance(payload, dict) else []
@@ -98,16 +92,16 @@ class AdminUsersDialog(QDialog):
         username = self.username_edit.text().strip()
         password = self.password_edit.text()
         if not username:
-            QMessageBox.warning(self, "Пользователи", "Введите username.")
+            self.warn("Пользователи", "Введите username.")
             return
         if not self._editing_existing and not password:
-            QMessageBox.warning(self, "Пользователи", "Для нового пользователя введите пароль.")
+            self.warn("Пользователи", "Для нового пользователя введите пароль.")
             return
         if password and len(password) < 8:
-            QMessageBox.warning(self, "Пользователи", "Пароль должен содержать минимум 8 символов.")
+            self.warn("Пользователи", "Пароль должен содержать минимум 8 символов.")
             return
         if password != self.password_confirm_edit.text():
-            QMessageBox.warning(self, "Пользователи", "Пароли не совпадают.")
+            self.warn("Пользователи", "Пароли не совпадают.")
             return
 
         request_payload = {"username": username,
@@ -121,7 +115,7 @@ class AdminUsersDialog(QDialog):
             else:
                 response = self.api_client.put(f"/api/v1/users/{self._selected_user_id}", json=request_payload)
         except NavigationApiError as exc:
-            QMessageBox.warning(self, "Пользователи", str(exc))
+            self.warn("Пользователи", str(exc))
             return
 
         saved_user = response.get("user", {}) if isinstance(response, dict) else {}

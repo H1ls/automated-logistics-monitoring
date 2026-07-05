@@ -1,4 +1,4 @@
-import json
+﻿import json
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import WebDriverWait
@@ -7,6 +7,7 @@ from selenium.common.exceptions import NoSuchElementException
 
 from Navigation_Bot.core.json_store import JsonStore
 from Navigation_Bot.core.paths import CONFIG_JSON
+from Navigation_Bot.core.logging import normalize_log_func
 from pathlib import Path
 
 
@@ -20,7 +21,7 @@ class NaviBase:
     def __init__(self, driver, log_func=None):
 
         self.driver = driver
-        self.log = log_func or print
+        self.log = normalize_log_func(log_func)
         self.selectors = self.load_selectors()
         self.validate_selectors()
 

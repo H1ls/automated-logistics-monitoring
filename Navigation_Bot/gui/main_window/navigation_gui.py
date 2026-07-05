@@ -7,6 +7,7 @@ from PyQt6.QtWidgets import QApplication, QWidget
 from Navigation_Bot.core.paths import PIN_XLSX_FILEPATH, PIN_JSON_FILEPATH
 from Navigation_Bot.gui.builders.main_ui_builder import MainUi, MainUiBuilder
 from Navigation_Bot.gui.app.app_services import AppServices
+from Navigation_Bot.gui.debug.qt_debug_logger import QtWidgetLifecycleLogger, log as debug_log
 from Navigation_Bot.gui.controllers.sheet_tabs_controller import SheetTabsController
 from Navigation_Bot.gui.controllers.local_pages_controller import LocalPagesController
 from Navigation_Bot.gui.settings.ui_bridge import UiBridge
@@ -58,10 +59,12 @@ class NavigationGUI(QWidget):
 
         raise AttributeError(f"{type(self).__name__!s} has no attribute {name!r}")
 
-    def __init__(self, api_key: str = ""):
+    def __init__(self, api_key: str = "", startup_splash=None):
         super().__init__()
 
         self.log = lambda msg: print(msg)
+        self.startup_splash = startup_splash
+        self.update_startup_status("Создание окна...", "Подготовка базовых параметров")
         self.session_api_key = api_key
         self.PIN_XLSX_FILEPATH = PIN_XLSX_FILEPATH
         self.PIN_JSON_FILEPATH = PIN_JSON_FILEPATH
@@ -77,31 +80,43 @@ class NavigationGUI(QWidget):
         self.updated_rows = []
         self.task_rows = []
 
+        self.update_startup_status("Загрузка настроек...", "Чтение параметров интерфейса")
         self.ui_settings = UiSettingsManager(log_func=self.log)
+        self.update_startup_status("Создание интерфейса...", "Подготовка окна лога и таблицы")
         self.init_ui()
 
         self.loading = LoadingOverlayController(self)
-        self.show()
+        if self.startup_splash is None:
+            self.show()
         self.loading.show("Инициализация приложения…", "Подготовка интерфейса")
 
         QApplication.processEvents()
+        self.update_startup_status("Связь интерфейса...", "Подготовка UI bridge")
         self.ui_bridge = UiBridge(self)
+        self.update_startup_status("Применение настроек...", "Восстановление размеров окна и таблицы")
         self.ui_settings.apply_window(self)
         self.ui_settings.apply_table(self.ui.table)
 
         # Читаем режим размещения и выбор монитора из настроек
+        self.update_startup_status("Настройка раскладки...", "Подготовка мониторов и панелей")
         self.layout_controller = LayoutController(self)
         self.layout_controller.setup()
 
+        self.update_startup_status("Создание контроллеров...", "Подготовка локальных страниц и действий")
         self.local_pages_controller = LocalPagesController(self)
         self.dialog_requests = DialogRequestController(self)
         self.actions = MainActionsController(self)
         self.startup_controller = StartupController(self)
+        self.qt_debug_logger = QtWidgetLifecycleLogger(self)
+        self.qt_debug_logger.install()
         self.startup_controller.start()
 
     def closeEvent(self, event):
         """Гарантированная очистка при закрытии окна"""
         try:
+            if getattr(self, "qt_debug_logger", None):
+                self.qt_debug_logger.uninstall()
+
             if getattr(self, "dialog_requests", None):
                 self.dialog_requests.stop()
 
@@ -138,6 +153,18 @@ class NavigationGUI(QWidget):
         if getattr(self, "loading", None):
             self.loading.hide()
 
+    def update_startup_status(self, text: str, detail: str = "") -> None:
+        splash = getattr(self, "startup_splash", None)
+        if splash is not None:
+            splash.update(text, detail)
+
+    def finish_startup_splash(self) -> None:
+        splash = getattr(self, "startup_splash", None)
+        if splash is not None:
+            self.show()
+            splash.finish(self)
+            self.startup_splash = None
+
     def get_or_create_local_page(self, key: str):
         if not getattr(self, "local_pages_controller", None):
             return None
@@ -167,12 +194,10 @@ class NavigationGUI(QWidget):
         self.sheet_tabs_controller.build()
 
     def init_ui(self):
-        self.ui = MainUiBuilder().build(
-            self,
-            ui_settings=self.ui_settings,
-            log_enabled_getter=lambda: self._log_enabled,
-            on_header_clicked=self._on_header_clicked,
-        )
+        self.ui = MainUiBuilder().build(self,
+                                        ui_settings=self.ui_settings,
+                                        log_enabled_getter=lambda: self._log_enabled,
+                                        on_header_clicked=self._on_header_clicked)
 
         self.log = self.ui.logger.log
         self.log_info = self.ui.logger.info
@@ -207,12 +232,16 @@ class NavigationGUI(QWidget):
             self.ui.search_bar.start()
 
     def reload_and_show(self):
+        debug_log(self, "NavigationGUI", "reload_and_show start")
         self.ctx.task_table_controller.reload_and_show()
+        debug_log(self, "NavigationGUI", "reload_and_show done")
 
     def display_current_data(self):
+        debug_log(self, "NavigationGUI", "display_current_data start")
         self.ctx.task_table_controller.display_current_data()
+        debug_log(self, "NavigationGUI", "display_current_data done")
 
     def _on_header_clicked(self, logical_index: int):
-        controller = self.ctx.task_table_controller if hasattr(self, "ctx") and hasattr(self.ctx, "task_table_controller") else None
+        controller = self.ctx.task_table_controller if hasattr(self, "ctx") and hasattr(self.ctx,"task_table_controller") else None
         if controller is not None:
             controller.on_header_clicked(logical_index)

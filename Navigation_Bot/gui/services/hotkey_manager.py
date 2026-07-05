@@ -1,14 +1,15 @@
-import time
+﻿import time
 import pyclip
 import keyboard
 from datetime import datetime
 from threading import Thread, Event
 from global_hotkeys import (clear_hotkeys, register_hotkeys, start_checking_hotkeys, stop_checking_hotkeys, )
+from Navigation_Bot.core.logging import normalize_log_func
 
 
 class HotkeyManager:
     def __init__(self, log_func=print):
-        self.log = log_func
+        self.log = normalize_log_func(log_func)
         self.clipboard_history = []
         self.use_dual_clipboard = False
         self._running = Event()
@@ -75,7 +76,7 @@ class HotkeyManager:
             ["alt + 1", None, lambda: self._write_status("едет"), False],
             ["alt + 2", None, lambda: self._write_status("стоит"), False],
             ["alt + 3", None, self._write_there, False],
-            ["F1", None, self._toggle_mode, False],
+            ["F10", None, self._toggle_mode, False],
         ]
         try:
             clear_hotkeys()

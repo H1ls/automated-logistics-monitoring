@@ -87,7 +87,7 @@ class NavigationBot(NaviBase):
             btn = WebDriverWait(self.driver, 3).until(
                 EC.element_to_be_clickable((By.XPATH, "//*[@id='hb_mi_monitoring']")))
             btn.click()
-            self.log("📡 Открыт 'Мониторинг'.")
+            self.log("📡 Открыт 'Мониторинг'.",audience="user+")
         except Exception:
             pass
 

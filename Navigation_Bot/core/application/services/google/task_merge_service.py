@@ -6,7 +6,7 @@ from typing import Any
 from Navigation_Bot.core.application.mappers.google_row_mapper import GoogleRowMapper
 from Navigation_Bot.core.domain.task_identity import google_sheet_row
 
-""" сборка строки из Google D:H;
+""" Cборка строки из Google D:H;
     определение пустой строки;
     added/updated/replaced/unchanged;
     сравнение old_row и fresh_row;

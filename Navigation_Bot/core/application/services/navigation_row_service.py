@@ -5,6 +5,7 @@ from typing import Callable, Any
 from Navigation_Bot.core.domain.mappers.task_mapper import TaskMapper
 from Navigation_Bot.core.domain.entities.navigation_snapshot import NavigationSnapshot
 from Navigation_Bot.core.domain.entities.route_estimate import RouteEstimate
+from Navigation_Bot.core.logging import normalize_log_func
 
 
 class NavigationRowService:
@@ -25,7 +26,7 @@ class NavigationRowService:
                  route_estimate_history_service=None,
                  ):
 
-        self.log = logger
+        self.log = normalize_log_func(logger)
         self.gsheet = gsheet
         self.tasks_service = tasks_service
         self.ui_bridge = ui_bridge

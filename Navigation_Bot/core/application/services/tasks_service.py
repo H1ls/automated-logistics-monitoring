@@ -345,21 +345,21 @@ class TasksService:
         if not isinstance(active_google_indexes, set):
             return False, None, "active_google_indexes_invalid"
 
-        original_len = len(data)
+        deleted_count = 0
 
-        filtered = []
-        for row in data:
+        for real_idx in range(len(data) - 1, -1, -1):
+            row = data[real_idx]
             if not isinstance(row, dict):
                 continue
 
             row_google_sheet_row = google_sheet_row(row)
-            if row_google_sheet_row in active_google_indexes:
-                filtered.append(row)
+            if row_google_sheet_row is None or row_google_sheet_row in active_google_indexes:
+                continue
 
-        deleted_count = original_len - len(filtered)
-
-        if deleted_count > 0:
-            self.task_repository.set(filtered, source="google")
+            ok, _, complete_err = self.complete_row(real_idx, source="google")
+            if not ok:
+                return False, None, complete_err or "complete_row_failed"
+            deleted_count += 1
 
         return True, {"deleted": deleted_count}, None
 

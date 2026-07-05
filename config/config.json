@@ -17,7 +17,9 @@
       "address_selector": ".addressName_WTb9",
       "geo_zone_selector": ".geo_jYI9",
       "copy_button_selector": "button .icon-copy-coordinates",
-      "speed_selector": "td.speed_BuUT > div"
+      "speed_selector": "td.speed_BuUT > div",
+      "gps_sats_xpath": "//*[@id='monitoring_units_state_gps_sats_{car_id}']",
+      "text_tooltip-gps": "#tooltip .tooltip-gps"
     }
   },
   "yandex_selectors": {

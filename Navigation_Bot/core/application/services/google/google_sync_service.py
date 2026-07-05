@@ -160,7 +160,7 @@ class GoogleSyncService:
     def _fetch_current_sheet_rows(self) -> tuple[bool, dict[int, list[str]] | None, str | None]:
         try:
             rows = self.gsheet.load_data()
-            if not rows:
+            if rows is None:
                 return False, None, "no_rows_from_google"
             return True, rows, None
         except Exception as e:

@@ -27,13 +27,17 @@ def ensure_state(ctx) -> dict:
     return ctx.state
 
 
-def ensure_progress(ctx) -> dict:
+def ensure_state_dict(ctx, key: str) -> dict:
     state = ensure_state(ctx)
-    progress = state.get("onec_progress")
-    if not isinstance(progress, dict):
-        progress = {}
-        state["onec_progress"] = progress
-    return progress
+    value = state.get(key)
+    if not isinstance(value, dict):
+        value = {}
+        state[key] = value
+    return value
+
+
+def ensure_progress(ctx) -> dict:
+    return ensure_state_dict(ctx, "onec_progress")
 
 
 def parse_dt(value: str | datetime | date | None) -> datetime | None:
@@ -117,22 +121,21 @@ def positive_minutes_between(start: str | datetime | date | None,
     return minutes
 
 
-def ceil_hours_positive(total_minutes: int | None) -> int:
+def round_hours_positive(total_minutes: int | None, round_up_after_minutes: int) -> int:
     if total_minutes is None or total_minutes <= 0:
         return 0
     hours = total_minutes // 60
-    if total_minutes % 60 > 0:
+    if total_minutes % 60 > round_up_after_minutes:
         hours += 1
     return int(hours)
+
+
+def ceil_hours_positive(total_minutes: int | None) -> int:
+    return round_hours_positive(total_minutes, round_up_after_minutes=0)
 
 
 def round_hours_45m(total_minutes: int | None) -> int:
-    if total_minutes is None or total_minutes <= 0:
-        return 0
-    hours = total_minutes // 60
-    if total_minutes % 60 > 45:
-        hours += 1
-    return int(hours)
+    return round_hours_positive(total_minutes, round_up_after_minutes=45)
 
 
 def over_hours(hours: int, threshold: int) -> int:
@@ -152,3 +155,11 @@ def wialon_precheck_interval(days_back: int = 2) -> tuple[str, str]:
     now = datetime.now()
     date_from = (now - timedelta(days=days_back)).replace(hour=0, minute=0, second=0, microsecond=0)
     return fmt_wialon(date_from), fmt_wialon(today_end(now))
+
+
+def replace_focused_field(session, value: str, submit: bool = False, after_sleep: float = 0.15) -> None:
+    session.sleep(0.08)
+    session.press("f2")
+    session.sleep(0.08)
+    session.replace_current_field(value, submit=submit)
+    session.sleep(after_sleep)

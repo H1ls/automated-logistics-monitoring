@@ -1,11 +1,12 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 from datetime import datetime
 import time
 
 from LogistX.onec.checkbox import CheckboxController
-from LogistX.onec.steps.base_code import fmt_date, fmt_time, require_dt
+from LogistX.onec.steps.base_code import fmt_date, fmt_time, replace_focused_field, require_dt
 from LogistX.onec.steps.ui_point_resolver import UiPointResolver
+from Navigation_Bot.core.logging import normalize_log_func
 
 
 class SubmitStep:
@@ -15,9 +16,9 @@ class SubmitStep:
                  checkbox_controller=None, submit_timeout: float = 6.0):
         self.session = session
         self.errors = error_handler
-        self.log = log_func
+        self.log = normalize_log_func(log_func)
         self.points = point_resolver or UiPointResolver(session)
-        self.checkboxes = checkbox_controller or CheckboxController(session)
+        self.checkboxes = checkbox_controller or CheckboxController(session, log_func=self.log)
         self.submit_timeout = max(0.1, float(submit_timeout))
 
     def _check_error(self, prefix: str):
@@ -52,11 +53,7 @@ class SubmitStep:
     def _fill_xy_field(self, x: int, y: int, value: str, label: str):
         self.log(f"📝 {label}: {value}")
         self.session.click(x, y)
-        self.session.sleep(0.08)
-        self.session.press("f2")
-        self.session.sleep(0.08)
-        self.session.replace_current_field(value, submit=False)
-        self.session.sleep(0.25)
+        replace_focused_field(self.session, value, after_sleep=0.25)
 
     def _is_race_form_open(self) -> bool:
         if not self.session.ui_map.get_optional_template("race_form_header"):

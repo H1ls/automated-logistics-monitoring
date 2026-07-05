@@ -1,4 +1,4 @@
-import os
+﻿import os
 import sys
 import gspread
 
@@ -7,6 +7,7 @@ from oauth2client.service_account import ServiceAccountCredentials
 
 from Navigation_Bot.core.json_store import JsonStore
 from Navigation_Bot.core.paths import CONFIG_JSON
+from Navigation_Bot.core.logging import normalize_log_func
 
 
 class GoogleSheetsManager(QObject):
@@ -17,7 +18,7 @@ class GoogleSheetsManager(QObject):
 
     def __init__(self, config_key="default", log_func=None, parent=None):
         super().__init__(parent)
-        self._external_log = log_func
+        self._external_log = normalize_log_func(log_func) if log_func else None
 
         self.config_key = config_key
         self.config_manager = JsonStore(CONFIG_JSON)
@@ -60,14 +61,7 @@ class GoogleSheetsManager(QObject):
 
             creds = ServiceAccountCredentials.from_json_keyfile_dict(
                 creds_data,
-                scopes=[
-                    "https://www.googleapis.com/auth/spreadsheets",
-                    "https://www.googleapis.com/auth/drive.file"
-                ]
-                # scopes=["https://spreadsheets.google.com/feeds",
-                #         "https://www.googleapis.com/auth/spreadsheets",
-                #         "https://www.googleapis.com/auth/drive"]
-            )
+                scopes=["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive.file"])
             return gspread.authorize(creds)
         except Exception as e:
             self._log(f"❌ Ошибка создания клиента Google: {e}")
@@ -83,7 +77,6 @@ class GoogleSheetsManager(QObject):
             self._log("❌ config_manager.load_json() вернул не dict - проверь CONFIG_JSON")
             return
 
-
         config_block = data.get("google_config", {})
         defaults = config_block.get("default", {}) or {}
         custom = config_block.get("custom") or {}
@@ -96,14 +89,6 @@ class GoogleSheetsManager(QObject):
         self.column_index = int(custom.get("column_index", defaults.get("column_index", 0)) or 0)
 
         self.file_path = str(custom.get("file_path") or defaults.get("file_path") or "").strip()
-
-        # print(f"🔍 Загружен config: {list(data.keys()) if data else 'None'}")
-        # print(f"🔍 google_config: {list(config_block.keys()) if config_block else 'None'}")
-        # print(f"🔍 defaults: {defaults}")
-        # print(f"🔍 custom: {custom}")
-        # print(f"🔍 creds_file = {self.creds_file}")
-        # print(f"🔍 sheet_id = {self.sheet_id}")
-        # #
 
         client = self._create_client()
         if not client:
@@ -215,24 +200,8 @@ class GoogleSheetsManager(QObject):
             return [{"title": ws.title, "index": ws.index}
                     for ws in self._worksheets_cache]
         except Exception as e:
-            self._log(f"⚠️ Ошибка получения листов: {e}",)
+            self._log(f"⚠️ Ошибка получения листов: {e}", )
             return []
-    # def list_worksheets(self):
-    #     """Возвращает список листов: [{'title': str, 'index': int}, ...]"""
-    #     try:
-    #         if not getattr(self, "spreadsheet", None):
-    #             return []
-    #         result = []
-    #
-    #         for ws in self.spreadsheet.worksheets():
-    #             # ws.index у gspread 0-based, как у get_worksheet()
-    #             result.append({"title": ws.title, "index": ws.index})
-    #             print(str(result))
-    #         return result
-    #     except Exception as e:
-    #
-    #         self._log(f"⚠️ Не удалось получить список листов: {e}")
-    #         return []
 
     def set_active_worksheet(self, index: int):
         """Быстро переключает активный лист, без обращений к Google"""
@@ -261,10 +230,17 @@ class GoogleSheetsManager(QObject):
         except Exception as e:
             self._log(f"❌ GoogleSheetsManager.set_active_worksheet: {e}")
 
+    @staticmethod
+    def _is_completed_status(value) -> bool:
+        text = str(value or "").replace("\u00a0", " ").strip()
+        text = text.lstrip("= \t\r\n").strip(" \t\r\n\"'")
+        normalized = " ".join(text.casefold().split())
+        return normalized in {"готов", "готово"}
+
     def load_data(self):
         """
         Грузим только строки, где:
-          1) в колонке M НЕ 'Готов'
+          1) в колонке M НЕ завершённый статус ('Готов', 'Готово', '= Готово')
           2) хотя бы одна из D/E/F/G/H не пустая.
         При этом тянем только диапазоны D3:H и M3:M, а не весь лист.
         Возвращаем dict: {row_index: [D, E, F, G, H]}.
@@ -297,8 +273,9 @@ class GoogleSheetsManager(QObject):
                 if offset < len(m_rows) and m_rows[offset]:
                     m_val = (m_rows[offset][0] or "").strip()
 
-                # M == "Готов" -> пропускаем
-                if m_val == "Готов":
+                # Завершённые рейсы не возвращаем как активные: по их отсутствию
+                # локальная синхронизация закрывает рейс в таблице.
+                if self._is_completed_status(m_val):
                     continue
 
                 # Столбцы D..H
@@ -316,8 +293,8 @@ class GoogleSheetsManager(QObject):
                 result[row_index] = [d, e, f, g, h]
 
             if not result:
-                self._log("↩️ В листе не найдено подходящих строк (M≠'Готов' и есть данные в D–H)")
-                return None
+                self._log("↩️ В листе не найдено подходящих строк (нет активных строк с данными в D–H)")
+                return {}
 
             return result
 

@@ -1,7 +1,6 @@
 from __future__ import annotations
 
-from PyQt6.QtWidgets import (QDialog,
-                             QLabel,
+from PyQt6.QtWidgets import (QLabel,
                              QPushButton,
                              QScrollArea,
                              QTextEdit,
@@ -9,26 +8,28 @@ from PyQt6.QtWidgets import (QDialog,
                              QWidget)
 
 from LogistX.config.paths import SITES_DB_FILE
-from Navigation_Bot.core.infrastructure.persistence.dataset_archive import DatasetArchive
 from Navigation_Bot.core.infrastructure.persistence.sites_db_registry import SitesDbRegistry
-from Navigation_Bot.gui.dialogs.address_edit_models import AddressBlocksCodec, AddressPointDraft
-from Navigation_Bot.gui.dialogs.dialog_helpers import button_row_split
+from Navigation_Bot.gui.dialogs.components.address_archive_service import AddressArchiveService
+from Navigation_Bot.gui.dialogs.components.address_drag_controller import AddressPointDragController
+from Navigation_Bot.gui.dialogs.components.address_edit_models import AddressBlocksCodec, AddressPointDraft
+from Navigation_Bot.gui.dialogs.base_dialog import BaseDialog
+from Navigation_Bot.gui.dialogs.components.dialog_helpers import button_row_split
+from Navigation_Bot.gui.dialogs.components.dialog_resize_controller import DialogResizeController
+from Navigation_Bot.gui.dialogs.components.address_result_builder import AddressResultBuilder
 from Navigation_Bot.gui.dialogs.sites_db_editor_dialog import SitesDbEditorDialog
 from Navigation_Bot.gui.widgets.address_point_editor import AddressPointEditor
 from Navigation_Bot.gui.widgets.status_editor_widget import StatusEditorWidget
 
 
-class AddressEditDialog(QDialog):
+class AddressEditDialog(BaseDialog):
     """Редактирует адресные точки и возвращает legacy-блоки для task workflow."""
 
     def __init__(self,row_data,prefix,parent=None,log_func=None):
-        super().__init__(parent)
-        self.setWindowTitle(f"Редактирование: {prefix}")
-        self.resize(1000, 500)
+        self._base_size = (1000, 500)
+        super().__init__(title=f"Редактирование: {prefix}", size=self._base_size, parent=parent, log_func=log_func)
 
         self.prefix = prefix
         self.row_data = row_data
-        self.log = log_func or print
         self.raw_key = "raw_load" if prefix == "Погрузка" else "raw_unload"
 
         self.codec = AddressBlocksCodec(prefix)
@@ -36,11 +37,14 @@ class AddressEditDialog(QDialog):
         points, comment = self.codec.parse(self.row_data.get(prefix, []) or [])
         self._processed_seed = self._read_processed_flags()
         self.entries: list[AddressPointEditor] = []
+        self.archive_service = AddressArchiveService(log_func=self.log)
+        self.drag_controller = AddressPointDragController(self)
+        self.resize_controller = DialogResizeController(self, self._base_size)
 
         self._build_ui(points, comment)
 
     def _build_ui(self, points: list[AddressPointDraft], comment: str) -> None:
-        self.main_layout = QVBoxLayout(self)
+        self.main_layout = self.root
 
         self.status_editor = self._build_status_editor(points)
         if self.status_editor is not None:
@@ -64,6 +68,7 @@ class AddressEditDialog(QDialog):
         self.scroll_layout.addStretch(1)
         self.scroll_area.setWidget(self.scroll_widget)
         self.main_layout.addWidget(self.scroll_area)
+        self.drag_controller.install_on_scroll_widget()
 
         for point in points:
             self.add_entry(point.address, point.date, point.time, sync_status=False)
@@ -75,6 +80,7 @@ class AddressEditDialog(QDialog):
         self.btn_save = QPushButton("✅ Сохранить")
         self.btn_save.clicked.connect(self.accept)
         self.main_layout.addLayout(button_row_split((self.btn_add,), (self.btn_archive, self.btn_save)))
+        self.schedule_resize_to_content()
 
     def _build_status_editor(self, points: list[AddressPointDraft]) -> StatusEditorWidget | None:
         if self.prefix != "Выгрузка" or len(points) <= 1:
@@ -105,6 +111,7 @@ class AddressEditDialog(QDialog):
                                     log=self.log,
                                     parent=self.scroll_widget)
         self.entries.append(editor)
+        self.drag_controller.install_on_editor(editor)
         self.scroll_layout.insertWidget(max(self.scroll_layout.count() - 1, 0), editor)
         if sync_status:
             if self.status_editor is not None:
@@ -114,6 +121,7 @@ class AddressEditDialog(QDialog):
                     [entry.to_draft() for entry in self.entries])
                 if self.status_editor is not None:
                     self.main_layout.insertWidget(0, self.status_editor)
+        self.schedule_resize_to_content()
         return editor
 
     def remove_entry(self, editor: AddressPointEditor) -> None:
@@ -130,6 +138,18 @@ class AddressEditDialog(QDialog):
                 self.status_editor = None
         self.scroll_layout.removeWidget(editor)
         editor.deleteLater()
+        self.schedule_resize_to_content()
+
+    def eventFilter(self, watched, event):
+        if self.drag_controller.event_filter(watched, event):
+            return True
+        return super().eventFilter(watched, event)
+
+    def _move_entry(self, editor: AddressPointEditor, target_index: int) -> None:
+        self.drag_controller.move_entry(editor, target_index)
+
+    def schedule_resize_to_content(self) -> None:
+        self.resize_controller.schedule()
 
     def _on_address_changed(self, editor: AddressPointEditor, address: str) -> None:
         if self.status_editor is None or editor not in self.entries:
@@ -146,34 +166,20 @@ class AddressEditDialog(QDialog):
             editor.refresh_site_match()
 
     def get_processed(self) -> list[bool] | None:
-        if self.status_editor is None:
-            return None
-        return self.status_editor.get_processed()
+        return self._result_builder().get_processed()
 
     def get_raw_value(self) -> str:
         return self.raw_edit.toPlainText().strip()
 
     def get_result(self) -> tuple[list[dict[str, str]], dict[str, str]]:
-        points = [editor.to_draft() for editor in self.entries]
-        blocks = self.codec.serialize(points, self.comment_edit.toPlainText())
-        metadata: dict[str, str] = {}
-        for editor in self.entries:
-            metadata.update(editor.metadata())
-        return blocks, metadata
+        return self._result_builder().build_result(self.comment_edit.toPlainText())
+
+    def _result_builder(self) -> AddressResultBuilder:
+        return AddressResultBuilder(codec=self.codec,
+                                    entries=self.entries,
+                                    status_editor=self.status_editor)
 
     def _archive_sample(self) -> None:
-        try:
-            output = [item for editor in self.entries
-                      if (item := editor.archive_dict()) is not None]
-            comment = self.comment_edit.toPlainText().strip()
-            if comment:
-                if output:
-                    output[-1]["Комментарий"] = comment
-                else:
-                    output.append({"Адрес": "", "Дата": "", "Время": "", "Комментарий": comment})
-
-            raw_input = self.get_raw_value()
-            DatasetArchive(log_func=self.log).append({"input": raw_input, "output": output})
-            self.log(f"📦 В архив добавлено: {raw_input[:60]}...")
-        except Exception as exc:
-            self.log(f"❌ Ошибка в _archive_sample: {exc}")
+        self.archive_service.archive_sample(editors=self.entries,
+                                            comment=self.comment_edit.toPlainText(),
+                                            raw_input=self.get_raw_value())
