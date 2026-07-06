@@ -19,6 +19,9 @@ class ApiTaskRepository:
     _snapshot: dict[str, str] | None = None
     _snapshot_rows: dict[str, dict[str, Any]] | None = None
     current_source_key: str = ""
+    include_completed: bool = False
+    date_from: str = ""
+    date_to: str = ""
     _defer_sync: bool = False
     _pending_sync_rows: dict[str, dict[str, Any]] | None = None
     _last_loaded_updated_at: str = ""
@@ -62,16 +65,42 @@ class ApiTaskRepository:
         if reload:
             self.reload()
 
+    def set_task_filters(self,
+                         *,
+                         include_completed: bool | None = None,
+                         date_from: str | None = None,
+                         date_to: str | None = None,
+                         reload: bool = True) -> None:
+        changed = False
+        if include_completed is not None and bool(include_completed) != self.include_completed:
+            self.include_completed = bool(include_completed)
+            changed = True
+        if date_from is not None and str(date_from or "") != self.date_from:
+            self.date_from = str(date_from or "")
+            changed = True
+        if date_to is not None and str(date_to or "") != self.date_to:
+            self.date_to = str(date_to or "")
+            changed = True
+        if changed:
+            self.data = None
+            self._snapshot = None
+            self._snapshot_rows = None
+            self._last_loaded_updated_at = ""
+        if reload:
+            self.reload()
+
+    def has_task_filters(self) -> bool:
+        return bool(self.include_completed or self.date_from or self.date_to)
+
     def reload(self) -> None:
         page_size = self._configured_page_size()
         self.reload_all_paged(limit=page_size)
 
     def reload_page(self, *, limit: int = 100, offset: int = 0, strict_source_key: bool = True) -> dict[str, Any]:
         payload = self.client.get("/api/v1/tasks",
-                                  params={"source_key": self.current_source_key,
-                                          "strict_source_key": str(bool(strict_source_key)).lower(),
-                                          "limit": int(limit),
-                                          "offset": int(offset)})
+                                  params=self._task_query_params(strict_source_key=strict_source_key,
+                                                                 limit=limit,
+                                                                 offset=offset))
         return payload if isinstance(payload, dict) else {}
 
     def reload_all_paged(self, *, limit: int = 500, strict_source_key: bool = True) -> None:
@@ -93,10 +122,9 @@ class ApiTaskRepository:
                            offset: int = 0,
                            strict_source_key: bool = True) -> dict[str, Any]:
         since = updated_since or self._last_loaded_updated_at
-        params = {"source_key": self.current_source_key,
-                  "strict_source_key": str(bool(strict_source_key)).lower(),
-                  "limit": int(limit),
-                  "offset": int(offset)}
+        params = self._task_query_params(strict_source_key=strict_source_key,
+                                         limit=limit,
+                                         offset=offset)
         if since:
             params["updated_since"] = since
 
@@ -127,6 +155,9 @@ class ApiTaskRepository:
 
     def refresh_incremental_or_reload(self, *, limit: int | None = None) -> dict[str, Any]:
         page_size = limit or self._configured_page_size() or 500
+        if self.has_task_filters():
+            self.reload_all_paged(limit=page_size)
+            return {"mode": "reload", "count": len(self.data or [])}
         if self.data is None or not self._last_loaded_updated_at:
             self.reload_all_paged(limit=page_size)
             return {"mode": "reload", "count": len(self.data or [])}
@@ -137,6 +168,23 @@ class ApiTaskRepository:
         except Exception:
             self.reload_all_paged(limit=page_size)
             return {"mode": "reload", "count": len(self.data or [])}
+
+    def _task_query_params(self,
+                           *,
+                           strict_source_key: bool,
+                           limit: int,
+                           offset: int) -> dict[str, Any]:
+        params: dict[str, Any] = {"source_key": self.current_source_key,
+                                  "strict_source_key": str(bool(strict_source_key)).lower(),
+                                  "limit": int(limit),
+                                  "offset": int(offset)}
+        if self.include_completed:
+            params["include_completed"] = "true"
+        if self.date_from:
+            params["date_from"] = self.date_from
+        if self.date_to:
+            params["date_to"] = self.date_to
+        return params
 
     def get(self) -> list[dict]:
         if self.data is None:

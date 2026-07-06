@@ -22,12 +22,33 @@ class MainActionsController:
 
         def job():
             try:
-                gui.processor.browser_session.ensure_ready()
+                browser_session = gui.processor.browser_session
+                browser_session.ensure_ready()
+                browser_session.switch_tab_or_log("wialon")
             except Exception as e:
                 if getattr(gui, "ui_bridge", None):
                     gui.ui_bridge.log.emit(f"❌ Ошибка запуска Wialon: {e}")
                 else:
                     gui.log(f"❌ Ошибка запуска Wialon: {e}")
+            finally:
+                gui.ui_bridge.call.emit(lambda: gui.loading.hide())
+
+        gui.executor.submit(job)
+
+    def open_yandex_maps(self) -> None:
+        gui = self.gui
+        gui.loading.show("Запуск Я.Карт…")
+
+        def job():
+            try:
+                browser_session = gui.processor.browser_session
+                browser_session.ensure_ready()
+                browser_session.switch_tab_or_log("yandex")
+            except Exception as e:
+                if getattr(gui, "ui_bridge", None):
+                    gui.ui_bridge.log.emit(f"❌ Ошибка запуска Я.Карт: {e}")
+                else:
+                    gui.log(f"❌ Ошибка запуска Я.Карт: {e}")
             finally:
                 gui.ui_bridge.call.emit(lambda: gui.loading.hide())
 

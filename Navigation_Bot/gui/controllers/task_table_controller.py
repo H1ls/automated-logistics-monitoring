@@ -33,8 +33,13 @@ class TaskTableController:
     def reload_and_show(self) -> None:
         with self._data_lock:
             source_key = getattr(self.task_repository, "current_source_key", "")
-            use_incremental = self._use_incremental_refresh()
-            signature = (source_key, use_incremental)
+            filters_active = bool(getattr(self.task_repository, "has_task_filters", lambda: False)())
+            use_incremental = self._use_incremental_refresh() and not filters_active
+            signature = (source_key,
+                         use_incremental,
+                         bool(getattr(self.task_repository, "include_completed", False)),
+                         str(getattr(self.task_repository, "date_from", "")),
+                         str(getattr(self.task_repository, "date_to", "")))
             now = time.monotonic()
             if use_incremental and self._last_reload_signature == signature and now - self._last_reload_at < 0.25:
                 return
@@ -58,6 +63,7 @@ class TaskTableController:
         self.row_highlighter.set_view_order(view_order)
         self.row_highlighter.highlight_expired_unloads()
         self.row_highlighter.reapply_from_rows()
+        self.row_highlighter.highlight_completed_rows()
 
     def on_header_clicked(self, logical_index: int) -> None:
         if logical_index == 0:

@@ -73,7 +73,13 @@ class AppServices:
             button = getattr(g.ui, attr, None)
             if button:
                 button.setEnabled(can_write)
+        for attr in ("action_load_google", "action_create_race", "action_process_all"):
+            action = getattr(g.ui, attr, None)
+            if action:
+                action.setEnabled(can_write)
         g.ui.btn_admin_users.setVisible(can_admin)
+        if getattr(g.ui, "action_admin_users", None):
+            g.ui.action_admin_users.setVisible(can_admin)
 
     def _load_api_user(self) -> dict:
         response = self.gui.ctx.api_client.get("/api/v1/me")
@@ -204,6 +210,7 @@ class AppServices:
         def _after_display():
             c.row_highlighter.reapply_from_rows()
             c.row_highlighter.highlight_expired_unloads()
+            c.row_highlighter.highlight_completed_rows()
 
         c.table_manager.after_display = _after_display
 

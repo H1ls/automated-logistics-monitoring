@@ -40,16 +40,26 @@ class PostgresTaskReader:
                               include_null_source: bool = True,
                               limit: int = 100,
                               offset: int = 0,
-                              updated_since: str | None = None) -> tuple[list[dict], int]:
+                              updated_since: str | None = None,
+                              include_completed: bool = False,
+                              date_from: str | None = None,
+                              date_to: str | None = None) -> tuple[list[dict], int]:
 
         source_filter, source_params = self._source_filter_sql(source_key, include_null_source=include_null_source)
         conditions = [source_filter]
-        if not updated_since:
+        if not updated_since and not include_completed:
             conditions.append("t.status NOT IN ('completed', 'archived', 'cancelled')")
         params: list[Any] = list(source_params)
         if updated_since:
             conditions.append("t.updated_at > %s::timestamptz")
             params.append(updated_since)
+        task_date_sql = self._task_date_sql()
+        if date_from:
+            conditions.append(f"{task_date_sql} >= %s::date")
+            params.append(date_from)
+        if date_to:
+            conditions.append(f"{task_date_sql} <= %s::date")
+            params.append(date_to)
 
         where_sql = " AND ".join(conditions)
         total_row = self.connection.execute(
@@ -78,6 +88,21 @@ class PostgresTaskReader:
             tuple(params + [max(1, int(limit)), max(0, int(offset))]),
         ).fetchall()
         return self._rows_to_gui_dicts(rows), total
+
+    @staticmethod
+    def _task_date_sql() -> str:
+        value_sql = "COALESCE(NULLIF(t.planned_start_at, ''), NULLIF(t.planned_end_at, ''), NULLIF(t.completed_at, ''))"
+        return f"""
+        (
+            CASE
+                WHEN {value_sql} ~ '^\\d{{2}}\\.\\d{{2}}\\.\\d{{4}}'
+                    THEN to_date(substr({value_sql}, 1, 10), 'DD.MM.YYYY')
+                WHEN {value_sql} ~ '^\\d{{4}}-\\d{{2}}-\\d{{2}}'
+                    THEN substr({value_sql}, 1, 10)::date
+                ELSE NULL
+            END
+        )
+        """
 
     @staticmethod
     def _source_filter_sql(source_key: str, *, include_null_source: bool) -> tuple[str, tuple[Any, ...]]:

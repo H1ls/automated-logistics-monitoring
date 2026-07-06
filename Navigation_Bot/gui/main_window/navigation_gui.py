@@ -3,6 +3,7 @@ from __future__ import annotations
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any, Callable
 
+from PyQt6.QtCore import QDate
 from PyQt6.QtWidgets import QApplication, QWidget
 from Navigation_Bot.core.paths import PIN_XLSX_FILEPATH, PIN_JSON_FILEPATH
 from Navigation_Bot.gui.builders.main_ui_builder import MainUi, MainUiBuilder
@@ -240,6 +241,45 @@ class NavigationGUI(QWidget):
         debug_log(self, "NavigationGUI", "display_current_data start")
         self.ctx.task_table_controller.display_current_data()
         debug_log(self, "NavigationGUI", "display_current_data done")
+
+    def _ensure_completed_default_date_filter(self) -> None:
+        if not self.ui.chk_show_completed.isChecked():
+            return
+
+        today = QDate.currentDate()
+        month_ago = today.addMonths(-1)
+
+        if not self.ui.chk_use_task_date_filter.isChecked():
+            self.ui.chk_use_task_date_filter.blockSignals(True)
+            self.ui.chk_use_task_date_filter.setChecked(True)
+            self.ui.chk_use_task_date_filter.blockSignals(False)
+            self.ui.date_task_from.setEnabled(True)
+            self.ui.date_task_to.setEnabled(True)
+
+        self.ui.date_task_from.setDate(month_ago)
+        self.ui.date_task_to.setDate(today)
+
+    def apply_task_filters(self):
+        include_completed = bool(self.ui.chk_show_completed.isChecked())
+        if include_completed:
+            self._ensure_completed_default_date_filter()
+
+        use_date_filter = bool(self.ui.chk_use_task_date_filter.isChecked())
+        date_from = self.ui.date_task_from.date().toString("yyyy-MM-dd") if use_date_filter else ""
+        date_to = self.ui.date_task_to.date().toString("yyyy-MM-dd") if use_date_filter else ""
+
+        if date_from and date_to and date_from > date_to:
+            from_qdate = self.ui.date_task_from.date()
+            to_qdate = self.ui.date_task_to.date()
+            date_from, date_to = date_to, date_from
+            self.ui.date_task_from.setDate(to_qdate)
+            self.ui.date_task_to.setDate(from_qdate)
+
+        self.task_repository.set_task_filters(include_completed=include_completed,
+                                              date_from=date_from,
+                                              date_to=date_to,
+                                              reload=False)
+        self.reload_and_show()
 
     def _on_header_clicked(self, logical_index: int):
         controller = self.ctx.task_table_controller if hasattr(self, "ctx") and hasattr(self.ctx,"task_table_controller") else None

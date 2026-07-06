@@ -244,6 +244,9 @@ def list_tasks(connection: Connection,
                limit: int | None = Query(default=None, ge=1, le=1000),
                offset: int = Query(default=0, ge=0),
                updated_since: str | None = Query(default=None),
+               include_completed: bool = Query(default=False),
+               date_from: str | None = Query(default=None),
+               date_to: str | None = Query(default=None),
                full: bool = Query(default=False)) -> dict[str, Any]:
     if limit is not None or updated_since:
         reader = PostgresTaskReader(connection)
@@ -251,7 +254,10 @@ def list_tasks(connection: Connection,
                                                    include_null_source=not strict_source_key,
                                                    limit=limit or 100,
                                                    offset=offset,
-                                                   updated_since=updated_since)
+                                                   updated_since=updated_since,
+                                                   include_completed=include_completed,
+                                                   date_from=date_from,
+                                                   date_to=date_to)
         next_offset = offset + len(rows)
         return {"count": len(rows),
                 "total": total,

@@ -20,6 +20,8 @@ class RowHighlighter:
 
         self._row_manual_brush = QBrush(QColor("#e9f2d3"))  # light green
         self._unload_expired_brush = QBrush(QColor("#FFD6D6"))  # light red (cell only)
+        self._completed_row_brush = QBrush(QColor("#E6F4EA"))
+        self._completed_text_brush = QBrush(QColor("#2F5D3A"))
 
     def apply_settings(self, settings: dict):
         highlight = settings.get("highlight", {}) or {}
@@ -299,6 +301,38 @@ class RowHighlighter:
 
             item.setBackground(self._row_manual_brush if enabled else default_brush)
 
+    def highlight_completed_rows(self):
+        data = self.task_repository.get() or []
+
+        for rec in data:
+            if not self._is_inactive_task(rec):
+                continue
+
+            row_identity = row_identity_for_gui(rec)
+            if row_identity is None or not callable(self.key_to_visual):
+                continue
+
+            try:
+                visual_row = self.key_to_visual(row_identity)
+            except Exception as e:
+                self.log(f"key_to_visual mapper error: {e}")
+                continue
+
+            if 0 <= visual_row < self.table.rowCount():
+                self._paint_completed_row(visual_row)
+
+    @staticmethod
+    def _is_inactive_task(rec: dict) -> bool:
+        return str((rec or {}).get("status") or "").strip().lower() in {"completed", "archived", "cancelled"}
+
+    def _paint_completed_row(self, row_idx: int):
+        for col in range(self.table.columnCount()):
+            item = self.table.item(row_idx, col)
+            if not item:
+                continue
+            item.setBackground(self._completed_row_brush)
+            item.setForeground(self._completed_text_brush)
+
     def highlight_expired_unloads(self):
         """
         Подсвечивает ячейку выгрузки КРАСНЫМ, если время первой НЕобработанной выгрузки меньше текущего.
@@ -375,6 +409,9 @@ class RowHighlighter:
         now = datetime.now()
 
         for rec in data:
+            if self._is_inactive_task(rec):
+                continue
+
             points = self._highlight_unload_points(rec)
             if not points:
                 continue

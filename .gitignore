@@ -41,11 +41,11 @@ env/
 /Navigation_Bot/core/infrastructure/api/log
 LogistX/config/logistx_sample.json
 LogistX/config/sites_db.json
+LogistX/config/1c_unclosed_races.xlsx
 LogistX/assets/
 LogistX/tmp/
 
 LogistX/Tesseract-OCR
-scripts
 
 /main.spec
 
