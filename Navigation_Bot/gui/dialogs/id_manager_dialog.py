@@ -1,8 +1,10 @@
 ﻿from PyQt6.QtCore import Qt
-from PyQt6.QtWidgets import QHBoxLayout, QLineEdit, QTableWidget, QTableWidgetItem, QPushButton
+from PyQt6.QtWidgets import QAbstractItemView, QHBoxLayout, QLineEdit, QTableWidget, QTableWidgetItem, QPushButton
 
-from Navigation_Bot.core.repositories.vehicle_registry_fields import (CENTER_FIELD, ID_FIELD, NAME_FIELD, TS_FIELD)
 from Navigation_Bot.gui.dialogs.base_dialog import BaseDialog
+from Navigation_Bot.core.repositories.vehicle_registry_fields import (CENTER_FIELD, DEFAULT_MONITORING_CENTER,
+                                                                      ID_FIELD, NAME_FIELD, TS_FIELD,
+                                                                      plate_from_monitoring_name)
 
 _ID = ID_FIELD
 _NAME = NAME_FIELD
@@ -12,13 +14,14 @@ _CENTER = CENTER_FIELD
 
 class IDManagerDialog(BaseDialog):
     def __init__(self, parent=None):
-        super().__init__(title="Редактор ID-справочника", size=(550, 600), parent=parent)
+        super().__init__(title="Редактор ID-справочника", size=(400, 600), parent=parent)
 
         self.log_func = self.log
         self.vehicle_repository = getattr(parent, "vehicle_repository", None)
         if self.vehicle_repository is None:
             raise RuntimeError("IDManagerDialog requires parent.vehicle_repository")
-        self.original_entries = self.vehicle_repository.list_registry_entries()
+        self.original_entries = [dict(entry) for entry in self.vehicle_repository.list_registry_entries()]
+        self.deleted_entries = []
         self.changed_rows = set()
         self._initializing = True
 
@@ -28,13 +31,20 @@ class IDManagerDialog(BaseDialog):
         self.search.setPlaceholderText("Поиск по любому полю...")
         self.root.addWidget(self.search)
 
+        # Таблица
+        self.table = QTableWidget(0, 3)
+        self.table.setHorizontalHeaderLabels(["ИД-Объекта", _NAME, _TS])
+        self.table.horizontalHeader().setStretchLastSection(True)
+        self.table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
+        self.root.addWidget(self.table)
+
         add_layout = QHBoxLayout()
 
         self.new_id = QLineEdit()
-        self.new_id.setPlaceholderText("ИД-Объекта")
+        self.new_id.setPlaceholderText("ID")
 
         self.new_name = QLineEdit()
-        self.new_name.setPlaceholderText("Наименование (пример: К532СМ750)")
+        self.new_name.setPlaceholderText("Пример: К532СМ750")
 
         btn_add = QPushButton("Добавить")
         btn_add.clicked.connect(self._on_add_entry)
@@ -45,13 +55,10 @@ class IDManagerDialog(BaseDialog):
 
         self.root.addLayout(add_layout)
 
-        # Таблица
-        self.table = QTableWidget(0, 4)
-        self.table.setHorizontalHeaderLabels(["ИД-Объекта", _NAME, _TS, _CENTER])
-        self.table.horizontalHeader().setStretchLastSection(True)
-        self.root.addWidget(self.table)
-
-        btn_ok, btn_cancel = self.add_save_cancel_buttons()
+        btn_delete = self.make_button("Удалить", self._on_delete_selected)
+        btn_ok = self.make_button("Сохранить", self.accept)
+        btn_cancel = self.make_button("Отмена", self.reject)
+        self.add_button_row(left=(btn_delete,), right=(btn_ok, btn_cancel))
 
         # Заполняем таблицу
         self._populate_table(self.original_entries)
@@ -60,8 +67,6 @@ class IDManagerDialog(BaseDialog):
         # Сигналы
         self.search.textChanged.connect(self._on_filter)
         self.table.itemChanged.connect(self._on_item_changed)
-        btn_ok.clicked.connect(self.accept)
-        btn_cancel.clicked.connect(self.reject)
 
     @staticmethod
     def _editable_item(text: str) -> QTableWidgetItem:
@@ -74,7 +79,6 @@ class IDManagerDialog(BaseDialog):
             self._editable_item(str(ent.get(_ID, ""))),
             self._editable_item(str(ent.get(_NAME, ""))),
             self._editable_item(str(ent.get(_TS, ""))),
-            self._editable_item(str(ent.get(_CENTER, ""))),
         ]
 
     def _populate_table(self, entries):
@@ -124,16 +128,10 @@ class IDManagerDialog(BaseDialog):
                 return
 
         # Генерация ТС из Наименования, К532СМ750 -> К 532 СМ 750
-        if len(name_text) >= 7:
-            ts_text = f"{name_text[0]} {name_text[1:4]} {name_text[4:6]} {name_text[6:]}"
-        else:
-            # если формат неожиданный - просто пишем как есть
-            ts_text = name_text
-
-        center_text = "Виалон"
+        ts_text = plate_from_monitoring_name(name_text)
 
         # Добавляем в оригинальный список
-        new_entry = {_ID: obj_id, _NAME: name_text, _TS: ts_text, _CENTER: center_text}
+        new_entry = {_ID: obj_id, _NAME: name_text, _TS: ts_text, _CENTER: DEFAULT_MONITORING_CENTER}
 
         self.original_entries.append(new_entry)
 
@@ -149,14 +147,33 @@ class IDManagerDialog(BaseDialog):
         self.new_id.clear()
         self.new_name.clear()
 
+    def _on_delete_selected(self):
+        selected_rows = sorted({index.row() for index in self.table.selectedIndexes()}, reverse=True)
+        if not selected_rows:
+            current_row = self.table.currentRow()
+            selected_rows = [current_row] if current_row >= 0 else []
+
+        for row in selected_rows:
+            if 0 <= row < len(self.original_entries):
+                self.deleted_entries.append(self.original_entries.pop(row))
+                self.table.removeRow(row)
+
+        self.changed_rows = {row for row in self.changed_rows if row not in selected_rows}
+        deleted_before = {row: sum(1 for removed in selected_rows if removed < row) for row in self.changed_rows}
+        self.changed_rows = {row - shift for row, shift in deleted_before.items()}
+
     # Сохранение
     def accept(self):
         """При сохранении обновляем записи, чьи строки были изменены, и сохраняем через DataContext."""
+        delete_entry = getattr(self.vehicle_repository, "delete_registry_entry", None)
+        if callable(delete_entry):
+            for entry in self.deleted_entries:
+                delete_entry(entry)
+
         for row in self.changed_rows:
             id_text = self.table.item(row, 0).text().strip()
             name_text = self.table.item(row, 1).text().strip()
             ts_text = self.table.item(row, 2).text().strip()
-            center_text = self.table.item(row, 3).text().strip()
 
             if not id_text.isdigit():
                 continue
@@ -172,7 +189,6 @@ class IDManagerDialog(BaseDialog):
             ent[_ID] = obj_id
             ent[_NAME] = name_text
             ent[_TS] = ts_text
-            ent[_CENTER] = center_text
 
         self.vehicle_repository.save_registry_entries(self.original_entries)
         super().accept()

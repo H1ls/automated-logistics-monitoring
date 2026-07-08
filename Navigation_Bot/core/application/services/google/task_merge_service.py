@@ -15,6 +15,8 @@ from Navigation_Bot.core.domain.task_identity import google_sheet_row
 
 
 class GoogleTaskMergeService:
+    PARSED_ROUTE_FIELDS = {"loads", "unloads", "processed", "processed_unloads"}
+
     @staticmethod
     def build_row_from_dh(google_sheet_row_value: int, dh: list[str]) -> dict:
         return GoogleRowMapper.build_row(google_sheet_row_value, dh)
@@ -52,7 +54,10 @@ class GoogleTaskMergeService:
                 if not GoogleTaskMergeService.google_row_changed(old_row, fresh):
                     stats["unchanged"] += 1
                     continue
-                data[existing_idx] = {**old_row, **fresh}
+                merged = {**old_row, **fresh}
+                for key in GoogleTaskMergeService.PARSED_ROUTE_FIELDS:
+                    merged.pop(key, None)
+                data[existing_idx] = merged
                 stats["updated"] += 1
 
         return stats

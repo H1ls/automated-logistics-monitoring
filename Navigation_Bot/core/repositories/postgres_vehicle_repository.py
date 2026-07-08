@@ -48,6 +48,25 @@ class PostgresVehicleRepository:
                                                    monitoring_name=entry["monitoring_name"])
                 self._write_vehicle(vehicle_id=vehicle_id, **entry)
 
+    def delete_registry_entry(self, entry: dict[str, Any]) -> bool:
+        vehicle_id = self._find_vehicle_id_for_entry(entry)
+        if vehicle_id is None:
+            return False
+        with self.connection.transaction():
+            self.connection.execute(
+                """
+                UPDATE vehicles
+                SET monitoring_id = NULL,
+                    monitoring_name = '',
+                    monitoring_center = '',
+                    vehicle_full_name = '',
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE id = %s
+                """,
+                (vehicle_id,),
+            )
+        return True
+
     def upsert_registry_entry(self, entry: dict[str, Any], *, commit: bool = True) -> int | None:
         normalized = self._normalize_registry_entry(entry)
         if normalized is None:
@@ -242,6 +261,23 @@ class PostgresVehicleRepository:
             if found is not None:
                 return int(found["id"])
         return None
+
+    def _find_vehicle_id_for_entry(self, entry: dict[str, Any]) -> int | None:
+        db_id = self._to_int_or_none(entry.get(DB_ID_FIELD) or entry.get("vehicle_id"))
+        monitoring_id = self._to_int_or_none(entry.get(ID_FIELD) or entry.get("id") or entry.get("monitoring_id"))
+        plate_number = str(entry.get("plate_number") or entry.get(NAME_FIELD) or "").strip()
+        monitoring_name = str(entry.get(NAME_FIELD) or entry.get("monitoring_name") or "").strip()
+
+        normalized = self._normalize_registry_entry(entry)
+        if normalized is not None:
+            plate_number = normalized["plate_number"]
+            monitoring_name = normalized["monitoring_name"]
+            monitoring_id = normalized["monitoring_id"]
+
+        return self._find_vehicle_id(db_id=db_id,
+                                     monitoring_id=monitoring_id,
+                                     plate_number=plate_number,
+                                     monitoring_name=monitoring_name)
 
     @staticmethod
     def compact_key(value: Any) -> str:

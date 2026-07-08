@@ -173,13 +173,18 @@ POST /api/v1/tasks/{trip_number}/route-estimates/batch
 POST /api/v1/tasks/{trip_number}/navigation/batch
 ```
 
+Заметки поддерживают несколько вложений через поле `media_paths: list[str]`. На стороне PostgreSQL список хранится в legacy-поле `media_path` построчно для обратной совместимости, а API и GUI работают с ним как со списком.
+
 ### Транспорт
 
 ```text
 GET  /api/v1/vehicles
 POST /api/v1/vehicles
+DELETE /api/v1/vehicles/{vehicle_id}/registry
 GET  /api/v1/vehicles/{monitoring_id}/navigation
 ```
+
+`DELETE /api/v1/vehicles/{vehicle_id}/registry` удаляет запись из ID-справочника мягко: строка транспорта остаётся в `vehicles`, но справочные поля мониторинга очищаются. Это сохраняет связи существующих рейсов и истории с транспортом.
 
 Точные тела запросов и ответы всегда доступны в Swagger.
 

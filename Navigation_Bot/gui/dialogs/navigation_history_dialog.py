@@ -1,14 +1,16 @@
 from __future__ import annotations
 from pathlib import Path
 from PyQt6.QtWidgets import QTableWidget, QTableWidgetItem, QLabel
-from PyQt6.QtWidgets import QPushButton, QHBoxLayout
-from PyQt6.QtGui import QPixmap, QDesktopServices
+from PyQt6.QtWidgets import QPushButton, QHBoxLayout, QWidget
+from PyQt6.QtGui import QPixmap, QDesktopServices, QColor
 from PyQt6.QtCore import Qt, QUrl
 
 from Navigation_Bot.gui.dialogs.add_note_dialog import AddNoteDialog
 from Navigation_Bot.gui.dialogs.base_dialog import BaseDialog
 from Navigation_Bot.core.domain.entities.note import Note
-from datetime import datetime
+from datetime import datetime, timezone
+
+NOTE_ROW_COLOR = QColor("#fdc46f")
 
 
 class NavigationHistoryDialog(BaseDialog):
@@ -170,40 +172,54 @@ class NavigationHistoryDialog(BaseDialog):
         label.setText(f"📎 Файл\n{path_obj.name}")
         return label
 
+    def _build_media_previews(self, paths: list[str]):
+        container = QWidget()
+        layout = QHBoxLayout(container)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(6)
+
+        preview_count = 0
+        for path in paths:
+            preview = self._build_media_preview(path)
+            if not preview:
+                continue
+
+            layout.addWidget(preview)
+            preview_count += 1
+
+        if preview_count == 0:
+            return None
+
+        layout.addStretch(1)
+        container.setStyleSheet("background-color: #fdc46f;")
+        return container
+
     def _fill(self):
         self.btn_add_note.setEnabled(self.history_mode == "race")
         self.table.setRowCount(len(self.rows))
 
         for row_idx, item in enumerate(self.rows):
             if item.get("kind") == "note":
-                values = [
-                    item.get("time", ""),
-                    "заметка",
-                    "",
-                    "",
-                    "",
-                    "",
-                    "",
-                    "",
-                    "",
-                    "",
-                    "",
-                ]
+                values = [item.get("time", ""), "заметка", "", "", "", "", "", "", "", "", "", ]
 
                 for col_idx, value in enumerate(values):
-                    self.table.setItem(row_idx, col_idx, QTableWidgetItem(str(value)))
+                    cell = QTableWidgetItem(str(value))
+                    cell.setBackground(NOTE_ROW_COLOR)
+                    self.table.setItem(row_idx, col_idx, cell)
 
                 media_paths = item.get("media_paths", []) or []
                 text = item.get("geo", "")
 
                 # Колонка 2 = "Гео" — туда кладём текст заметки
-                self.table.setItem(row_idx, 2, QTableWidgetItem(text))
+                text_cell = QTableWidgetItem(text)
+                text_cell.setBackground(NOTE_ROW_COLOR)
+                self.table.setItem(row_idx, 2, text_cell)
 
                 # Колонка 3 = "Координаты" — туда кладём превью фото/видео
                 if media_paths:
-                    preview = self._build_media_preview(media_paths[0])
-                    if preview:
-                        self.table.setCellWidget(row_idx, 3, preview)
+                    previews = self._build_media_previews(media_paths)
+                    if previews:
+                        self.table.setCellWidget(row_idx, 3, previews)
                         self.table.setRowHeight(row_idx, 120)
 
                 continue
@@ -293,15 +309,20 @@ class NavigationHistoryDialog(BaseDialog):
                            })
 
         def _parse_time(val):
+            def _normalize(dt: datetime) -> datetime:
+                if dt.tzinfo is None:
+                    return dt
+                return dt.astimezone(timezone.utc).replace(tzinfo=None)
+
             if not val:
                 return datetime.min
 
             if isinstance(val, datetime):
-                return val
+                return _normalize(val)
 
             s = str(val)
             try:
-                return datetime.fromisoformat(s)
+                return _normalize(datetime.fromisoformat(s.replace("Z", "+00:00")))
             except Exception:
                 pass
 
@@ -312,7 +333,7 @@ class NavigationHistoryDialog(BaseDialog):
                     dt = datetime.strptime(s, fmt)
                     if "%Y" not in fmt:
                         dt = dt.replace(year=datetime.now().year)
-                    return dt
+                    return _normalize(dt)
                 except Exception:
                     continue
 

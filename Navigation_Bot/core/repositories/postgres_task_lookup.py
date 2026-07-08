@@ -26,9 +26,12 @@ class PostgresTaskLookup:
                 found = self.fetch_id(
                     """
                     SELECT trip_number FROM tasks
-                    WHERE google_sheet_row = %s AND google_worksheet_title = %s
+                    WHERE google_sheet_row = %s
+                      AND (google_worksheet_title = %s OR google_worksheet_title IS NULL)
+                    ORDER BY CASE WHEN google_worksheet_title = %s THEN 0 ELSE 1 END
+                    LIMIT 1
                     """,
-                    (google_sheet_row, self.source_key),
+                    (google_sheet_row, self.source_key, self.source_key),
                 )
                 if found is not None:
                     return found

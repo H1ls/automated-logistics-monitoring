@@ -2,8 +2,9 @@ from __future__ import annotations
 
 from pathlib import Path
 from datetime import datetime
+from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import QApplication
-from PyQt6.QtWidgets import QTextEdit, QFileDialog, QLabel, QListWidget
+from PyQt6.QtWidgets import QTextEdit, QFileDialog, QLabel, QListWidget, QListWidgetItem
 
 from Navigation_Bot.core.paths import NOTE_MEDIA_DIR
 from Navigation_Bot.gui.dialogs.base_dialog import BaseDialog
@@ -26,13 +27,31 @@ class AddNoteDialog(BaseDialog):
         self.root.addWidget(self.files_list)
 
         self.btn_add_file = self.make_button("Прикрепить фото/видео", self._add_file)
+        self.btn_remove_file = self.make_button("Удалить выбранное", self._remove_selected_files)
         self.btn_paste_clipboard = self.make_button("Вставить из буфера", self._paste_from_clipboard)
         self.btn_save = self.make_button("Сохранить", self.accept)
         self.btn_cancel = self.make_button("Отмена", self.reject)
         self.add_button_row(
-            left=(self.btn_add_file, self.btn_paste_clipboard),
+            left=(self.btn_add_file, self.btn_remove_file, self.btn_paste_clipboard),
             right=(self.btn_save, self.btn_cancel),
         )
+
+    def _add_media_path(self, path: str) -> None:
+        if not path or path in self.media_paths:
+            return
+
+        self.media_paths.append(path)
+        item = QListWidgetItem(Path(path).name)
+        item.setToolTip(path)
+        item.setData(Qt.ItemDataRole.UserRole, path)
+        self.files_list.addItem(item)
+
+    def _remove_selected_files(self) -> None:
+        for item in self.files_list.selectedItems():
+            path = item.data(Qt.ItemDataRole.UserRole)
+            if path in self.media_paths:
+                self.media_paths.remove(path)
+            self.files_list.takeItem(self.files_list.row(item))
 
     def _paste_from_clipboard(self):
         clipboard = QApplication.clipboard()
@@ -44,21 +63,18 @@ class AddNoteDialog(BaseDialog):
             media_dir = NOTE_MEDIA_DIR
             media_dir.mkdir(parents=True, exist_ok=True)
 
-            filename = datetime.now().strftime("clip_%Y%m%d_%H%M%S.png")
+            filename = datetime.now().strftime("clip_%Y%m%d_%H%M%S_%f.png")
             path = media_dir / filename
 
             if image.save(str(path), "PNG"):
-                self.media_paths.append(str(path))
-                self.files_list.addItem(path.name)
+                self._add_media_path(str(path))
             return
 
         # 2) Если в буфере лежат файлы
         if mime.hasUrls():
             for url in mime.urls():
                 path = url.toLocalFile()
-                if path and path not in self.media_paths:
-                    self.media_paths.append(path)
-                    self.files_list.addItem(Path(path).name)
+                self._add_media_path(path)
             return
 
         # 3) Если в буфере текст
@@ -73,9 +89,7 @@ class AddNoteDialog(BaseDialog):
             "Media files (*.png *.jpg *.jpeg *.webp *.mp4 *.mov *.avi);;All files (*.*)")
 
         for path in paths:
-            if path and path not in self.media_paths:
-                self.media_paths.append(path)
-                self.files_list.addItem(Path(path).name)
+            self._add_media_path(path)
 
     def get_payload(self) -> dict:
         return {"text": self.text_edit.toPlainText().strip(),

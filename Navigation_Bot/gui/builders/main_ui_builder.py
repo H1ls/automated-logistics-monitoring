@@ -4,11 +4,11 @@ from dataclasses import dataclass
 from types import SimpleNamespace
 from typing import Callable, TYPE_CHECKING
 
-from PyQt6.QtCore import QDate, QPoint, Qt
-from PyQt6.QtGui import QAction, QBrush, QColor, QIcon, QPainter, QPen, QPixmap
+from PyQt6.QtCore import QDate, QEvent, QPoint, QSize, Qt, QTimer
+from PyQt6.QtGui import QAction, QBrush, QColor, QCursor, QIcon, QPainter, QPen, QPixmap
 from PyQt6.QtWidgets import (QAbstractItemView, QCheckBox, QDateEdit, QHBoxLayout, QHeaderView, QLabel, QMenu,
-                             QProgressBar, QPushButton, QStackedWidget, QTableWidget, QTableWidgetItem, QTextEdit,
-                             QVBoxLayout, QWidget, QWidgetAction)
+                             QProgressBar, QPushButton, QSizePolicy, QStackedWidget, QTableWidget, QTableWidgetItem,
+                             QTextEdit, QMenuBar, QVBoxLayout, QWidget, QWidgetAction)
 
 from Navigation_Bot.gui.controllers.log_controller import LogController
 from Navigation_Bot.gui.widgets.global_search_bar import GlobalSearchBar
@@ -18,11 +18,49 @@ if TYPE_CHECKING:
     from Navigation_Bot.gui.settings.ui_settings import UiSettingsManager
 
 
+class AutoClosingMenuBar(QMenuBar):
+    def __init__(self, parent: QWidget | None = None):
+        super().__init__(parent)
+        self._menus: list[QMenu] = []
+
+    def add_auto_close_menu(self, title: str) -> QMenu:
+        menu = self.addMenu(title)
+        self._menus.append(menu)
+        menu.installEventFilter(self)
+        return menu
+
+    def leaveEvent(self, event):
+        QTimer.singleShot(120, self._close_popup_if_pointer_left)
+        super().leaveEvent(event)
+
+    def eventFilter(self, watched, event):
+        if event.type() in (QEvent.Type.Leave, QEvent.Type.FocusOut):
+            QTimer.singleShot(120, self._close_popup_if_pointer_left)
+        return super().eventFilter(watched, event)
+
+    def _close_popup_if_pointer_left(self) -> None:
+        if self._contains_global_pos(QCursor.pos()):
+            return
+
+        for menu in self._menus:
+            if menu.isVisible() and self._contains_global_pos(QCursor.pos(), menu):
+                return
+
+        for menu in self._menus:
+            if menu.isVisible():
+                menu.hide()
+        self.setActiveAction(None)
+
+    def _contains_global_pos(self, global_pos: QPoint, widget: QWidget | None = None) -> bool:
+        target = widget or self
+        return target.isVisible() and target.rect().contains(target.mapFromGlobal(global_pos))
+
+
 @dataclass(slots=True)
 class MainUi:
-    btn_tasks_menu: QPushButton
-    btn_processing_menu: QPushButton
-    btn_references_menu: QPushButton
+    btn_tasks_menu: QMenu
+    btn_processing_menu: QMenu
+    btn_references_menu: QMenu
     btn_load_google: QPushButton
     btn_create_race: QPushButton
     btn_process_all: QPushButton
@@ -106,12 +144,42 @@ class MainUiBuilder:
         """
         ui = SimpleNamespace()
         layout = QVBoxLayout()
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(2)
         top = QHBoxLayout()
+        top.setContentsMargins(0, 0, 0, 0)
+        top.setSpacing(0)
+        menu_bar = AutoClosingMenuBar(parent)
+        menu_bar.setNativeMenuBar(False)
+        menu_bar.setFixedHeight(18)
+        menu_bar.setSizePolicy(QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Fixed)
+        menu_bar.setStyleSheet("""
+            QMenuBar {
+                background: transparent;
+                border: none;
+                margin: 0;
+                padding: 0;
+            }
+            QMenuBar::item {
+                background: transparent;
+                margin: 0;
+                padding: 1px 8px;
+            }
+            QMenuBar::item:selected {
+                background: #e6eef5;
+            }
+            QMenu {
+                padding: 2px 0;
+            }
+            QMenu::item {
+                padding: 3px 24px 3px 18px;
+            }
+        """)
 
         # --- Верхние кнопки ---
-        ui.btn_tasks_menu = QPushButton("Задачи")
-        ui.btn_processing_menu = QPushButton("Обработка")
-        ui.btn_references_menu = QPushButton("Справочники")
+        ui.btn_tasks_menu = menu_bar.add_auto_close_menu("Задачи")
+        ui.btn_processing_menu = menu_bar.add_auto_close_menu("Обработка")
+        ui.btn_references_menu = menu_bar.add_auto_close_menu("Справочники")
         ui.btn_load_google = QPushButton("Загрузить Задачи")
         ui.btn_create_race = QPushButton("Создать рейс")
         ui.btn_process_all = QPushButton("Пробежать все ТС")
@@ -124,35 +192,23 @@ class MainUiBuilder:
         ui.btn_task_filter.setToolTip("Фильтр")
         ui.btn_admin_users = QPushButton("Пользователи")
         ui.btn_admin_users.setVisible(False)
-        for btn in [ui.btn_tasks_menu,
-                    ui.btn_processing_menu,
-                    ui.btn_references_menu]:
-            btn.setFixedHeight(28)
-            btn.setFixedWidth(130)
 
-        ui.btn_task_filter.setFixedSize(20, 24)
+        ui.btn_task_filter.setFixedSize(18, 18)
+        ui.btn_task_filter.setIconSize(QSize(14, 14))
 
-        tasks_menu = QMenu(ui.btn_tasks_menu)
-        ui.action_load_google = tasks_menu.addAction("Загрузить задачи")
-        ui.action_create_race = tasks_menu.addAction("Создать рейс")
-        ui.action_refresh_table = tasks_menu.addAction("Обновить")
-        ui.btn_tasks_menu.setMenu(tasks_menu)
+        ui.action_load_google = ui.btn_tasks_menu.addAction("Загрузить задачи")
+        ui.action_create_race = ui.btn_tasks_menu.addAction("Создать рейс")
+        ui.action_refresh_table = ui.btn_tasks_menu.addAction("Обновить")
 
-        processing_menu = QMenu(ui.btn_processing_menu)
-        ui.action_process_all = processing_menu.addAction("Пробежать все ТС")
-        ui.action_wialon = processing_menu.addAction("Wialon")
-        ui.action_yandex_maps = processing_menu.addAction("Я.Карты")
-        ui.btn_processing_menu.setMenu(processing_menu)
+        ui.action_process_all = ui.btn_processing_menu.addAction("Пробежать все ТС")
+        ui.action_wialon = ui.btn_processing_menu.addAction("Wialon")
+        ui.action_yandex_maps = ui.btn_processing_menu.addAction("Я.Карты")
 
-        references_menu = QMenu(ui.btn_references_menu)
-        ui.action_navigation_history = references_menu.addAction("История")
-        ui.action_admin_users = references_menu.addAction("Пользователи")
-        ui.action_settings = references_menu.addAction("Настройки")
-        ui.btn_references_menu.setMenu(references_menu)
+        ui.action_navigation_history = ui.btn_references_menu.addAction("История")
+        ui.action_admin_users = ui.btn_references_menu.addAction("Пользователи")
+        ui.action_settings = ui.btn_references_menu.addAction("Настройки")
 
-        top.addWidget(ui.btn_tasks_menu)
-        top.addWidget(ui.btn_processing_menu)
-        top.addWidget(ui.btn_references_menu)
+        top.addWidget(menu_bar)
         top.addStretch()
         top.addWidget(ui.btn_task_filter)
 
@@ -242,7 +298,8 @@ class MainUiBuilder:
         ui.table.horizontalHeader().setSectionResizeMode(4, QHeaderView.ResizeMode.Interactive)
         ui.table.horizontalHeader().setSectionResizeMode(5, QHeaderView.ResizeMode.Interactive)
 
-        ui.table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
+        ui.table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectItems)
+        ui.table.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
         ui.table.setEditTriggers(QAbstractItemView.EditTrigger.DoubleClicked)
         ui.table.setColumnHidden(1, True)
 

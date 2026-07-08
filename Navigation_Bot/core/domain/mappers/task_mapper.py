@@ -345,6 +345,11 @@ class TaskMapper:
 
     @staticmethod
     def _parse_points(raw_blocks: Any, kind: str, prefix: str) -> list[RoutePoint]:
+        if isinstance(raw_blocks, str):
+            from Navigation_Bot.bots.route_info_parser import RouteInfoParser
+
+            raw_blocks = RouteInfoParser().parse(raw_blocks, prefix)
+
         if not isinstance(raw_blocks, list):
             return []
 

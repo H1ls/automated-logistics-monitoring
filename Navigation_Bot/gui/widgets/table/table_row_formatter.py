@@ -1,1 +1,0 @@
-#Navigation_Bot/gui/widgets/table/table_row_formatter.py

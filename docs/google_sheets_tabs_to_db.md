@@ -1,6 +1,6 @@
-# Google Sheets tabs to DB dependency
+# Связь вкладок Google Sheets с БД
 
-## Summary
+## Кратко
 
 Вкладки Google Sheets сейчас не сохраняются в БД как отдельный справочник.
 
@@ -17,7 +17,7 @@ sheet_{worksheet_index}_{worksheet_title}
 
 Этот ключ передается в API при чтении и записи задач.
 
-## Dependency Flow
+## Поток зависимости
 
 ```text
 Google Spreadsheet
@@ -30,11 +30,11 @@ GoogleSheetsManager._worksheets_cache
     v
 SheetTabsController.build()
     |
-    | creates tab dicts: {kind, key, title, ws_index}
+    | создает словари вкладок: {kind, key, title, ws_index}
     v
 gui._tabs_by_key / gui._tabs_order / gui._tab_buttons_by_key
     |
-    | user clicks Google tab
+    | пользователь нажимает вкладку Google
     v
 SheetTabsController.on_tab_clicked()
     |
@@ -42,7 +42,7 @@ SheetTabsController.on_tab_clicked()
     v
 GoogleSheetsManager.set_active_worksheet()
     |
-    | sets gsheet.sheet and gsheet.worksheet_index
+    | задает gsheet.sheet и gsheet.worksheet_index
     v
 NavigationGUI._get_sheet_source_key()
     |
@@ -50,42 +50,42 @@ NavigationGUI._get_sheet_source_key()
     v
 ApiTaskRepository.set_source_key(source_key)
     |
-    | GET/POST /api/v1/tasks with source_key
+    | GET/POST /api/v1/tasks с source_key
     v
-DB tasks separated by source_key
+задачи в БД разделены по source_key
 ```
 
-## Where Tabs Are Loaded
+## Где загружаются вкладки
 
 `Navigation_Bot/bots/google_sheets_manager.py`
 
-- `load_settings()` opens the spreadsheet and loads worksheets:
+- `load_settings()` открывает таблицу и загружает листы:
 
 ```python
 self._worksheets_cache = spreadsheet.worksheets()
 self.sheet = self._worksheets_cache[self.worksheet_index]
 ```
 
-- `get_worksheets_list()` refreshes the worksheet cache and returns tab metadata:
+- `get_worksheets_list()` обновляет кеш листов и возвращает метаданные вкладок:
 
 ```python
 self._worksheets_cache = spreadsheet.worksheets()
 return [{"title": ws.title, "index": ws.index} for ws in self._worksheets_cache]
 ```
 
-Important: this is only runtime cache. It is not persisted as a DB table.
+Важно: это только runtime-кеш. Он не сохраняется как таблица в БД.
 
-## Where GUI Stores Tabs
+## Где GUI хранит вкладки
 
 `Navigation_Bot/gui/controllers/sheet_tabs_controller.py`
 
-`SheetTabsController.build()` calls:
+`SheetTabsController.build()` вызывает:
 
 ```python
 worksheets = gui.gsheet.get_worksheets_list()
 ```
 
-Then converts each worksheet to a GUI tab:
+Затем каждый лист превращается во вкладку GUI:
 
 ```python
 tabs.append({
@@ -96,7 +96,7 @@ tabs.append({
 })
 ```
 
-And stores the tabs in GUI fields:
+И сохраняется в полях GUI:
 
 ```python
 gui._tabs_by_key = {t["key"]: t for t in tabs}
@@ -104,13 +104,13 @@ gui._tabs_order = [t["key"] for t in tabs]
 gui._tab_buttons_by_key[key] = btn
 ```
 
-These structures are also runtime-only.
+Эти структуры тоже существуют только во время работы приложения.
 
-## Where Active Worksheet Is Selected
+## Где выбирается активный лист
 
 `Navigation_Bot/gui/controllers/sheet_tabs_controller.py`
 
-When the user clicks a Google tab:
+Когда пользователь нажимает вкладку Google:
 
 ```python
 ok, err = gui.google_sync_service.switch_worksheet(ws_index)
@@ -132,7 +132,7 @@ self.sheet = cache[index]
 self.worksheet_index = index
 ```
 
-## Where Source Key Is Built
+## Где строится source_key
 
 `Navigation_Bot/gui/main_window/navigation_gui.py`
 
@@ -146,19 +146,19 @@ def _get_sheet_source_key(self) -> str:
     return f"sheet_{index}_{title}"
 ```
 
-This is the current logical link between a Google worksheet and DB records.
+Это текущая логическая связь между листом Google и записями в БД.
 
-## Where Source Key Is Used In DB/API Layer
+## Где source_key используется в слое БД/API
 
 `Navigation_Bot/core/repositories/api_task_repository.py`
 
-`set_source_key()` stores the active source:
+`set_source_key()` сохраняет активный источник:
 
 ```python
 self.current_source_key = new_source_key
 ```
 
-Reads use it:
+Чтение использует его:
 
 ```python
 self.client.get(
@@ -171,7 +171,7 @@ self.client.get(
 )
 ```
 
-Writes use it:
+Запись тоже использует его:
 
 ```python
 self.client.post(
@@ -184,7 +184,7 @@ self.client.post(
 )
 ```
 
-Batch writes also use it:
+Пакетная запись также передает `source_key`:
 
 ```python
 self.client.post(
@@ -197,11 +197,11 @@ self.client.post(
 )
 ```
 
-## Where Rows From Active Sheet Are Loaded
+## Где загружаются строки активного листа
 
 `Navigation_Bot/core/application/services/google/google_sync_service.py`
 
-`load_current_sheet()` handles active worksheet sync:
+`load_current_sheet()` синхронизирует активный лист:
 
 ```python
 rows = self.gsheet.load_data()
@@ -212,13 +212,13 @@ self.task_repository.reload()
 
 `Navigation_Bot/bots/google_sheets_manager.py`
 
-`load_data()` reads only the active worksheet:
+`load_data()` читает только активный лист:
 
 ```python
 values_list = self.sheet.batch_get(["D3:H", "M3:M"], major_dimension="ROWS")
 ```
 
-It returns:
+Он возвращает:
 
 ```python
 {
@@ -233,42 +233,98 @@ GoogleTaskMergeService.merge_rows_into_data(data, rows_map)
 self.task_repository.save(source="google")
 ```
 
-Then `ApiTaskRepository` sends changed rows to API with the current `source_key`.
+После этого `ApiTaskRepository` отправляет измененные строки в API с текущим `source_key`.
 
-## Important Startup Detail
+## Точечная перезапись строки из Google
+
+Контекстное меню таблицы содержит действие:
+
+```python
+act_refresh = menu.addAction("🔄 Перезаписать из Google")
+```
+
+Оно обновляет существующую задачу по `google_sheet_row`, не создавая новую запись:
+
+```text
+TableContextMenuController._refresh_row()
+    |
+    | google_sheet_row(row)
+    v
+GoogleSyncService.refresh_row_by_google_sheet_row(google_sheet_row)
+    |
+    | читает D{row}:H{row} из активного листа Google
+    v
+GoogleRowMapper.build_row()
+    |
+    | строит patch: ТС, Телефон, ФИО, КА, Погрузка, Выгрузка, raw_load, raw_unload
+    v
+TasksService.apply_patch(real_idx, patch, source="google")
+    |
+    | сохраняет старые идентификаторы задачи
+    | сбрасывает старые parsed-поля маршрута
+    v
+TaskRepository.save(source="google")
+    |
+    | API/PostgreSQL upsert существующей задачи
+    v
+task_repository.reload()
+```
+
+Ключевой инвариант: `google_sheet_row` используется как связь со строкой Google, а `trip_number` / `db_task_id` должны оставаться от старой задачи. Поэтому refresh должен перезаписывать существующую запись в БД, а не создавать новую.
+
+При обновлении `Погрузка` / `Выгрузка` из Google старые разобранные поля:
+
+```text
+loads
+unloads
+processed
+processed_unloads
+```
+
+удаляются перед пересборкой строки. Это нужно, потому что `TaskMapper` иначе отдавал бы приоритет старым `loads/unloads`, и после reload GUI снова показывал бы старую выгрузку. Свежий текст из Google парсится через `RouteInfoParser`, затем сохраняется в `route_points`.
+
+При активном `source_key` lookup в PostgreSQL ищет существующую задачу по:
+
+```text
+google_sheet_row AND (google_worksheet_title = source_key OR google_worksheet_title IS NULL)
+```
+
+Точное совпадение `google_worksheet_title = source_key` имеет приоритет. `NULL` оставлен для совместимости со старыми задачами, созданными до разделения листов по `source_key`.
+
+## Важная деталь запуска
 
 `Navigation_Bot/gui/app/app_services.py`
 
-`_build_data_layer()` currently runs before `_build_google_and_services()`:
+`_build_data_layer()` сейчас выполняется раньше, чем `_build_google_and_services()`:
 
 ```python
 c.task_repository = ApiTaskRepository(c.api_client, log=g.log)
 c.task_repository.set_source_key(g._get_sheet_source_key())
 ```
 
-At this point `gsheet` may not exist yet, so `_get_sheet_source_key()` can return:
+В этот момент `gsheet` может еще не существовать, поэтому `_get_sheet_source_key()` может вернуть:
 
 ```text
 default
 ```
 
-Later the source key is corrected when:
+Позже ключ источника исправляется, когда:
 
-- user clicks a Google tab;
-- user loads from Google;
-- settings controller rebuilds/switches tabs.
+- пользователь нажимает вкладку Google;
+- пользователь загружает данные из Google;
+- контроллер настроек перестраивает или переключает вкладки.
 
-## Current Storage Model
+## Текущая модель хранения
 
-Current model:
+Текущая модель:
 
 ```text
-Google worksheet list -> runtime GUI/cache only
-Active worksheet -> source_key
-Tasks -> persisted in DB/API with source_key
+список листов Google -> только runtime GUI/cache
+активный лист -> source_key
+задачи -> сохраняются в БД/API с source_key
 ```
 
-Missing model, if we want explicit worksheet-to-DB binding:
+Отсутствующая модель, если понадобится явная привязка листов к БД:
 
 ```text
 worksheets table / registry:
@@ -280,4 +336,4 @@ worksheets table / registry:
     created_at/updated_at
 ```
 
-That table does not exist in the current code path.
+Такой таблицы в текущем кодовом пути нет.

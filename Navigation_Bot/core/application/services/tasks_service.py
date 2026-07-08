@@ -29,6 +29,9 @@ AUDITED_USER_FIELDS = {
     "status",
 }
 
+GOOGLE_ROUTE_SOURCE_FIELDS = {"Погрузка", "Выгрузка", "raw_load", "raw_unload"}
+PARSED_ROUTE_FIELDS = {"loads", "unloads", "processed", "processed_unloads"}
+
 
 @dataclass(slots=True)
 class TasksService:
@@ -199,6 +202,12 @@ class TasksService:
 
         old_row = dict(row)
         changed = False
+        if source == "google" and any(key in patch for key in GOOGLE_ROUTE_SOURCE_FIELDS):
+            for key in PARSED_ROUTE_FIELDS:
+                if key in row:
+                    row.pop(key, None)
+                    changed = True
+
         for key, value in patch.items():
             if row.get(key) != value:
                 row[key] = value

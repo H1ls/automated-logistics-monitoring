@@ -34,16 +34,23 @@ class ApiVehicleRepository:
 
     def save_registry_entries(self, entries: list[dict[str, Any]]) -> None:
         snapshot = self._snapshot or {}
+        current_keys: set[str] = set()
         changed_count = 0
         for entry in entries:
             if not isinstance(entry, dict):
                 continue
             key = self._entry_key(entry)
+            current_keys.add(key)
             normalized = self._normalized_entry(entry)
             if snapshot.get(key) == normalized:
                 continue
             self.upsert_registry_entry(entry)
             changed_count += 1
+
+        for key, snapshot_entry in snapshot.items():
+            if key not in current_keys:
+                self.delete_registry_entry(snapshot_entry)
+
         if self.log:
             pass
             # self.log(f"API vehicles saved: {changed_count} changed")
@@ -56,6 +63,15 @@ class ApiVehicleRepository:
         self._entries = None
         self._snapshot = None
         return int(vehicle_id) if vehicle_id is not None else None
+
+    def delete_registry_entry(self, entry: dict[str, Any]) -> bool:
+        vehicle_id = self._to_int_or_none(entry.get(DB_ID_FIELD) or entry.get("vehicle_id"))
+        if vehicle_id is None:
+            return False
+        self.client.delete(f"/api/v1/vehicles/{vehicle_id}/registry")
+        self._entries = None
+        self._snapshot = None
+        return True
 
     def registry_lookup(self) -> dict[str, dict[str, Any]]:
         lookup: dict[str, dict[str, Any]] = {}

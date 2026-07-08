@@ -11,6 +11,7 @@ from Navigation_Bot.core.repositories.postgres_audit_repository import PostgresA
 from Navigation_Bot.core.repositories.postgres_task_repository import PostgresTaskRepository
 from Navigation_Bot.core.repositories.postgres_task_reader import PostgresTaskReader
 from Navigation_Bot.core.repositories.postgres_vehicle_repository import PostgresVehicleRepository
+from Navigation_Bot.core.repositories.vehicle_registry_fields import DB_ID_FIELD
 from Navigation_Bot.core.repositories.postgres_task_writer import PostgresTaskWriter, TaskConflictError
 from Navigation_Bot.core.repositories.postgres_user_repository import PostgresUserRepository
 from Navigation_Bot.core.storage.postgres_connection import postgres_healthcheck
@@ -526,7 +527,7 @@ def list_vehicles(connection: Connection, _user: ReadAccess) -> dict[str, Any]:
 def upsert_vehicle(payload: RegistryEntryRequest, connection: Connection, user: WriteAccess) -> dict[str, Any]:
     audit = _audit(connection)
     before = None
-    raw_vehicle_id = payload.entry.get("vehicle_id") or payload.entry.get("_db_vehicle_id")
+    raw_vehicle_id = payload.entry.get("vehicle_id") or payload.entry.get(DB_ID_FIELD)
     try:
         before = audit.vehicle_snapshot(int(raw_vehicle_id)) if raw_vehicle_id else None
     except (TypeError, ValueError):
@@ -540,6 +541,27 @@ def upsert_vehicle(payload: RegistryEntryRequest, connection: Connection, user: 
                  entity_id=vehicle_id,
                  action="create" if before is None else "update",
                  before_data=before,after_data=after)
+    return {"ok": True, "vehicle_id": vehicle_id}
+
+
+@router.delete("/vehicles/{vehicle_id}/registry")
+def delete_vehicle_registry_entry(vehicle_id: int, connection: Connection, user: WriteAccess) -> dict[str, Any]:
+    audit = _audit(connection)
+    before = audit.vehicle_snapshot(vehicle_id)
+    if before is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="vehicle_not_found")
+
+    deleted = PostgresVehicleRepository(connection).delete_registry_entry({DB_ID_FIELD: vehicle_id})
+    if not deleted:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="vehicle_not_found")
+
+    after = audit.vehicle_snapshot(vehicle_id)
+    audit.record(user=user,
+                 entity_type="vehicles",
+                 entity_id=vehicle_id,
+                 action="delete_registry_entry",
+                 before_data=before,
+                 after_data=after)
     return {"ok": True, "vehicle_id": vehicle_id}
 
 

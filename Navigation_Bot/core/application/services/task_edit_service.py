@@ -87,6 +87,10 @@ class TaskEditService:
             "КА": ka,
             "Погрузка": loads,
             "Выгрузка": unloads,
+            "raw_load": str(buffer.get("raw_load") or ""),
+            "raw_unload": str(buffer.get("raw_unload") or ""),
+            "comm_load": str(buffer.get("comm_load") or ""),
+            "comm_unload": str(buffer.get("comm_unload") or ""),
         }
 
         if "Время отправки" in buffer:

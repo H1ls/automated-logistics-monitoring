@@ -9,10 +9,6 @@ __pycache__/
 #  Virtual environment
 .env
 .venv/
-venv/
-venv311/
-.venv311/
-env/
 
 #  IDE (PyCharm / VSCode / etc.)
 .idea/
@@ -23,16 +19,13 @@ env/
 *.tmp
 
 #  Project configs
-/history
-
+/text
 /config/media/
 /config/datasets/
-
-/text
+/config/pin_card_images/
 /config/Id_car.json
 /config/cookies.pkl
 /config/pincodes_cache.json
-/config/pin_card_images/
 /config/navigation_bot.db
 /config/ui_settings.json
 /config/Credentials_wialon.json
@@ -44,7 +37,7 @@ LogistX/config/sites_db.json
 LogistX/config/1c_unclosed_races.xlsx
 LogistX/assets/
 LogistX/tmp/
-
+docs/to
 LogistX/Tesseract-OCR
 
 /main.spec

@@ -1,13 +1,10 @@
 from PyQt6.QtWidgets import QLabel, QLineEdit, QPushButton
 
 from Navigation_Bot.gui.dialogs.base_dialog import BaseDialog
-from Navigation_Bot.core.repositories.postgres_vehicle_repository import (CENTER_FIELD,
-                                                                          DB_ID_FIELD,
-                                                                          DEFAULT_MONITORING_CENTER,
-                                                                          ID_FIELD,
-                                                                          NAME_FIELD,
-                                                                          TS_FIELD)
 from Navigation_Bot.core.repositories.vehicle_registry_fields import vehicle_lookup_keys
+from Navigation_Bot.core.repositories.postgres_vehicle_repository import (CENTER_FIELD,DB_ID_FIELD,
+                                                                          DEFAULT_MONITORING_CENTER,
+                                                                          ID_FIELD,NAME_FIELD,TS_FIELD)
 
 
 class TrackingIdDialog(BaseDialog):
@@ -17,7 +14,7 @@ class TrackingIdDialog(BaseDialog):
 
         self.vehicle_repository = getattr(parent, "vehicle_repository", None)
         if self.vehicle_repository is None:
-            raise RuntimeError("TrackingIdDialog requires parent.vehicle_repository")
+            raise RuntimeError("TrackingIdDialog требуется parent.vehicle_repository")
 
         self.id_input = QLineEdit()
         self.id_input.setPlaceholderText("Введите ID")

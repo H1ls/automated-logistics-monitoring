@@ -31,6 +31,7 @@ class TableContextMenuController:
         menu = QMenu(self.table)
         act_refresh = menu.addAction("🔄 Перезаписать из Google")  # по google_sheet_row
         act_complete = menu.addAction("Завершить рейс")
+        act_history = menu.addAction("История")
         menu.addSeparator()
         act_pincodes = menu.addAction("ПИН-коды")
 
@@ -51,6 +52,9 @@ class TableContextMenuController:
 
         if chosen == act_complete:
             self._confirm_complete_row(real_idx)
+        elif chosen == act_history:
+            self._open_navigation_history(visual_row)
+            return
         elif chosen == act_refresh:
             self._refresh_row(real_idx)
             return
@@ -157,6 +161,20 @@ class TableContextMenuController:
 
         except Exception as e:
             self.gui.log(f"❌ Ошибка добавления заметки: {e}")
+
+    def _open_navigation_history(self, visual_row: int) -> None:
+        try:
+            if visual_row >= 0:
+                self.table.setCurrentCell(visual_row, max(self.table.currentColumn(), 0))
+
+            actions = getattr(self.gui, "actions", None)
+            if not actions or not hasattr(actions, "open_navigation_history_dialog"):
+                self.gui.log("⚠️ Действие открытия истории не подключено")
+                return
+
+            actions.open_navigation_history_dialog()
+        except Exception as e:
+            self.gui.log(f"❌ Ошибка открытия истории: {e}")
 
     def _detect_media_type(self, paths: list[str]) -> str:
         from pathlib import Path

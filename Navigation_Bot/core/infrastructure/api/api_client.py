@@ -25,6 +25,9 @@ class NavigationApiClient:
     def put(self, path: str, *, json: dict[str, Any] | None = None) -> Any:
         return self._request("PUT", path, json=json)
 
+    def delete(self, path: str) -> Any:
+        return self._request("DELETE", path)
+
     def login(self, username: str, password: str) -> dict[str, Any]:
         payload = self.post("/api/v1/auth/login", json={"username": username, "password": password})
         if isinstance(payload, dict):

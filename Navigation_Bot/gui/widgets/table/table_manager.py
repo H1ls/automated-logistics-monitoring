@@ -1,5 +1,9 @@
 ﻿from PyQt6.QtCore import QTimer
 
+from PyQt6.QtCore import Qt
+from PyQt6.QtGui import QKeySequence, QShortcut
+from PyQt6.QtWidgets import QApplication, QLabel
+
 from Navigation_Bot.gui.dialogs.components.combined_settings_tabs import VerticalTextDelegate
 from Navigation_Bot.gui.widgets.table.row_action_controller import RowActionController
 from Navigation_Bot.gui.widgets.table.table_display_formatter import TableDisplayFormatter
@@ -37,6 +41,10 @@ class TableManager:
                                              row_action_controller=self.row_action_controller,
                                              on_row_click=self.on_row_click,
                                              on_edit_id_click=self.on_edit_id_click, )
+        self._copy_shortcut = QShortcut(QKeySequence.StandardKey.Copy, self.table)
+        self._copy_shortcut.setContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
+        self._copy_shortcut.activated.connect(self.copy_selected_rows)
+        self.table.verticalHeader().sectionClicked.connect(self.select_visual_row)
 
     def apply_settings(self, settings: dict):
         self.row_renderer.apply_settings(settings or {})
@@ -178,6 +186,88 @@ class TableManager:
 
     def set_all_rows_busy(self, busy: bool):
         self.row_action_controller.set_all_rows_busy(busy)
+
+    def select_visual_row(self, row: int) -> None:
+        if 0 <= row < self.table.rowCount():
+            self.table.selectRow(row)
+
+    def copy_selected_rows(self) -> None:
+        focus_widget = QApplication.focusWidget()
+        if focus_widget is not None and focus_widget not in (self.table, self.table.viewport()):
+            copy = getattr(focus_widget, "copy", None)
+            if callable(copy):
+                copy()
+            return
+
+        indexes = [index for index in self.table.selectedIndexes() if self._is_copyable_column(index.column())]
+        if not indexes and self.table.currentRow() >= 0:
+            self._copy_rows([self.table.currentRow()])
+            return
+
+        if len(indexes) == 1:
+            self._copy_rows([indexes[0].row()])
+            return
+
+        copyable_columns = self._copyable_columns()
+        selected_by_row = {}
+        for index in indexes:
+            selected_by_row.setdefault(index.row(), set()).add(index.column())
+
+        rows = sorted(selected_by_row)
+        full_rows_selected = all(selected_by_row[row] >= set(copyable_columns) for row in rows)
+        if full_rows_selected:
+            self._copy_rows(rows)
+            return
+
+        self._copy_cell_range(indexes)
+
+    def _copy_rows(self, rows: list[int]) -> None:
+        copied_rows = []
+        for row in rows:
+            values = [self._cell_text(row, column) for column in self._copyable_columns()]
+            copied_rows.append("\t".join(values))
+
+        self._set_clipboard_rows(copied_rows)
+
+    def _copy_cell_range(self, indexes) -> None:
+        rows = sorted({index.row() for index in indexes})
+        columns = sorted({index.column() for index in indexes if self._is_copyable_column(index.column())})
+        selected = {(index.row(), index.column()) for index in indexes}
+
+        copied_rows = []
+        for row in rows:
+            values = []
+            for column in columns:
+                values.append(self._cell_text(row, column) if (row, column) in selected else "")
+            copied_rows.append("\t".join(values))
+
+        self._set_clipboard_rows(copied_rows)
+
+    def _set_clipboard_rows(self, copied_rows: list[str]) -> None:
+        text = "\n".join(copied_rows).strip()
+        if text:
+            QApplication.clipboard().setText(text)
+
+    def _copyable_columns(self) -> list[int]:
+        return [column for column in range(self.table.columnCount()) if self._is_copyable_column(column)]
+
+    def _is_copyable_column(self, column: int) -> bool:
+        return column != 0 and not self.table.isColumnHidden(column)
+
+    def _cell_text(self, row: int, column: int) -> str:
+        item = self.table.item(row, column)
+        if item is not None:
+            return item.text()
+
+        widget = self.table.cellWidget(row, column)
+        if widget is None:
+            return ""
+
+        label = widget.findChild(QLabel)
+        if label is not None:
+            return label.text()
+
+        return ""
 
     def _restore_scroll(self, scroll_value, selected_row):
         try:

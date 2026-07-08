@@ -12,12 +12,11 @@ from Navigation_Bot.gui.widgets.global_search_bar import GlobalSearchBar
 SITES_DB_PATH = SITES_DB_FILE
 
 COL_ADDRESS = 0
-COL_SITE_ID = 1
-COL_GEOFENCE = 2
-COL_TYPE = 3
-COL_ALIASES = 4
+COL_GEOFENCE = 1
+COL_TYPE = 2
+COL_ALIASES = 3
 
-HEADERS = ["Адрес", "site_id", "geofence", "type", "aliases"]
+HEADERS = ["Адрес", "geofence", "type", "aliases"]
 ALIASES_ROLE = Qt.ItemDataRole.UserRole.value
 SECTION_ROLE = ALIASES_ROLE + 1
 TYPE_VALUES = ("Any", "Load", "Upload")
@@ -43,9 +42,8 @@ class SitesDbEditorDialog(BaseDialog):
         self.table.setWordWrap(True)
         hdr = self.table.horizontalHeader()
         hdr.setSectionResizeMode(QHeaderView.ResizeMode.Fixed)
-        self.table.setColumnWidth(COL_ADDRESS, 470)
-        self.table.setColumnWidth(COL_SITE_ID, 150)
-        self.table.setColumnWidth(COL_GEOFENCE, 170)
+        self.table.setColumnWidth(COL_ADDRESS, 545)
+        self.table.setColumnWidth(COL_GEOFENCE, 245)
         self.table.setColumnWidth(COL_TYPE, 75)
         self.table.setColumnWidth(COL_ALIASES, 46)
         self.table.verticalHeader().setDefaultSectionSize(28)
@@ -240,8 +238,7 @@ class SitesDbEditorDialog(BaseDialog):
         self.table.insertRow(row)
         values = [
             str(obj.get("address", "") or ""),
-            str(obj.get("site_id", "") or ""),
-            str(obj.get("geofence", "") or ""),
+            str(obj.get("geofence", "") or obj.get("site_id", "") or ""),
         ]
         for column, value in enumerate(values):
             self.table.setItem(row, column, QTableWidgetItem(value))
@@ -263,7 +260,7 @@ class SitesDbEditorDialog(BaseDialog):
 
     def _add_prefill_row(self, address: str) -> None:
         self._insert_obj(0, {"address": address})
-        self.table.setCurrentCell(0, COL_SITE_ID)
+        self.table.setCurrentCell(0, COL_GEOFENCE)
         self.table.scrollToTop()
         self.table.resizeRowsToContents()
         self._update_duplicate_geofence_marks()
@@ -353,8 +350,8 @@ class SitesDbEditorDialog(BaseDialog):
                     continue
 
                 address = (self.table.item(row, COL_ADDRESS).text() if self.table.item(row, COL_ADDRESS) else "").strip()
-                site_id = (self.table.item(row, COL_SITE_ID).text() if self.table.item(row, COL_SITE_ID) else "").strip()
                 geofence = (self.table.item(row, COL_GEOFENCE).text() if self.table.item(row, COL_GEOFENCE) else "").strip()
+                site_id = geofence
                 typ = self._type_for_row(row)
                 aliases = self._aliases_for_row(row)
 
